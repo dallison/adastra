@@ -1,0 +1,51 @@
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "stagezero_lib",
+    srcs = [
+        "client_handler.cc",
+        "process.cc",
+        "stagezero.cc",
+    ],
+    hdrs = [
+        "client_handler.h",
+        "process.h",
+        "stagezero.h",
+    ],
+    deps = [
+        ":symbols_lib",
+        "//stagezero/proto:config_cc_proto",
+        "//stagezero/proto:control_cc_proto",
+        "//stagezero/zygote:zygote_core",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings:str_format",
+        "@coroutines//:co",
+        "@toolbelt//toolbelt",
+    ],
+)
+
+cc_library(
+    name = "symbols_lib",
+    srcs = [
+        "symbols.cc",
+    ],
+    hdrs = [
+        "symbols.h",
+    ],
+    deps = [
+        "@com_google_absl//absl/container:flat_hash_map",
+    ],
+)
+
+cc_binary(
+    name = "stagezero",
+    srcs = [
+        "main.cc",
+    ],
+    deps = [
+        ":stagezero_lib",
+    ],
+)

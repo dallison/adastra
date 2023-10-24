@@ -1,0 +1,208 @@
+syntax = "proto3";
+
+package stagezero.control;
+
+import "stagezero/proto/config.proto";
+
+message InitRequest { string client_name = 1; }
+
+message InitResponse {
+  string error = 1;
+  int32 event_port = 2;
+}
+
+message StreamControl {
+  enum Disposition {
+    CLIENT = 0;   // Stdout/err as event, stdin as request.
+    FILENAME = 1; // To/from file
+    FD = 2;       // To/from file descriptor
+    CLOSE = 3;    // Close
+    NOTIFY = 4;   // Special stream for startup notification
+  };
+
+  // Direction is as seen from the point of view of the process.
+  enum Direction {
+    INPUT = 0;  // Input stream.
+    OUTPUT = 1; // Output stream.
+  };
+
+  int32 stream_fd = 1;         // File descriptor for stream.
+  bool tty = 2;                // Is a tty (isatty() = 1)
+  Disposition disposition = 3; // Where data goes to or comes from
+  Direction direction = 4;     // From the process's point of view.
+
+  oneof data {
+    string filename = 5; // File name for FILENAME (use $var for expressions)
+    int32 fd = 6;        // File descriptor for FD.
+  }
+}
+
+message LaunchStaticProcessRequest {
+  config.StaticProcess proc = 1;
+  config.LaunchOptions opts = 2;
+  repeated StreamControl streams = 3;
+}
+
+message LaunchVirtualProcessRequest {
+  config.VirtualProcess proc = 1;
+  config.LaunchOptions opts = 2;
+  repeated StreamControl streams = 3;
+}
+
+message LaunchResponse {
+  string error = 1;      // Empty for success.
+  string process_id = 2; // Unique ID for process.
+  int32 pid = 3;         // OS provided pid.
+}
+
+message StopProcessRequest { string process_id = 1; }
+
+message StopProcessResponse {
+  string error = 1; // Empty if stop worked.
+}
+
+message InputDataRequest {
+  string process_id = 1;
+  bytes data = 2;
+
+  // Destination fd.  This corresponds to the stream_fd in the
+  // StreamControl message.  For example, 1 is stdout, 0 is stdin...
+  int32 fd = 3;
+}
+
+message InputDataResponse { string error = 1; }
+
+message ConnectSocketRequest {
+  message AddressAndPort {
+    string addr_or_host = 1;
+    int32 port = 2;
+  }
+  oneof name {
+    string unix_name = 1;             // Unix Domain socket name
+    AddressAndPort addr_and_port = 2; // TCP address and port.
+  }
+}
+
+message ConnectSocketResponse {
+  string error = 1;
+  string name = 2; // Unique file descriptor name.
+  int32 fd = 3;
+}
+
+message OpenPipeRequest {}
+
+message OpenPipeResponse {
+  string error = 1;
+  string read_name = 2;  // Unique name for read file descriptor
+  string write_name = 3; // Unique name for write file descritor.
+  int32 read_fd = 4;
+  int32 write_fd = 5;
+}
+
+message CloseFileDescriptorRequest { string name = 1; }
+
+message CloseFileDescriptorResponse { string error = 1; }
+
+message CloseProcessFileDescriptorRequest {
+  string process_id = 1;
+  int32 fd = 2;
+}
+
+message CloseProcessFileDescriptorResponse { string error = 1; }
+
+message SetGlobalVariableRequest {
+  string name = 1;
+  string value = 2;
+  bool exported = 3; // True to export to environment for processes.
+}
+
+message SetGlobalVariableResponse { string error = 1; }
+
+message GetGlobalVariableRequest { string name = 1; }
+
+message GetGlobalVariableResponse {
+  string error = 1;
+  string name = 2;
+  string value = 3;
+  bool exported = 4; // True if exported to environment for processes.
+}
+
+message Request {
+  oneof request {
+    InitRequest init = 1;
+    LaunchStaticProcessRequest launch_static_process = 2;
+    LaunchStaticProcessRequest launch_zygote = 3;
+    LaunchVirtualProcessRequest launch_virtual_process = 4;
+    StopProcessRequest stop = 5;
+    InputDataRequest input_data = 6;
+    ConnectSocketRequest connect_socket = 7;
+    OpenPipeRequest open_pipe = 8;
+    CloseFileDescriptorRequest close_file_descriptor = 9;
+    CloseProcessFileDescriptorRequest close_process_file_descriptor = 10;
+    SetGlobalVariableRequest set_global_variable = 11;
+    GetGlobalVariableRequest get_global_variable = 12;
+  }
+}
+
+message Response {
+  oneof response {
+    InitResponse init = 1;
+    LaunchResponse launch = 2;
+    StopProcessResponse stop = 3;
+    InputDataResponse input_data = 4;
+    ConnectSocketResponse connect_socket = 5;
+    OpenPipeResponse open_pipe = 6;
+    CloseFileDescriptorResponse close_file_descriptor = 7;
+    CloseProcessFileDescriptorResponse close_process_file_descriptor = 8;
+    SetGlobalVariableResponse set_global_variable = 9;
+    GetGlobalVariableResponse get_global_variable = 10;
+  }
+}
+
+message StartEvent { string process_id = 1; }
+
+message StopEvent {
+  string process_id = 1;
+  bool exited = 2;       // True if exited, false if signal
+  int32 exit_status = 3; // Status if exited = true
+  int32 signal = 4;      // Signal if exited = false
+}
+
+message OutputEvent {
+  string process_id = 1;
+  bytes data = 2;
+  int32 fd = 3; // What fd sent it
+}
+
+message Event {
+  oneof event {
+    StartEvent start = 51;
+    StopEvent stop = 52;
+    OutputEvent output = 53;
+  }
+}
+
+// These messages are sent through the zygote control socket.
+
+// Spawn a virtual process from a zygote.
+message SpawnRequest {
+  // File descriptor redirection
+  message Stream {
+    int32 fd = 1;       // FD to redirect
+    int32 index = 2;    // Index into SCM_RIGHTS for src fd.
+    bool close = 3;     // Close the stream, don't redirect.
+  }
+  string dso = 1; // Load this DSO (empty means already linked)
+
+  string main_func = 2; // Function to call in child.
+
+  repeated Stream streams = 3;
+  repeated config.Variable global_vars = 4; // Global variables and environment.
+  repeated config.Variable vars = 5; // Local variables and environment.
+  repeated string args = 6;          // Use $var in expressions.
+}
+
+message SpawnResponse {
+  string error = 1;
+  int32 pid = 2;      // PID of child.
+}

@@ -1,0 +1,23 @@
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "zygote_core",
+    srcs = [
+        "zygote_core.cc",
+    ],
+    hdrs = [
+        "zygote_core.h",
+    ],
+    deps = [
+        "//stagezero/proto:config_cc_proto",
+        "//stagezero/proto:control_cc_proto",
+        "//stagezero:symbols_lib",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings:str_format",
+        "@coroutines//:co",
+        "@toolbelt//toolbelt",
+    ],
+)
