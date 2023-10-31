@@ -23,3 +23,16 @@ cc_proto_library(
     name = "control_cc_proto",
     deps = [":control_proto"],
 )
+
+proto_library(
+    name = "capcom_proto",
+    srcs = ["capcom.proto"],
+    deps = [
+        ":config_proto",
+    ],
+)
+
+cc_proto_library(
+    name = "capcom_cc_proto",
+    deps = [":capcom_proto"],
+)

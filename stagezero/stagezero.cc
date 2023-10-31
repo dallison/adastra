@@ -127,10 +127,6 @@ std::string GetRunfilesDir() {
 }
 
 absl::Status StageZero::Run() {
-  system("pwd");
-  system("find .");
-  system("printenv");
-
   // Work out the runfiles directory and set a variable
   char *runfiles = getenv("RUNFILES_DIR");
   std::string runfiles_dir;

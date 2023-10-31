@@ -39,13 +39,13 @@ message StreamControl {
 
 message LaunchStaticProcessRequest {
   config.StaticProcess proc = 1;
-  config.LaunchOptions opts = 2;
+  config.ProcessOptions opts = 2;
   repeated StreamControl streams = 3;
 }
 
 message LaunchVirtualProcessRequest {
   config.VirtualProcess proc = 1;
-  config.LaunchOptions opts = 2;
+  config.ProcessOptions opts = 2;
   repeated StreamControl streams = 3;
 }
 

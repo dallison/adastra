@@ -1,0 +1,23 @@
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "client",
+    srcs = [
+        "client.cc",
+    ],
+    hdrs = [
+        "client.h",
+    ],
+    deps = [
+        "//stagezero/proto:capcom_cc_proto",
+        "//stagezero/proto:config_cc_proto",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings:str_format",
+        "@coroutines//:co",
+        "@toolbelt//toolbelt",
+    ],
+)
+

@@ -1,0 +1,62 @@
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "capcom_lib",
+    srcs = [
+        "capcom.cc",
+        "client_handler.cc",
+        "subsystem.cc",
+    ],
+    hdrs = [
+        "capcom.h",
+        "client_handler.h",
+        "subsystem.h",
+    ],
+    deps = [
+        "//stagezero/client",
+        "//stagezero/proto:capcom_cc_proto",
+        "//stagezero/proto:config_cc_proto",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings:str_format",
+        "@coroutines//:co",
+        "@toolbelt//toolbelt",
+    ],
+)
+
+cc_binary(
+    name = "capcom",
+    srcs = [
+        "main.cc",
+    ],
+    deps = [
+        ":capcom_lib",
+    ],
+)
+
+cc_test(
+    name = "capcom_test",
+    size = "small",
+    srcs = ["capcom_test.cc"],
+    data = [
+        "//stagezero/testdata:echo",
+        "//stagezero/testdata:files",
+        "//stagezero/testdata:loop",
+        "//stagezero/testdata:module.so",
+        "//stagezero/testdata:vars",
+        "//stagezero/testdata:zygote",
+    ],
+    deps = [
+        ":capcom_lib",
+        "//stagezero:stagezero_lib",
+        "//stagezero/capcom/client",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_googletest//:gtest",
+        "@coroutines//:co",
+    ],
+)

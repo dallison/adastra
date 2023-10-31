@@ -30,7 +30,7 @@ public:
     // has started and stopped.  This end of the pipe is blocking.
     (void)pipe(server_pipe_);
 
-    addr_ = toolbelt::InetAddress("localhost", 6502);
+    addr_ = toolbelt::InetAddress("localhost", 6522);
     server_ = std::make_unique<stagezero::StageZero>(scheduler_, addr_,
                                                      server_pipe_[1]);
 

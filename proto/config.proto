@@ -8,7 +8,7 @@ message Variable {
   bool exported = 3;     // Export to environment.
 }
 
-message LaunchOptions {
+message ProcessOptions {
   string name = 1;
   string description = 2;
 

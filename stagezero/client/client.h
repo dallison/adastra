@@ -40,7 +40,7 @@ constexpr int32_t kDefaultStartupTimeout = 2;
 constexpr int32_t kDefaultSigIntShutdownTimeout = 2;
 constexpr int32_t kDefaultSigTermShutdownTimeout = 4;
 
-struct LaunchOptions {
+struct ProcessOptions {
   std::string description;
   std::vector<Variable> vars;
   std::vector<std::string> args;
@@ -56,68 +56,73 @@ public:
   Client(co::Coroutine *co = nullptr) : co_(co) {}
   ~Client() = default;
 
-  absl::Status Init(toolbelt::InetAddress addr, const std::string &name);
+  absl::Status Init(toolbelt::InetAddress addr, const std::string &name, co::Coroutine *co = nullptr);
 
-  absl::StatusOr<std::pair<std::string, int>> LaunchStaticProcess(const std::string &name,
-                                                  const std::string &executable,
-                                                  LaunchOptions opts = {}) {
+  absl::StatusOr<std::pair<std::string, int>>
+  LaunchStaticProcess(const std::string &name, const std::string &executable,
+                      ProcessOptions opts = {}, co::Coroutine *co = nullptr) {
     return LaunchStaticProcessInternal(name, executable, std::move(opts),
-                                       false);
+                                       false, co);
   }
 
-  absl::StatusOr<std::pair<std::string, int>> LaunchZygote(const std::string &name,
-                                           const std::string &executable,
-                                           LaunchOptions opts = {}) {
+  absl::StatusOr<std::pair<std::string, int>>
+  LaunchZygote(const std::string &name, const std::string &executable,
+               ProcessOptions opts = {}, co::Coroutine *co = nullptr) {
     // Zygotes always notify.
     opts.notify = true;
-    return LaunchStaticProcessInternal(name, executable, std::move(opts), true);
+    return LaunchStaticProcessInternal(name, executable, std::move(opts), true, co);
   }
 
   // Launch a virtual process loaded from a shared library.
-  absl::StatusOr<std::pair<std::string, int>> LaunchVirtualProcess(const std::string &name,
-                                                   const std::string &zygote,
-                                                   const std::string &dso,
-                                                   const std::string &main_func,
-                                                   LaunchOptions opts = {});
+  absl::StatusOr<std::pair<std::string, int>>
+  LaunchVirtualProcess(const std::string &name, const std::string &zygote,
+                       const std::string &dso, const std::string &main_func,
+                       ProcessOptions opts = {}, co::Coroutine *co = nullptr);
 
   // Launch a virtual process that is linked with the zygote.
-  absl::StatusOr<std::pair<std::string, int>> LaunchVirtualProcess(const std::string &name,
-                                                   const std::string &zygote,
-                                                   const std::string &main_func,
-                                                   LaunchOptions opts = {}) {
-    return LaunchVirtualProcess(name, zygote, "", main_func, opts);
+  absl::StatusOr<std::pair<std::string, int>>
+  LaunchVirtualProcess(const std::string &name, const std::string &zygote,
+                       const std::string &main_func, ProcessOptions opts = {}, co::Coroutine *co = nullptr) {
+    return LaunchVirtualProcess(name, zygote, "", main_func, opts, co);
   }
 
-  absl::Status StopProcess(const std::string &process_id);
+  absl::Status StopProcess(const std::string &process_id, co::Coroutine *co = nullptr);
+
+  toolbelt::FileDescriptor GetEventFd() const {
+    return event_socket_.GetFileDescriptor();
+  }
 
   // Wait for an incoming event.
-  absl::StatusOr<stagezero::control::Event> WaitForEvent();
+  absl::StatusOr<stagezero::control::Event> WaitForEvent(co::Coroutine *co = nullptr) {
+    return ReadEvent(co);
+  }
+  absl::StatusOr<stagezero::control::Event> ReadEvent(co::Coroutine *co = nullptr);
 
   absl::Status SendInput(const std::string &process_id, int fd,
-                         const std::string &data);
+                         const std::string &data, co::Coroutine *co = nullptr);
 
   absl::Status CloseProcessFileDescriptor(const std::string &process_id,
-                                          int fd);
+                                          int fd, co::Coroutine *co = nullptr);
 
   absl::Status SetGlobalVariable(std::string name, std::string value,
-                                 bool exported);
+                                 bool exported, co::Coroutine *co = nullptr);
   absl::StatusOr<std::pair<std::string, bool>>
-  GetGlobalVariable(std::string name);
+  GetGlobalVariable(std::string name, co::Coroutine *co = nullptr);
 
 private:
   static constexpr size_t kMaxMessageSize = 4096;
 
   absl::StatusOr<std::pair<std::string, int>>
   LaunchStaticProcessInternal(const std::string &name,
-                              const std::string &executable, LaunchOptions opts,
-                              bool zygote);
+                              const std::string &executable,
+                              ProcessOptions opts, bool zygote, co::Coroutine *co);
   absl::Status
   SendRequestReceiveResponse(const stagezero::control::Request &req,
-                             stagezero::control::Response &response);
+                             stagezero::control::Response &response, co::Coroutine *co);
 
-  void BuildLaunchOptions(const std::string &name,
-                          stagezero::config::LaunchOptions *options,
-                          LaunchOptions opts) const;
+  void BuildProcessOptions(const std::string &name,
+                           stagezero::config::ProcessOptions *options,
+                           ProcessOptions opts) const;
   void BuildStream(stagezero::control::StreamControl *out,
                    const Stream &in) const;
 
