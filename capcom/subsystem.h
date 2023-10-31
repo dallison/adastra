@@ -9,7 +9,7 @@
 #include "stagezero/client/client.h"
 #include "toolbelt/fd.h"
 #include "toolbelt/triggerfd.h"
-#include "stagezero/proto/capcom.pb.h"
+#include "proto/capcom.pb.h"
 
 namespace stagezero::capcom {
 

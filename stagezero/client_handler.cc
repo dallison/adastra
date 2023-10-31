@@ -7,9 +7,6 @@
 
 namespace stagezero {
 
-void EventSenderCoroutine(std::shared_ptr<ClientHandler> client,
-                          co::Coroutine *c);
-
 ClientHandler::~ClientHandler() { KillAllProcesses(); }
 
 SymbolTable *ClientHandler::GetGlobalSymbols() const {
@@ -31,53 +28,6 @@ ClientHandler::FindZygote(const std::string &name) const {
 
 void ClientHandler::AddCoroutine(std::unique_ptr<co::Coroutine> c) {
   stagezero_.AddCoroutine(std::move(c));
-}
-
-void ClientHandler::Run(co::Coroutine *c) {
-  // The data is placed 4 bytes into the buffer.  The first 4
-  // bytes of the buffer are used by SendMessage and ReceiveMessage
-  // for the length of the data.
-  char *sendbuf = command_buffer_ + sizeof(int32_t);
-  constexpr size_t kSendBufLen = sizeof(command_buffer_) - sizeof(int32_t);
-  for (;;) {
-    absl::StatusOr<ssize_t> n = command_socket_.ReceiveMessage(
-        command_buffer_, sizeof(command_buffer_), c);
-    if (!n.ok()) {
-      printf("ReceiveMessage error %s\n", n.status().ToString().c_str());
-      return;
-    }
-    std::cout << getpid() << " " << this << " server received\n";
-    toolbelt::Hexdump(command_buffer_, *n);
-
-    stagezero::control::Request request;
-    if (request.ParseFromArray(command_buffer_, *n)) {
-      stagezero::control::Response response;
-      if (absl::Status s = HandleMessage(request, response, c); !s.ok()) {
-        stagezero_.logger_.Log(toolbelt::LogLevel::kError, "%s\n",
-                               s.ToString().c_str());
-        return;
-      }
-
-      std::cout << getpid() << " server sending " << response.DebugString() << std::endl;
-      if (!response.SerializeToArray(sendbuf, kSendBufLen)) {
-        stagezero_.logger_.Log(toolbelt::LogLevel::kError,
-                               "Failed to serialize response\n");
-        return;
-      }
-      size_t msglen = response.ByteSizeLong();
-      std::cout << getpid() << " SERVER SEND\n";
-      toolbelt::Hexdump(sendbuf, msglen);
-      absl::StatusOr<ssize_t> n =
-          command_socket_.SendMessage(sendbuf, msglen, c);
-      if (!n.ok()) {
-        return;
-      }
-    } else {
-      stagezero_.logger_.Log(toolbelt::LogLevel::kError,
-                             "Failed to parse message\n");
-      return;
-    }
-  }
 }
 
 absl::Status
@@ -142,65 +92,12 @@ ClientHandler::HandleMessage(const stagezero::control::Request &req,
 void ClientHandler::HandleInit(const stagezero::control::InitRequest &req,
                                stagezero::control::InitResponse *response,
                                co::Coroutine *c) {
-  client_name_ = req.client_name();
-
-  // Event channel is an ephemeral port.
-  toolbelt::InetAddress event_channel_addr = command_socket_.BoundAddress();
-  event_channel_addr.SetPort(0);
-
-  std::cout << "binding event channel to " << event_channel_addr.ToString()
-            << std::endl;
-  // Open listen socket.
-  toolbelt::TCPSocket listen_socket;
-  if (absl::Status status = listen_socket.SetCloseOnExec(); !status.ok()) {
-    response->set_error(status.ToString());
+  absl::StatusOr<int> s = Init(req.client_name(), c);
+  if (!s.ok()) {
+    response->set_error(s.status().ToString());
     return;
   }
-
-  if (absl::Status status = listen_socket.Bind(event_channel_addr, true);
-      !status.ok()) {
-    response->set_error(status.ToString());
-    return;
-  }
-  int event_port = listen_socket.BoundAddress().Port();
-
-  response->set_event_port(event_port);
-
-  if (absl::Status status = event_trigger_.Open(); !status.ok()) {
-    response->set_error(status.ToString());
-    return;
-  }
-
-  // Spawn a coroutine to accept the event channel connection.
-  event_channel_acceptor_ =
-      std::make_unique<co::Coroutine>(stagezero_.co_scheduler_, [
-        client = shared_from_this(), listen_socket = std::move(listen_socket)
-      ](co::Coroutine * c2) mutable {
-        std::cout << "accepting event channel " << std::endl;
-        absl::StatusOr socket = listen_socket.Accept(c2);
-        if (!socket.ok()) {
-          client->GetLogger().Log(toolbelt::LogLevel::kError,
-                                  "Failed to open event channel: %s",
-                                  socket.status().ToString().c_str());
-          return;
-        }
-
-        if (absl::Status status = socket->SetCloseOnExec(); !status.ok()) {
-          client->GetLogger().Log(
-              toolbelt::LogLevel::kError,
-              "Failed to set close-on-exec on event channel: %s",
-              socket.status().ToString().c_str());
-          return;
-        }
-        client->SetEventSocket(std::move(*socket));
-        client->GetLogger().Log(toolbelt::LogLevel::kInfo,
-                                "Event channel open");
-
-        // Start the event sender coroutine.
-        client->AddCoroutine(std::make_unique<co::Coroutine>(
-            client->GetScheduler(),
-            [client](co::Coroutine *c2) { EventSenderCoroutine(client, c2); }));
-      });
+  response->set_event_port(*s);
 }
 
 void ClientHandler::HandleLaunchStaticProcess(
@@ -208,7 +105,7 @@ void ClientHandler::HandleLaunchStaticProcess(
     stagezero::control::LaunchResponse *response, co::Coroutine *c) {
 
   auto proc = std::make_shared<StaticProcess>(
-      GetScheduler(), shared_from_this(), std::move(req));
+      GetScheduler(), this->shared_from_this(), std::move(req));
   absl::Status status = proc->Start(c);
   if (!status.ok()) {
     response->set_error(status.ToString());
@@ -241,7 +138,8 @@ void ClientHandler::HandleLaunchZygote(
   response->set_process_id(process_id);
   response->set_pid(zygote->GetPid());
   if (!stagezero_.AddZygote(zygote->Name(), process_id, zygote)) {
-    response->set_error(absl::StrFormat("Unable to add zygote %s(%s)", zygote->Name(), process_id));
+    response->set_error(absl::StrFormat("Unable to add zygote %s(%s)",
+                                        zygote->Name(), process_id));
     return;
   }
   AddProcess(process_id, zygote);
@@ -347,58 +245,6 @@ absl::Status ClientHandler::SendOutputEvent(const std::string &process_id,
   return QueueEvent(std::move(event));
 }
 
-absl::Status
-ClientHandler::QueueEvent(std::unique_ptr<stagezero::control::Event> event) {
-  if (!event_socket_.Connected()) {
-    return absl::InternalError(
-        "Unable to send event: event socket is not connected");
-  }
-  std::cerr << "queueing event" << std::endl;
-  events_.push_back(std::move(event));
-  event_trigger_.Trigger();
-  return absl::OkStatus();
-}
-
-void EventSenderCoroutine(std::shared_ptr<ClientHandler> client,
-                          co::Coroutine *c) {
-  while (client->event_socket_.Connected()) {
-    std::cerr << "Waiting for event to be queued" << std::endl;
-    // Wait for an event to be queued.
-    c->Wait(client->event_trigger_.GetPollFd().Fd(), POLLIN);
-    client->event_trigger_.Clear();
-
-    // Empty event queue by sending all events before going back
-    // to waiting for the trigger.  This ensures that we never have
-    // something in the event queue after the trigger has been
-    // cleared.
-    while (!client->events_.empty()) {
-      std::cerr << "Got queued event" << std::endl;
-
-      // Remove event from the queue and send it.
-      std::unique_ptr<control::Event> event =
-          std::move(client->events_.front());
-      client->events_.pop_front();
-      std::cerr << event->DebugString() << std::endl;
-
-      char *sendbuf = client->event_buffer_ + sizeof(int32_t);
-      constexpr size_t kSendBufLen =
-          sizeof(client->event_buffer_) - sizeof(int32_t);
-      if (!event->SerializeToArray(sendbuf, kSendBufLen)) {
-        client->GetLogger().Log(toolbelt::LogLevel::kError,
-                                "Failed to serialize event");
-      } else {
-        size_t msglen = event->ByteSizeLong();
-        absl::StatusOr<ssize_t> n =
-            client->event_socket_.SendMessage(sendbuf, msglen, c);
-        if (!n.ok()) {
-          client->GetLogger().Log(toolbelt::LogLevel::kError,
-                                  "Failed to serialize event",
-                                  n.status().ToString().c_str());
-        }
-      }
-    }
-  }
-}
 
 void ClientHandler::KillAllProcesses() {
   // Copy all processes out of the processes_ map as we will
@@ -426,7 +272,7 @@ absl::Status ClientHandler::RemoveProcess(Process *proc) {
 }
 
 void ClientHandler::TryRemoveProcess(std::shared_ptr<Process> proc) {
-   std::string id = proc->GetId();
+  std::string id = proc->GetId();
   std::cerr << "removing process " << id << std::endl;
   auto it = processes_.find(id);
   if (it != processes_.end()) {

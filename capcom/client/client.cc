@@ -1,4 +1,4 @@
-#include "stagezero/capcom/client/client.h"
+#include "capcom/client/client.h"
 #include "toolbelt/hexdump.h"
 
 namespace stagezero::capcom::client {

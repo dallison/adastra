@@ -3,8 +3,8 @@
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "stagezero/client/client.h"
-#include "stagezero/capcom/subsystem.h"
-#include "stagezero/capcom/client_handler.h"
+#include "capcom/subsystem.h"
+#include "capcom/client_handler.h"
 #include "toolbelt/logging.h"
 #include "toolbelt/sockets.h"
 

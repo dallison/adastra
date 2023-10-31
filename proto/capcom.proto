@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package stagezero.capcom.proto;
 
-import "stagezero/proto/config.proto";
+import "proto/config.proto";
 
 message InitRequest { string client_name = 1; }
 

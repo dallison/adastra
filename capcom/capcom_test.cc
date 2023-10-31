@@ -1,8 +1,8 @@
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
-#include "stagezero/capcom/capcom.h"
-#include "stagezero/capcom/client/client.h"
-#include "stagezero/capcom/subsystem.h"
+#include "capcom/capcom.h"
+#include "capcom/client/client.h"
+#include "capcom/subsystem.h"
 #include "stagezero/stagezero.h"
 #include <gtest/gtest.h>
 

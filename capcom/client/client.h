@@ -3,8 +3,8 @@
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "coroutine.h"
-#include "stagezero/proto/capcom.pb.h"
-#include "stagezero/proto/config.pb.h"
+#include "proto/capcom.pb.h"
+#include "proto/config.pb.h"
 #include "toolbelt/sockets.h"
 
 namespace stagezero::capcom::client {

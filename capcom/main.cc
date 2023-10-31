@@ -1,4 +1,4 @@
-#include "stagezero/capcom/capcom.h"
+#include "capcom/capcom.h"
 #include "coroutine.h"
 
 #include <iostream>

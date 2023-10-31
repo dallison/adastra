@@ -3,8 +3,8 @@
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "coroutine.h"
-#include "stagezero/proto/config.pb.h"
-#include "stagezero/proto/control.pb.h"
+#include "proto/config.pb.h"
+#include "proto/control.pb.h"
 #include "toolbelt/sockets.h"
 
 #include <variant>

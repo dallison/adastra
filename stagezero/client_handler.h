@@ -1,14 +1,16 @@
 #pragma once
 
-#include "stagezero/proto/config.pb.h"
-#include "stagezero/proto/control.pb.h"
+#include "common/tcp_client_handler.h"
+#include "proto/config.pb.h"
+#include "proto/control.pb.h"
 #include "stagezero/process.h"
 #include "stagezero/symbols.h"
 #include "toolbelt/logging.h"
 #include "toolbelt/sockets.h"
 #include "toolbelt/triggerfd.h"
-#include <list>
+
 #include "absl/container/flat_hash_map.h"
+#include <list>
 
 #include "coroutine.h"
 
@@ -16,13 +18,13 @@ namespace stagezero {
 
 class StageZero;
 
-class ClientHandler : public std::enable_shared_from_this<ClientHandler>{
+class ClientHandler
+    : public common::TCPClientHandler<control::Request, control::Response,
+                                      control::Event> {
 public:
   ClientHandler(StageZero &stagezero, toolbelt::TCPSocket socket)
-      : stagezero_(stagezero), command_socket_(std::move(socket)) {}
+      : TCPClientHandler(std::move(socket)), stagezero_(stagezero) {}
   ~ClientHandler();
-
-  void Run(co::Coroutine *c);
 
   absl::Status SendProcessStartEvent(const std::string &process_id);
   absl::Status SendProcessStopEvent(const std::string &process_id, bool exited,
@@ -30,38 +32,31 @@ public:
   absl::Status SendOutputEvent(const std::string &process_id, int fd,
                                const char *data, size_t len);
 
-  const std::string &GetClientName() const { return client_name_; }
+  toolbelt::Logger &GetLogger() const override;
 
-  toolbelt::Logger &GetLogger() const;
+  co::CoroutineScheduler &GetScheduler() const override;
 
-  co::CoroutineScheduler &GetScheduler() const;
+  SymbolTable *GetGlobalSymbols() const;
 
-  SymbolTable* GetGlobalSymbols() const;
+  std::shared_ptr<Zygote> FindZygote(const std::string &name) const;
 
-  std::shared_ptr<Zygote> FindZygote(const std::string& name) const;
-
-  absl::Status RemoveProcess(Process* proc);
+  absl::Status RemoveProcess(Process *proc);
 
   // Try to remove the process.  If it doesn't exist we're good.
   void TryRemoveProcess(std::shared_ptr<Process> proc);
 
-  void AddCoroutine(std::unique_ptr<co::Coroutine> c);
-
-  char *GetEventBuffer() { return event_buffer_; }
-
-  toolbelt::TCPSocket& GetEventSocket() { return event_socket_; }
-  void SetEventSocket(toolbelt::TCPSocket socket) {
-    event_socket_ = std::move(socket);
-  }
+  void AddCoroutine(std::unique_ptr<co::Coroutine> c) override;
 
 private:
-  friend void EventSenderCoroutine(std::shared_ptr<ClientHandler> client, co::Coroutine *c);
-
-  static constexpr size_t kMaxMessageSize = 4096;
+  std::shared_ptr<ClientHandler> shared_from_this() {
+    return std::static_pointer_cast<ClientHandler>(
+        TCPClientHandler<control::Request, control::Response,
+                         control::Event>::shared_from_this());
+  }
 
   absl::Status HandleMessage(const stagezero::control::Request &req,
                              stagezero::control::Response &resp,
-                             co::Coroutine *c);
+                             co::Coroutine *c) override;
 
   void HandleInit(const stagezero::control::InitRequest &req,
                   stagezero::control::InitResponse *response, co::Coroutine *c);
@@ -70,9 +65,10 @@ private:
       const stagezero::control::LaunchStaticProcessRequest &&req,
       stagezero::control::LaunchResponse *response, co::Coroutine *c);
 
-  void HandleLaunchZygote(
-      const stagezero::control::LaunchStaticProcessRequest &&req,
-      stagezero::control::LaunchResponse *response, co::Coroutine *c);
+  void
+  HandleLaunchZygote(const stagezero::control::LaunchStaticProcessRequest &&req,
+                     stagezero::control::LaunchResponse *response,
+                     co::Coroutine *c);
 
   void HandleLaunchVirtualProcess(
       const stagezero::control::LaunchVirtualProcessRequest &&req,
@@ -86,20 +82,20 @@ private:
                        stagezero::control::InputDataResponse *response,
                        co::Coroutine *c);
 
-  void HandleSetGlobalVariable(const stagezero::control::SetGlobalVariableRequest &req,
-                       stagezero::control::SetGlobalVariableResponse *response,
-                       co::Coroutine *c);
+  void HandleSetGlobalVariable(
+      const stagezero::control::SetGlobalVariableRequest &req,
+      stagezero::control::SetGlobalVariableResponse *response,
+      co::Coroutine *c);
 
-     void HandleGetGlobalVariable(const stagezero::control::GetGlobalVariableRequest &req,
-                       stagezero::control::GetGlobalVariableResponse *response,
-                       co::Coroutine *c);      
+  void HandleGetGlobalVariable(
+      const stagezero::control::GetGlobalVariableRequest &req,
+      stagezero::control::GetGlobalVariableResponse *response,
+      co::Coroutine *c);
 
   void HandleCloseProcessFileDescriptor(
       const stagezero::control::CloseProcessFileDescriptorRequest &req,
       stagezero::control::CloseProcessFileDescriptorResponse *response,
       co::Coroutine *c);
-
-  absl::Status QueueEvent(std::unique_ptr<stagezero::control::Event> event);
 
   void AddProcess(const std::string &id, std::shared_ptr<Process> proc) {
     processes_.emplace(std::make_pair(id, std::move(proc)));
@@ -108,19 +104,9 @@ private:
   void KillAllProcesses();
 
   StageZero &stagezero_;
-  toolbelt::TCPSocket command_socket_;
-  char command_buffer_[kMaxMessageSize];
-  std::string client_name_ = "unknown";
-
-  char event_buffer_[kMaxMessageSize];
-  toolbelt::TCPSocket event_socket_;
-  std::unique_ptr<co::Coroutine> event_channel_acceptor_;
 
   // Keep track of the processs we spawned here, but we don't own the
   // process object.
   absl::flat_hash_map<std::string, std::shared_ptr<Process>> processes_;
-
-  std::list<std::unique_ptr<control::Event>> events_;
-  toolbelt::TriggerFd event_trigger_;
 };
 } // namespace stagezero

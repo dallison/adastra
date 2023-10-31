@@ -14,8 +14,9 @@ cc_library(
     ],
     deps = [
         "//stagezero/client",
-        "//stagezero/proto:capcom_cc_proto",
-        "//stagezero/proto:config_cc_proto",
+        "//proto:capcom_cc_proto",
+        "//proto:config_cc_proto",
+        "//common",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/status",
@@ -51,7 +52,7 @@ cc_test(
     deps = [
         ":capcom_lib",
         "//stagezero:stagezero_lib",
-        "//stagezero/capcom/client",
+        "//capcom/client",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/status",

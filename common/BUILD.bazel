@@ -1,16 +1,11 @@
 package(default_visibility = ["//visibility:public"])
 
 cc_library(
-    name = "client",
-    srcs = [
-        "client.cc",
-    ],
+    name = "common",
     hdrs = [
-        "client.h",
+        "tcp_client_handler.h",
     ],
     deps = [
-        "//proto:capcom_cc_proto",
-        "//proto:config_cc_proto",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/status",
@@ -20,4 +15,3 @@ cc_library(
         "@toolbelt//toolbelt",
     ],
 )
-

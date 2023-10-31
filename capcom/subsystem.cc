@@ -1,5 +1,5 @@
-#include "stagezero/capcom/subsystem.h"
-#include "stagezero/capcom/capcom.h"
+#include "capcom/subsystem.h"
+#include "capcom/capcom.h"
 
 #include <unistd.h>
 

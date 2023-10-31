@@ -14,9 +14,10 @@ cc_library(
     ],
     deps = [
         ":symbols_lib",
-        "//stagezero/proto:config_cc_proto",
-        "//stagezero/proto:control_cc_proto",
+        "//proto:config_cc_proto",
+        "//proto:control_cc_proto",
         "//stagezero/zygote:zygote_core",
+        "//common",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/status",
