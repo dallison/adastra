@@ -86,16 +86,61 @@ enum OperState {
   OPER_ONLINE = 4;
   OPER_STOPPING_PROCESSES = 5;
   OPER_STOPPING_CHILDREN = 6;
+  OPER_RESTARTING = 7;
+  OPER_BROKEN = 8;
 }
 
 message SubsystemStatus {
+  message Process {
+    string name = 1;
+    string process_id = 2;
+    int32 pid = 3;
+    bool running = 4;
+  }
+
   string name = 1;
   AdminState admin_state = 2;
   OperState oper_state = 3;
+  repeated Process processes = 4;
+}
+
+message Alarm {
+  enum Type {
+    UNKNOWN_TYPE = 0;
+    SUBSYSTEM = 1;
+    PROCESS = 2;
+  }
+
+  enum Severity {
+    UNKNOWN_SEVERITY = 0;
+    WARNING = 2;
+    ERROR = 3;
+    CRITICAL = 4;
+  }
+
+  enum Reason {
+    UNKNOWN_REASON = 0;
+    CRASHED = 1;
+    BROKEN = 2;
+  }
+
+  enum Status {
+    UNKNOWN_STATUS = 0;
+    RAISED = 1;
+    CLEARED = 2;
+  }
+
+  Type type = 1;
+  string name = 2;
+  Severity severity = 3;
+  Reason reason = 4;
+  Status status = 5;
+  string details = 6;
 }
 
 message Event {
   oneof event {
     SubsystemStatus subsystem_status = 1;
+    Alarm alarm = 2;
   }
 }

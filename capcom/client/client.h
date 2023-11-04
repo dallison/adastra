@@ -6,14 +6,12 @@
 #include "proto/capcom.pb.h"
 #include "proto/config.pb.h"
 #include "toolbelt/sockets.h"
+#include "common/states.h"
+#include "common/vars.h"
+#include "common/alarm.h"
+#include <variant>
 
 namespace stagezero::capcom::client {
-
-struct Variable {
-  std::string name;
-  std::string value;
-  bool exported = false;
-};
 
 constexpr int32_t kDefaultStartupTimeout = 2;
 constexpr int32_t kDefaultSigIntShutdownTimeout = 2;
@@ -40,7 +38,7 @@ struct Zygote {
   int32_t sigint_shutdown_timeout_secs = kDefaultSigIntShutdownTimeout;
   int32_t sigterm_shutdown_timeout_secs = kDefaultSigTermShutdownTimeout;
   bool notify = false;
-  };
+};
 
 struct VirtualProcess {
   std::string name;
@@ -64,32 +62,73 @@ struct SubsystemOptions {
   std::vector<std::string> children;
 };
 
+enum class EventType {
+  kSubsystemStatus,
+  kAlarm,
+};
+
+struct ProcessStatus {
+  std::string name;
+  std::string process_id;
+  int pid;
+  bool running;
+};
+
+struct SubsystemStatusEvent {
+  std::string subsystem;
+  AdminState admin_state;
+  OperState oper_state;
+  std::vector<ProcessStatus> processes;
+};
+
+// Alarm is defined in common/alarm.h
+
+struct Event {
+  EventType type;
+  std::variant<SubsystemStatusEvent, Alarm> event;
+};
+
 class Client {
 public:
   Client(co::Coroutine *co = nullptr) : co_(co) {}
   ~Client() = default;
 
-  absl::Status Init(toolbelt::InetAddress addr, const std::string &name);
+  absl::Status Init(toolbelt::InetAddress addr, const std::string &name, co::Coroutine *c = nullptr);
 
   absl::Status AddSubsystem(const std::string &name,
-                            const SubsystemOptions &options);
+                            const SubsystemOptions &options, co::Coroutine *c = nullptr);
 
-  absl::Status RemoveSubsystem(const std::string& name, bool recursive);
+  absl::Status RemoveSubsystem(const std::string &name, bool recursive, co::Coroutine *c = nullptr);
 
-    absl::Status StartSubsystem(const std::string& name);
-    absl::Status StopSubsystem(const std::string& name);
+  absl::Status StartSubsystem(const std::string &name, co::Coroutine *c = nullptr);
+  absl::Status StopSubsystem(const std::string &name, co::Coroutine *c = nullptr);
+
+  toolbelt::FileDescriptor GetEventFd() const {
+    return event_socket_.GetFileDescriptor();
+  }
+
+  // Wait for an incoming event.
+  absl::StatusOr<Event>
+  WaitForEvent(co::Coroutine *c = nullptr) {
+    return ReadEvent(c);
+  }
+  absl::StatusOr<Event>
+  ReadEvent(co::Coroutine *c = nullptr);
 
 private:
   static constexpr size_t kMaxMessageSize = 4096;
 
   absl::Status
   SendRequestReceiveResponse(const stagezero::capcom::proto::Request &req,
-                             stagezero::capcom::proto::Response &response);
+                             stagezero::capcom::proto::Response &response, co::Coroutine *c);
 
   std::string name_ = "";
   co::Coroutine *co_;
   toolbelt::TCPSocket command_socket_;
   char command_buffer_[kMaxMessageSize];
+
+  toolbelt::TCPSocket event_socket_;
+  char event_buffer_[kMaxMessageSize];
 };
 
 } // namespace stagezero::capcom::client

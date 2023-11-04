@@ -6,36 +6,20 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
+#include "capcom/bitset.h"
+#include "common/states.h"
+#include "proto/capcom.pb.h"
 #include "stagezero/client/client.h"
 #include "toolbelt/fd.h"
+#include "toolbelt/logging.h"
 #include "toolbelt/triggerfd.h"
-#include "proto/capcom.pb.h"
+#include "common/vars.h"
+#include "common/alarm.h"
 
 namespace stagezero::capcom {
 
 class Capcom;
 class Subsystem;
-
-enum class AdminState {
-  kOffline,
-  kOnline,
-};
-
-enum class OperState {
-  kOffline,
-  kStartingChildren,
-  kStartingProcesses,
-  kOnline,
-  kStoppingProcesses,
-  kStoppingChildren,
-  // TODO: restart.
-};
-
-struct Variable {
-  std::string name;
-  std::string value;
-  bool exported = false;
-};
 
 // Messages are sent through the message pipe.
 struct Message {
@@ -45,6 +29,7 @@ struct Message {
   };
   Code code;
   Subsystem *sender;
+  uint32_t client_id;
   union {
     AdminState admin;
     OperState oper;
@@ -56,6 +41,7 @@ public:
   Process(std::string name) : name_(name) {}
   virtual ~Process() = default;
   virtual absl::Status Launch(stagezero::Client &client, co::Coroutine *c) = 0;
+  absl::Status Stop(stagezero::Client &client, co::Coroutine *c);
 
   const std::string &Name() const { return name_; }
 
@@ -66,6 +52,9 @@ public:
   const std::string &GetProcessId() const { return process_id_; }
 
   int GetPid() const { return pid_; }
+
+  void RaiseAlarm(Capcom& capcom, const Alarm& alarm);
+  void ClearAlarm(Capcom& capcom);
 
 protected:
   void ParseOptions(const stagezero::config::ProcessOptions &options);
@@ -82,6 +71,8 @@ protected:
   bool running_ = false;
   std::string process_id_;
   int pid_;
+  Alarm alarm_;
+  bool alarm_raised_ = false;
 };
 
 class StaticProcess : public Process {
@@ -113,7 +104,6 @@ public:
   ~Subsystem() {
     std::cerr << "Subsystem " << Name() << " destructed" << std::endl;
   }
-  void AddChild(Subsystem *child);
 
   absl::Status
   AddStaticProcess(const stagezero::config::StaticProcess &proc,
@@ -130,19 +120,34 @@ public:
 
   absl::Status Remove(bool recursive);
 
-  void BuildStatusEvent(capcom::proto::SubsystemStatus* event);
+  bool CheckRemove(bool recursive);
+
+  void BuildStatusEvent(capcom::proto::SubsystemStatus *event);
+
+  void AddChild(std::shared_ptr<Subsystem> child) {
+    std::cerr << "ADDING CHILD " << child->Name() << " to " << Name()
+              << std::endl;
+    children_.push_back(child);
+  }
+
+  void AddParent(std::shared_ptr<Subsystem> parent) {
+    parents_.push_back(parent);
+  }
 
 private:
   enum class EventSource {
     kUnknown,
-    kStageZero,       // StageZero (process state or data).
-    kMessage,         // Message from parents, children or API.
+    kStageZero, // StageZero (process state or data).
+    kMessage,   // Message from parents, children or API.
   };
+
+  static constexpr int kDefaultMaxRestarts = 3;
 
   absl::Status BuildMessagePipe();
   absl::StatusOr<Message> ReadMessage() const;
 
-  void AddParent(Subsystem *parent, int event_fd, int command_fd);
+  // TODO: remove parent function.
+
   void AddProcess(std::unique_ptr<Process> p) {
     processes_.push_back(std::move(p));
   }
@@ -161,22 +166,56 @@ private:
     return it->second;
   }
 
+  bool AllProcessesRunning() const {
+    for (auto &p : processes_) {
+      if (!p->IsRunning()) {
+        return false;
+      }
+    }
+    return true;
+  }
+  bool AllProcessesStopped() const {
+    for (auto &p : processes_) {
+      if (p->IsRunning()) {
+        return false;
+      }
+    }
+    return true;
+  }
   // State event processing coroutines.
   // General event processor.  Calls handler for incoming events
   // passing the file descriptor upon which the event arrived.  If it
   // returns false, the loop terminates.
-  void ProcessEvents(co::Coroutine *c, std::function<bool(EventSource, co::Coroutine*)> handler);
+  void ProcessEvents(co::Coroutine *c,
+                     std::function<bool(EventSource, co::Coroutine *)> handler);
 
-  void Offline(co::Coroutine *c);
-  void StartingProcesses(co::Coroutine *c);
-  void Online(co::Coroutine *c);
-  void StoppingProcesses(co::Coroutine *c);
+  void Offline(uint32_t client_id, co::Coroutine *c);
+  void StartingChildren(uint32_t client_id, co::Coroutine *c);
+  void StartingProcesses(uint32_t client_id, co::Coroutine *c);
+  void Online(uint32_t client_id, co::Coroutine *c);
+  void StoppingProcesses(uint32_t client_id, co::Coroutine *c);
+  void StoppingChildren(uint32_t client_id, co::Coroutine *c);
+  void Restarting(uint32_t client_id, co::Coroutine *c);
+  void Broken(uint32_t client_id, co::Coroutine *c);
+
+  toolbelt::Logger &GetLogger() const;
 
   void EnterState(
-      std::function<void(std::shared_ptr<Subsystem>, co::Coroutine *)> func);
+      std::function<void(std::shared_ptr<Subsystem>, uint32_t, co::Coroutine *)>
+          func,
+      uint32_t client_id);
 
   void LaunchProcesses(co::Coroutine *c);
   void StopProcesses(co::Coroutine *c);
+
+  void RestartIfPossible(std::string process_id, uint32_t client_id);
+
+  void RestartNow(uint32_t client_id);
+  void NotifyParents();
+  void SendToChildren(AdminState state, uint32_t client_id);
+
+  void RaiseAlarm(const Alarm& alarm);
+  void ClearAlarm();
 
   co::CoroutineScheduler &Scheduler();
 
@@ -201,6 +240,14 @@ private:
 
   std::list<std::shared_ptr<Subsystem>> children_;
   std::list<std::shared_ptr<Subsystem>> parents_;
+
+  BitSet active_clients_;
+
+  int num_restarts_ = 0;
+  int max_restarts_ = kDefaultMaxRestarts;
+
+  Alarm alarm_;
+  bool alarm_raised_ = false;
 };
 
 } // namespace stagezero::capcom

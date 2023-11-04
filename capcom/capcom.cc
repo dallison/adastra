@@ -37,16 +37,18 @@ Capcom::HandleIncomingConnection(toolbelt::TCPSocket &listen_socket,
     return status;
   }
 
+  uint32_t client_id = client_ids_.Allocate();
   std::shared_ptr<ClientHandler> handler =
-      std::make_shared<ClientHandler>(*this, std::move(*s));
+      std::make_shared<ClientHandler>(*this, std::move(*s), client_id);
   client_handlers_.push_back(handler);
 
   coroutines_.insert(std::make_unique<co::Coroutine>(
       co_scheduler_,
-      [this, handler](co::Coroutine *c) {
+      [this, handler, client_id](co::Coroutine *c) {
         handler->Run(c);
         logger_.Log(toolbelt::LogLevel::kInfo, "client %s closed",
                     handler->GetClientName().c_str());
+        client_ids_.Clear(client_id);
         CloseHandler(handler);
       },
       "Client handler"));
@@ -115,12 +117,23 @@ absl::Status Capcom::Run() {
 
   return absl::OkStatus();
 }
-void Capcom::SendSubsystemStatusEvent(std::shared_ptr<Subsystem> subsystem) {
+void Capcom::SendSubsystemStatusEvent(Subsystem* subsystem) {
   for (auto &handler : client_handlers_) {
     if (absl::Status status = handler->SendSubsystemStatusEvent(subsystem);
         !status.ok()) {
       logger_.Log(toolbelt::LogLevel::kError,
                   "Failed to send event to client %s: %s",
+                  handler->GetClientName().c_str(), status.ToString().c_str());
+    }
+  }
+}
+
+void Capcom::SendAlarm(const Alarm& alarm) {
+  for (auto &handler : client_handlers_) {
+    if (absl::Status status = handler->SendAlarm(alarm);
+        !status.ok()) {
+      logger_.Log(toolbelt::LogLevel::kError,
+                  "Failed to send alarm to client %s: %s",
                   handler->GetClientName().c_str(), status.ToString().c_str());
     }
   }

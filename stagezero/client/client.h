@@ -6,16 +6,11 @@
 #include "proto/config.pb.h"
 #include "proto/control.pb.h"
 #include "toolbelt/sockets.h"
+#include "common/vars.h"
 
 #include <variant>
 
 namespace stagezero {
-
-struct Variable {
-  std::string name;
-  std::string value;
-  bool exported = false;
-};
 
 struct Stream {
   enum class Disposition {

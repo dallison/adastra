@@ -484,7 +484,6 @@ int StaticProcess::Wait() {
 
 absl::Status Process::Stop(co::Coroutine *c) {
   stopping_ = true;
-  kill(-pid_, SIGINT);
   client_->AddCoroutine(std::make_unique<co::Coroutine>(
       scheduler_,
       [ proc = shared_from_this(), client = client_ ](co::Coroutine * c2) {
@@ -497,6 +496,7 @@ absl::Status Process::Stop(co::Coroutine *c) {
               toolbelt::LogLevel::kInfo,
               "Killing process %s with SIGINT (timeout %d seconds)",
               proc->Name().c_str(), timeout);
+          kill(-proc->GetPid(), SIGINT);
           (void)proc->WaitLoop(c2, timeout);
           if (!proc->IsRunning()) {
             return;

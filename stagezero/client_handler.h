@@ -54,48 +54,44 @@ private:
                          control::Event>::shared_from_this());
   }
 
-  absl::Status HandleMessage(const stagezero::control::Request &req,
-                             stagezero::control::Response &resp,
+  absl::Status HandleMessage(const control::Request &req,
+                             control::Response &resp,
                              co::Coroutine *c) override;
 
-  void HandleInit(const stagezero::control::InitRequest &req,
-                  stagezero::control::InitResponse *response, co::Coroutine *c);
-
-  void HandleLaunchStaticProcess(
-      const stagezero::control::LaunchStaticProcessRequest &&req,
-      stagezero::control::LaunchResponse *response, co::Coroutine *c);
+  void HandleInit(const control::InitRequest &req,
+                  control::InitResponse *response, co::Coroutine *c);
 
   void
-  HandleLaunchZygote(const stagezero::control::LaunchStaticProcessRequest &&req,
-                     stagezero::control::LaunchResponse *response,
-                     co::Coroutine *c);
+  HandleLaunchStaticProcess(const control::LaunchStaticProcessRequest &&req,
+                            control::LaunchResponse *response,
+                            co::Coroutine *c);
 
-  void HandleLaunchVirtualProcess(
-      const stagezero::control::LaunchVirtualProcessRequest &&req,
-      stagezero::control::LaunchResponse *response, co::Coroutine *c);
+  void HandleLaunchZygote(const control::LaunchStaticProcessRequest &&req,
+                          control::LaunchResponse *response, co::Coroutine *c);
 
-  void HandleStopProcess(const stagezero::control::StopProcessRequest &req,
-                         stagezero::control::StopProcessResponse *response,
+  void
+  HandleLaunchVirtualProcess(const control::LaunchVirtualProcessRequest &&req,
+                             control::LaunchResponse *response,
+                             co::Coroutine *c);
+
+  void HandleStopProcess(const control::StopProcessRequest &req,
+                         control::StopProcessResponse *response,
                          co::Coroutine *c);
 
-  void HandleInputData(const stagezero::control::InputDataRequest &req,
-                       stagezero::control::InputDataResponse *response,
-                       co::Coroutine *c);
+  void HandleInputData(const control::InputDataRequest &req,
+                       control::InputDataResponse *response, co::Coroutine *c);
 
-  void HandleSetGlobalVariable(
-      const stagezero::control::SetGlobalVariableRequest &req,
-      stagezero::control::SetGlobalVariableResponse *response,
-      co::Coroutine *c);
+  void HandleSetGlobalVariable(const control::SetGlobalVariableRequest &req,
+                               control::SetGlobalVariableResponse *response,
+                               co::Coroutine *c);
 
-  void HandleGetGlobalVariable(
-      const stagezero::control::GetGlobalVariableRequest &req,
-      stagezero::control::GetGlobalVariableResponse *response,
-      co::Coroutine *c);
+  void HandleGetGlobalVariable(const control::GetGlobalVariableRequest &req,
+                               control::GetGlobalVariableResponse *response,
+                               co::Coroutine *c);
 
   void HandleCloseProcessFileDescriptor(
-      const stagezero::control::CloseProcessFileDescriptorRequest &req,
-      stagezero::control::CloseProcessFileDescriptorResponse *response,
-      co::Coroutine *c);
+      const control::CloseProcessFileDescriptorRequest &req,
+      control::CloseProcessFileDescriptorResponse *response, co::Coroutine *c);
 
   void AddProcess(const std::string &id, std::shared_ptr<Process> proc) {
     processes_.emplace(std::make_pair(id, std::move(proc)));
@@ -105,8 +101,7 @@ private:
 
   StageZero &stagezero_;
 
-  // Keep track of the processs we spawned here, but we don't own the
-  // process object.
+  // Keep track of the processs we spawned here.
   absl::flat_hash_map<std::string, std::shared_ptr<Process>> processes_;
 };
 } // namespace stagezero

@@ -7,6 +7,7 @@
 #include "capcom/client_handler.h"
 #include "toolbelt/logging.h"
 #include "toolbelt/sockets.h"
+#include "capcom/bitset.h"
 
 #include <memory>
 #include <string>
@@ -31,6 +32,7 @@ public:
 private:
   friend class ClientHandler;
   friend class Subsystem;
+  friend class Process;
   const toolbelt::InetAddress GetStageZeroAddress() const { return stagezero_; }
 
   absl::Status HandleIncomingConnection(toolbelt::TCPSocket &listen_socket,
@@ -69,8 +71,10 @@ private:
     return it->second;
   }
 
-  void SendSubsystemStatusEvent(std::shared_ptr<Subsystem> subsystem);
+  void SendSubsystemStatusEvent(Subsystem* subsystem);
 
+  void SendAlarm(const Alarm& alarm);
+  
 private:
   co::CoroutineScheduler &co_scheduler_;
   toolbelt::InetAddress addr_;
@@ -86,5 +90,7 @@ private:
   toolbelt::Logger logger_;
 
   std::unique_ptr<stagezero::Client> main_client_;
+
+  BitSet client_ids_;
 };
 }

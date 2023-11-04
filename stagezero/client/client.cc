@@ -193,8 +193,6 @@ absl::StatusOr<stagezero::control::Event> Client::ReadEvent(co::Coroutine *co) {
     event_socket_.Close();
     return n.status();
   }
-  std::cerr << "EVENT\n";
-  toolbelt::Hexdump(event_buffer_, *n);
   if (!event.ParseFromArray(event_buffer_, *n)) {
     event_socket_.Close();
     return absl::InternalError("Failed to parse event");
@@ -231,7 +229,6 @@ absl::Status Client::CloseProcessFileDescriptor(const std::string &process_id,
   if (co == nullptr) {
     co = co_;
   }
-  std::cerr << "CloseProcessFileDescriptor" << std::endl;
   stagezero::control::Request req;
   auto close = req.mutable_close_process_file_descriptor();
   close->set_process_id(process_id);
@@ -311,8 +308,6 @@ Client::SendRequestReceiveResponse(const stagezero::control::Request &req,
 
   size_t length = req.ByteSizeLong();
 
-  std::cout << "CLIENT SEND\n";
-  toolbelt::Hexdump(sendbuf, length);
   absl::StatusOr<ssize_t> n = command_socket_.SendMessage(sendbuf, length, co);
   if (!n.ok()) {
     command_socket_.Close();
@@ -326,8 +321,6 @@ Client::SendRequestReceiveResponse(const stagezero::control::Request &req,
     command_socket_.Close();
     return n.status();
   }
-  std::cout << "CLIENT RECV\n";
-  toolbelt::Hexdump(command_buffer_, *n);
 
   if (!response.ParseFromArray(command_buffer_, *n)) {
     command_socket_.Close();

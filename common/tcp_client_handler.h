@@ -12,6 +12,8 @@
 
 namespace stagezero::common {
 
+// This is a generalized client handler that handles clients over
+// TCP connections.  It supports commands and events.
 template <typename Request, typename Response, typename Event>
 class TCPClientHandler : public std::enable_shared_from_this<
                              TCPClientHandler<Request, Response, Event>> {
@@ -38,15 +40,21 @@ public:
   }
 
 protected:
-  void EventSenderCoroutine(co::Coroutine *c);
-  absl::StatusOr<int> Init(const std::string &client_name, co::Coroutine *c);
-
   static constexpr size_t kMaxMessageSize = 4096;
 
   virtual absl::Status HandleMessage(const Request &req, Response &resp,
                                      co::Coroutine *c) = 0;
+  
+  // Init the client and return the port number for the event channel.
+  absl::StatusOr<int> Init(const std::string &client_name, co::Coroutine *c);
 
+  // Queue an event to be sent at the next available opportunity.  The
+  // event will be sent asychrnonously by a coroutine.
   absl::Status QueueEvent(std::unique_ptr<Event> event);
+
+  // Coroutine spawned by Init to send events in the order queued by
+  // QueueEvent.
+  void EventSenderCoroutine(co::Coroutine *c);
 
   toolbelt::TCPSocket command_socket_;
   char command_buffer_[kMaxMessageSize];
@@ -187,7 +195,6 @@ inline void TCPClientHandler<Request, Response, Event>::EventSenderCoroutine(
     co::Coroutine *c) {
   auto client = this->shared_from_this();
   while (client->event_socket_.Connected()) {
-    std::cerr << "Waiting for event to be queued" << std::endl;
     // Wait for an event to be queued.
     c->Wait(client->event_trigger_.GetPollFd().Fd(), POLLIN);
     client->event_trigger_.Clear();
@@ -197,12 +204,9 @@ inline void TCPClientHandler<Request, Response, Event>::EventSenderCoroutine(
     // something in the event queue after the trigger has been
     // cleared.
     while (!client->events_.empty()) {
-      std::cerr << "Got queued event" << std::endl;
-
       // Remove event from the queue and send it.
       std::unique_ptr<Event> event = std::move(client->events_.front());
       client->events_.pop_front();
-      std::cerr << event->DebugString() << std::endl;
 
       char *sendbuf = client->event_buffer_ + sizeof(int32_t);
       constexpr size_t kSendBufLen =

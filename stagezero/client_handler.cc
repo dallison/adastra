@@ -30,67 +30,66 @@ void ClientHandler::AddCoroutine(std::unique_ptr<co::Coroutine> c) {
   stagezero_.AddCoroutine(std::move(c));
 }
 
-absl::Status
-ClientHandler::HandleMessage(const stagezero::control::Request &req,
-                             stagezero::control::Response &resp,
-                             co::Coroutine *c) {
+absl::Status ClientHandler::HandleMessage(const control::Request &req,
+                                          control::Response &resp,
+                                          co::Coroutine *c) {
   switch (req.request_case()) {
-  case stagezero::control::Request::kInit:
+  case control::Request::kInit:
     HandleInit(req.init(), resp.mutable_init(), c);
     break;
 
-  case stagezero::control::Request::kLaunchStaticProcess:
+  case control::Request::kLaunchStaticProcess:
     HandleLaunchStaticProcess(std::move(req.launch_static_process()),
                               resp.mutable_launch(), c);
     break;
 
-  case stagezero::control::Request::kLaunchZygote:
+  case control::Request::kLaunchZygote:
     HandleLaunchZygote(std::move(req.launch_zygote()), resp.mutable_launch(),
                        c);
     break;
 
-  case stagezero::control::Request::kLaunchVirtualProcess:
+  case control::Request::kLaunchVirtualProcess:
     HandleLaunchVirtualProcess(std::move(req.launch_virtual_process()),
                                resp.mutable_launch(), c);
     break;
 
-  case stagezero::control::Request::kStop:
+  case control::Request::kStop:
     HandleStopProcess(req.stop(), resp.mutable_stop(), c);
     break;
 
-  case stagezero::control::Request::kInputData:
+  case control::Request::kInputData:
     HandleInputData(req.input_data(), resp.mutable_input_data(), c);
     break;
 
-  case stagezero::control::Request::kCloseProcessFileDescriptor:
+  case control::Request::kCloseProcessFileDescriptor:
     HandleCloseProcessFileDescriptor(
         req.close_process_file_descriptor(),
         resp.mutable_close_process_file_descriptor(), c);
     break;
 
-  case stagezero::control::Request::kConnectSocket:
+  case control::Request::kConnectSocket:
     break;
-  case stagezero::control::Request::kOpenPipe:
+  case control::Request::kOpenPipe:
     break;
-  case stagezero::control::Request::kCloseFileDescriptor:
+  case control::Request::kCloseFileDescriptor:
     break;
-  case stagezero::control::Request::kSetGlobalVariable:
+  case control::Request::kSetGlobalVariable:
     HandleSetGlobalVariable(req.set_global_variable(),
                             resp.mutable_set_global_variable(), c);
     break;
-  case stagezero::control::Request::kGetGlobalVariable:
+  case control::Request::kGetGlobalVariable:
     HandleGetGlobalVariable(req.get_global_variable(),
                             resp.mutable_get_global_variable(), c);
     break;
 
-  case stagezero::control::Request::REQUEST_NOT_SET:
+  case control::Request::REQUEST_NOT_SET:
     return absl::InternalError("Protocol error: unknown request");
   }
   return absl::OkStatus();
 }
 
-void ClientHandler::HandleInit(const stagezero::control::InitRequest &req,
-                               stagezero::control::InitResponse *response,
+void ClientHandler::HandleInit(const control::InitRequest &req,
+                               control::InitResponse *response,
                                co::Coroutine *c) {
   absl::StatusOr<int> s = Init(req.client_name(), c);
   if (!s.ok()) {
@@ -101,8 +100,8 @@ void ClientHandler::HandleInit(const stagezero::control::InitRequest &req,
 }
 
 void ClientHandler::HandleLaunchStaticProcess(
-    const stagezero::control::LaunchStaticProcessRequest &&req,
-    stagezero::control::LaunchResponse *response, co::Coroutine *c) {
+    const control::LaunchStaticProcessRequest &&req,
+    control::LaunchResponse *response, co::Coroutine *c) {
 
   auto proc = std::make_shared<StaticProcess>(
       GetScheduler(), this->shared_from_this(), std::move(req));
@@ -124,8 +123,8 @@ void ClientHandler::HandleLaunchStaticProcess(
 }
 
 void ClientHandler::HandleLaunchZygote(
-    const stagezero::control::LaunchStaticProcessRequest &&req,
-    stagezero::control::LaunchResponse *response, co::Coroutine *c) {
+    const control::LaunchStaticProcessRequest &&req,
+    control::LaunchResponse *response, co::Coroutine *c) {
 
   auto zygote = std::make_shared<Zygote>(GetScheduler(), shared_from_this(),
                                          std::move(req));
@@ -146,8 +145,8 @@ void ClientHandler::HandleLaunchZygote(
 }
 
 void ClientHandler::HandleLaunchVirtualProcess(
-    const stagezero::control::LaunchVirtualProcessRequest &&req,
-    stagezero::control::LaunchResponse *response, co::Coroutine *c) {
+    const control::LaunchVirtualProcessRequest &&req,
+    control::LaunchResponse *response, co::Coroutine *c) {
   auto proc = std::make_shared<VirtualProcess>(
       GetScheduler(), shared_from_this(), std::move(req));
   absl::Status status = proc->Start(c);
@@ -166,9 +165,9 @@ void ClientHandler::HandleLaunchVirtualProcess(
   AddProcess(process_id, proc);
 }
 
-void ClientHandler::HandleStopProcess(
-    const stagezero::control::StopProcessRequest &req,
-    stagezero::control::StopProcessResponse *response, co::Coroutine *c) {
+void ClientHandler::HandleStopProcess(const control::StopProcessRequest &req,
+                                      control::StopProcessResponse *response,
+                                      co::Coroutine *c) {
   std::shared_ptr<Process> proc = stagezero_.FindProcess(req.process_id());
   if (proc == nullptr) {
     response->set_error(
@@ -182,9 +181,9 @@ void ClientHandler::HandleStopProcess(
   }
 }
 
-void ClientHandler::HandleInputData(
-    const stagezero::control::InputDataRequest &req,
-    stagezero::control::InputDataResponse *response, co::Coroutine *c) {
+void ClientHandler::HandleInputData(const control::InputDataRequest &req,
+                                    control::InputDataResponse *response,
+                                    co::Coroutine *c) {
   std::shared_ptr<Process> proc = stagezero_.FindProcess(req.process_id());
   if (proc == nullptr) {
     response->set_error(
@@ -200,9 +199,8 @@ void ClientHandler::HandleInputData(
 }
 
 void ClientHandler::HandleCloseProcessFileDescriptor(
-    const stagezero::control::CloseProcessFileDescriptorRequest &req,
-    stagezero::control::CloseProcessFileDescriptorResponse *response,
-    co::Coroutine *c) {
+    const control::CloseProcessFileDescriptorRequest &req,
+    control::CloseProcessFileDescriptorResponse *response, co::Coroutine *c) {
   std::shared_ptr<Process> proc = stagezero_.FindProcess(req.process_id());
   if (proc == nullptr) {
     response->set_error(
@@ -216,7 +214,7 @@ void ClientHandler::HandleCloseProcessFileDescriptor(
 
 absl::Status
 ClientHandler::SendProcessStartEvent(const std::string &process_id) {
-  auto event = std::make_unique<stagezero::control::Event>();
+  auto event = std::make_unique<control::Event>();
   auto start = event->mutable_start();
   start->set_process_id(process_id);
   return QueueEvent(std::move(event));
@@ -225,7 +223,7 @@ ClientHandler::SendProcessStartEvent(const std::string &process_id) {
 absl::Status ClientHandler::SendProcessStopEvent(const std::string &process_id,
                                                  bool exited, int exit_status,
                                                  int term_signal) {
-  auto event = std::make_unique<stagezero::control::Event>();
+  auto event = std::make_unique<control::Event>();
   auto stop = event->mutable_stop();
   stop->set_process_id(process_id);
   stop->set_exited(exited);
@@ -237,14 +235,13 @@ absl::Status ClientHandler::SendProcessStopEvent(const std::string &process_id,
 absl::Status ClientHandler::SendOutputEvent(const std::string &process_id,
                                             int fd, const char *data,
                                             size_t len) {
-  auto event = std::make_unique<stagezero::control::Event>();
+  auto event = std::make_unique<control::Event>();
   auto output = event->mutable_output();
   output->set_process_id(process_id);
   output->set_data(data, len);
   output->set_fd(fd);
   return QueueEvent(std::move(event));
 }
-
 
 void ClientHandler::KillAllProcesses() {
   // Copy all processes out of the processes_ map as we will
@@ -283,14 +280,14 @@ void ClientHandler::TryRemoveProcess(std::shared_ptr<Process> proc) {
 }
 
 void ClientHandler::HandleSetGlobalVariable(
-    const stagezero::control::SetGlobalVariableRequest &req,
-    stagezero::control::SetGlobalVariableResponse *response, co::Coroutine *c) {
+    const control::SetGlobalVariableRequest &req,
+    control::SetGlobalVariableResponse *response, co::Coroutine *c) {
   stagezero_.global_symbols_.AddSymbol(req.name(), req.value(), req.exported());
 }
 
 void ClientHandler::HandleGetGlobalVariable(
-    const stagezero::control::GetGlobalVariableRequest &req,
-    stagezero::control::GetGlobalVariableResponse *response, co::Coroutine *c) {
+    const control::GetGlobalVariableRequest &req,
+    control::GetGlobalVariableResponse *response, co::Coroutine *c) {
   Symbol *sym = stagezero_.global_symbols_.FindSymbol(req.name());
   if (sym == nullptr) {
     response->set_error(absl::StrFormat("No such variable %s", req.name()));
