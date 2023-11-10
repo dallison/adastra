@@ -8,10 +8,11 @@
 #include <iostream>
 #include <stdlib.h>
 #include <string>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
-extern "C" const char** environ;
+extern "C" const char **environ;
 
 namespace stagezero {
 
@@ -32,7 +33,8 @@ absl::Status ZygoteCore::Run() {
 
   const char *sname = getenv("STAGEZERO_ZYGOTE_SOCKET_NAME");
   if (sname == nullptr) {
-    return absl::InternalError("No STAGEZERO_ZYGOTE_SOCKET_NAME passed to zygote");
+    return absl::InternalError(
+        "No STAGEZERO_ZYGOTE_SOCKET_NAME passed to zygote");
   }
 
   co::CoroutineScheduler scheduler;
@@ -102,7 +104,6 @@ void ZygoteCore::WaitForSpawn(co::Coroutine *c) {
     if (absl::Status status = HandleSpawn(request, &response, std::move(fds));
         !status.ok()) {
       response.set_error(status.ToString());
-      return;
     }
     std::cout << "server sending " << response.DebugString() << std::endl;
     if (!response.SerializeToArray(sendbuf, kSendBufLen)) {
@@ -151,6 +152,20 @@ ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
     local_symbols.AddSymbol(var.name(), var.value(), var.exported());
   }
 
+  // It's better to look for the DSO now as reporting an error later
+  // is after the fork and this isn't as good for the user.
+  if (!req.dso().empty()) {
+    struct stat st;
+    std::string exe = local_symbols.ReplaceSymbols(req.dso());
+
+    int e = ::stat(exe.c_str(), &st);
+    if (e == -1) {
+      // Can't find the shared object.
+      std::cerr << "Failed to find shared object " << exe << std::endl;
+      return absl::InternalError(
+          absl::StrFormat("Can't find shared object %s", exe));
+    }
+  }
   pid_t pid = fork();
   if (pid == -1) {
     return absl::InternalError(
@@ -219,13 +234,12 @@ void ZygoteCore::InvokeMainAfterSpawn(const control::SpawnRequest &&req,
     argv.push_back(arg.c_str());
   }
 
-
   absl::flat_hash_map<std::string, Symbol *> env_vars =
       local_symbols.GetEnvironmentSymbols();
   for (auto & [ name, symbol ] : env_vars) {
     setenv(name.c_str(), symbol->Value().c_str(), 1);
   }
-  
+
   setpgrp();
 
   // Convert to a function pointer and call main.

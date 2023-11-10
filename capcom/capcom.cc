@@ -3,9 +3,12 @@
 namespace stagezero::capcom {
 
 Capcom::Capcom(co::CoroutineScheduler &scheduler, toolbelt::InetAddress addr,
-               int notify_fd, toolbelt::InetAddress stagezero)
-    : co_scheduler_(scheduler), addr_(std::move(addr)), notify_fd_(notify_fd),
-      stagezero_(std::move(stagezero)) {}
+               int notify_fd)
+    : co_scheduler_(scheduler), addr_(std::move(addr)), notify_fd_(notify_fd) {
+  // TODO: how to get the port for stagezero.
+  local_compute_ = {.name = "<localhost>",
+                    .addr = toolbelt::InetAddress("localhost", 6522)};
+}
 
 Capcom::~Capcom() {
   // Clear this before other data members get destroyed.
@@ -117,7 +120,7 @@ absl::Status Capcom::Run() {
 
   return absl::OkStatus();
 }
-void Capcom::SendSubsystemStatusEvent(Subsystem* subsystem) {
+void Capcom::SendSubsystemStatusEvent(Subsystem *subsystem) {
   for (auto &handler : client_handlers_) {
     if (absl::Status status = handler->SendSubsystemStatusEvent(subsystem);
         !status.ok()) {
@@ -128,15 +131,30 @@ void Capcom::SendSubsystemStatusEvent(Subsystem* subsystem) {
   }
 }
 
-void Capcom::SendAlarm(const Alarm& alarm) {
+void Capcom::SendAlarm(const Alarm &alarm) {
   for (auto &handler : client_handlers_) {
-    if (absl::Status status = handler->SendAlarm(alarm);
-        !status.ok()) {
+    if (absl::Status status = handler->SendAlarm(alarm); !status.ok()) {
       logger_.Log(toolbelt::LogLevel::kError,
                   "Failed to send alarm to client %s: %s",
                   handler->GetClientName().c_str(), status.ToString().c_str());
     }
   }
+}
+
+std::vector<Subsystem *> Capcom::GetSubsystems() const {
+  std::vector<Subsystem *> result;
+  for (auto &s : subsystems_) {
+    result.push_back(s.second.get());
+  }
+  return result;
+}
+
+std::vector<Alarm *> Capcom::GetAlarms() const {
+  std::vector<Alarm *> result;
+  for (auto &s : subsystems_) {
+    s.second->CollectAlarms(result);
+  }
+  return result;
 }
 
 } // namespace stagezero::capcom

@@ -31,6 +31,7 @@ struct Alarm {
     kCleared,
   };
 
+  std::string id;
   std::string name;
   Type type;
   Severity severity;

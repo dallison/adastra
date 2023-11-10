@@ -1,6 +1,8 @@
 
 #pragma once
 
+#include <iostream>
+
 namespace stagezero::capcom {
 
 class Capcom;
@@ -50,6 +52,16 @@ inline const char *OperStateName(OperState s) {
    case OperState::kBroken:
     return "kBroken";  
    }
+}
+
+inline std::ostream& operator<<(std::ostream& os, AdminState s) {
+  os << AdminStateName(s);
+  return os;
+}
+
+inline std::ostream& operator<<(std::ostream& os, OperState s) {
+  os << OperStateName(s);
+  return os;
 }
 
 } // namespace stagezero::capcom

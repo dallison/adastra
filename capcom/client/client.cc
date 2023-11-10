@@ -145,6 +145,49 @@ absl::StatusOr<Event> Client::ReadEvent(co::Coroutine *c) {
   return result;
 }
 
+absl::Status Client::AddCompute(const std::string &name,
+                                const toolbelt::InetAddress &addr,
+                                co::Coroutine *c) {
+  stagezero::capcom::proto::Request req;
+  auto add = req.mutable_add_compute();
+  add->set_name(name);
+  in_addr ip_addr = addr.IpAddress();
+  add->set_ip_addr(&ip_addr, sizeof(ip_addr));
+  add->set_port(addr.Port());
+
+  stagezero::capcom::proto::Response resp;
+  absl::Status status = SendRequestReceiveResponse(req, resp, c);
+  if (!status.ok()) {
+    return status;
+  }
+
+  auto &add_resp = resp.add_compute();
+  if (!add_resp.error().empty()) {
+    return absl::InternalError(
+        absl::StrFormat("Failed to add subsystem: %s", add_resp.error()));
+  }
+  return absl::OkStatus();
+}
+
+absl::Status Client::RemoveCompute(const std::string &name, co::Coroutine *c) {
+  stagezero::capcom::proto::Request req;
+  auto r = req.mutable_remove_compute();
+  r->set_name(name);
+
+  stagezero::capcom::proto::Response resp;
+  absl::Status status = SendRequestReceiveResponse(req, resp, c);
+  if (!status.ok()) {
+    return status;
+  }
+
+  auto &rem_resp = resp.remove_compute();
+  if (!rem_resp.error().empty()) {
+    return absl::InternalError(
+        absl::StrFormat("Failed to remove compute: %s", rem_resp.error()));
+  }
+  return absl::OkStatus();
+}
+
 absl::Status Client::AddSubsystem(const std::string &name,
                                   const SubsystemOptions &options,
                                   co::Coroutine *c) {
@@ -166,6 +209,36 @@ absl::Status Client::AddSubsystem(const std::string &name,
         sproc.sigterm_shutdown_timeout_secs);
     auto *s = proc->mutable_static_process();
     s->set_executable(sproc.executable);
+    proc->set_compute(sproc.compute);
+  }
+
+  // Add Zygotes.
+  for (auto &z : options.zygotes) {
+    auto *proc = add->add_processes();
+    auto *opts = proc->mutable_options();
+    opts->set_name(z.name);
+    opts->set_description(z.description);
+    opts->set_sigint_shutdown_timeout_secs(z.sigint_shutdown_timeout_secs);
+    opts->set_sigterm_shutdown_timeout_secs(z.sigterm_shutdown_timeout_secs);
+    auto *s = proc->mutable_zygote();
+    s->set_executable(z.executable);
+    proc->set_compute(z.compute);
+  }
+
+  // Add all virtual processes to the proto message.
+  for (auto &vproc : options.virtual_processes) {
+    auto *proc = add->add_processes();
+    auto *opts = proc->mutable_options();
+    opts->set_name(vproc.name);
+    opts->set_description(vproc.description);
+    opts->set_sigint_shutdown_timeout_secs(vproc.sigint_shutdown_timeout_secs);
+    opts->set_sigterm_shutdown_timeout_secs(
+        vproc.sigterm_shutdown_timeout_secs);
+    auto *s = proc->mutable_virtual_process();
+    s->set_zygote(vproc.zygote);
+    s->set_dso(vproc.dso);
+    s->set_main_func(vproc.main_func);
+    proc->set_compute(vproc.compute);
   }
 
   for (auto &child : options.children) {
@@ -185,6 +258,10 @@ absl::Status Client::AddSubsystem(const std::string &name,
         absl::StrFormat("Failed to add subsystem: %s", add_resp.error()));
   }
 
+  if (mode_ == ClientMode::kBlocking) {
+    return WaitForSubsystemState(name, AdminState::kOffline,
+                                 OperState::kOffline);
+  }
   return absl::OkStatus();
 }
 
@@ -233,6 +310,9 @@ absl::Status Client::StartSubsystem(const std::string &name, co::Coroutine *c) {
         absl::StrFormat("Failed to start subsystem: %s", start_resp.error()));
   }
 
+  if (mode_ == ClientMode::kBlocking) {
+    return WaitForSubsystemState(name, AdminState::kOnline, OperState::kOnline);
+  }
   return absl::OkStatus();
 }
 
@@ -256,7 +336,37 @@ absl::Status Client::StopSubsystem(const std::string &name, co::Coroutine *c) {
         absl::StrFormat("Failed to start subsystem: %s", stop_resp.error()));
   }
 
+  if (mode_ == ClientMode::kBlocking) {
+    return WaitForSubsystemState(name, AdminState::kOffline,
+                                 OperState::kOffline);
+  }
   return absl::OkStatus();
+}
+
+absl::Status Client::WaitForSubsystemState(const std::string &subsystem,
+                                           AdminState admin_state,
+                                           OperState oper_state) {
+  for (;;) {
+    absl::StatusOr<Event> event = WaitForEvent();
+    if (!event.ok()) {
+      return event.status();
+    }
+    if (event->type == EventType::kSubsystemStatus) {
+      SubsystemStatusEvent &s = std::get<0>(event->event);
+      if (s.subsystem == subsystem) {
+        if (admin_state == s.admin_state) {
+          if (s.admin_state == AdminState::kOnline &&
+              s.oper_state == OperState::kBroken) {
+            return absl::InternalError(
+                absl::StrFormat("Subsystem %s is broken", subsystem));
+          }
+          if (oper_state == s.oper_state) {
+            return absl::OkStatus();
+          }
+        }
+      }
+    }
+  }
 }
 
 absl::Status

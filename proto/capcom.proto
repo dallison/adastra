@@ -11,6 +11,24 @@ message InitResponse {
   int32 event_port = 2;
 }
 
+message AddComputeRequest {
+  string name = 1;
+  bytes ip_addr = 2;  // Host byte order.
+  int32 port = 3;       // Host byte order.
+}
+
+message AddComputeResponse {
+  string error = 1;
+}
+
+message RemoveComputeRequest {
+  string name = 1;
+}
+
+message RemoveComputeResponse {
+  string error = 1;
+}
+
 message Process {
   config.ProcessOptions options = 1;
 
@@ -19,6 +37,11 @@ message Process {
     config.StaticProcess zygote = 3;
     config.VirtualProcess virtual_process = 4;
   }
+
+  // Where this process will be run.  Leave empty for localhost.
+  // For a virtual process, the zygote must be running on the same
+  // compute.
+  string compute = 5;
 }
 
 message AddSubsystemRequest {
@@ -52,23 +75,49 @@ message StopSubsystemRequest { string subsystem = 1; }
 
 message StopSubsystemResponse { string error = 1; }
 
+message GetSubsystemsRequest {
+}
+
+message GetSubsystemsResponse {
+  string error = 1;
+  repeated SubsystemStatus subsystems = 2;
+}
+
+message GetAlarmsRequest {
+}
+
+message GetAlarmsResponse {
+   string error = 1;
+  repeated Alarm alarms = 2;
+ 
+}
+
 message Request {
   oneof request {
     InitRequest init = 1;
-    AddSubsystemRequest add_subsystem = 2;
-    RemoveSubsystemRequest remove_subsystem = 3;
-    StartSubsystemRequest start_subsystem = 4;
-    StopSubsystemRequest stop_subsystem = 5;
+    AddComputeRequest add_compute = 2;
+    RemoveComputeRequest remove_compute = 3;
+    AddSubsystemRequest add_subsystem = 4;
+    RemoveSubsystemRequest remove_subsystem = 5;
+    StartSubsystemRequest start_subsystem = 6;
+    StopSubsystemRequest stop_subsystem = 7;
+    GetSubsystemsRequest get_subsystems = 8;
+    GetAlarmsRequest get_alarms = 9;
+
   }
 }
 
 message Response {
   oneof response {
     InitResponse init = 1;
-    AddSubsystemResponse add_subsystem = 2;
-    RemoveSubsystemResponse remove_subsystem = 3;
-    StartSubsystemResponse start_subsystem = 4;
-    StopSubsystemResponse stop_subsystem = 5;
+    AddComputeResponse add_compute = 2;
+    RemoveComputeResponse remove_compute = 3;
+    AddSubsystemResponse add_subsystem = 4;
+    RemoveSubsystemResponse remove_subsystem = 5;
+    StartSubsystemResponse start_subsystem = 6;
+    StopSubsystemResponse stop_subsystem = 7;
+    GetSubsystemsResponse get_subsystems = 8;
+    GetAlarmsResponse get_alarms = 9;
   }
 }
 
@@ -130,12 +179,13 @@ message Alarm {
     CLEARED = 2;
   }
 
-  Type type = 1;
-  string name = 2;
-  Severity severity = 3;
-  Reason reason = 4;
-  Status status = 5;
-  string details = 6;
+  string id = 1;
+  Type type = 2;
+  string name = 3;
+  Severity severity = 4;
+  Reason reason = 5;
+  Status status = 6;
+  string details = 7;
 }
 
 message Event {

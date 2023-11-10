@@ -1,8 +1,8 @@
 #pragma once
 
 #include "capcom/subsystem.h"
-#include "common/tcp_client_handler.h"
 #include "common/alarm.h"
+#include "common/tcp_client_handler.h"
 #include "proto/capcom.pb.h"
 #include "toolbelt/logging.h"
 #include "toolbelt/sockets.h"
@@ -25,8 +25,8 @@ public:
       : TCPClientHandler(std::move(socket)), capcom_(capcom), id_(id) {}
   ~ClientHandler();
 
-  absl::Status SendSubsystemStatusEvent(Subsystem* subsystem);
-  absl::Status SendAlarm(const Alarm& alarm);
+  absl::Status SendSubsystemStatusEvent(Subsystem *subsystem);
+  absl::Status SendAlarm(const Alarm &alarm);
 
   co::CoroutineScheduler &GetScheduler() const override;
 
@@ -47,6 +47,13 @@ private:
   void HandleInit(const proto::InitRequest &req, proto::InitResponse *response,
                   co::Coroutine *c);
 
+  void HandleAddCompute(const proto::AddComputeRequest &req,
+                        proto::AddComputeResponse *response, co::Coroutine *c);
+
+  void HandleRemoveCompute(const proto::RemoveComputeRequest &req,
+                           proto::RemoveComputeResponse *response,
+                           co::Coroutine *c);
+
   void HandleAddSubsystem(const proto::AddSubsystemRequest &req,
                           proto::AddSubsystemResponse *response,
                           co::Coroutine *c);
@@ -62,6 +69,11 @@ private:
   void HandleStopSubsystem(const proto::StopSubsystemRequest &req,
                            proto::StopSubsystemResponse *response,
                            co::Coroutine *c);
+  void HandleGetSubsystems(const proto::GetSubsystemsRequest &req,
+                           proto::GetSubsystemsResponse *response,
+                           co::Coroutine *c);
+  void HandleGetAlarms(const proto::GetAlarmsRequest &req,
+                       proto::GetAlarmsResponse *response, co::Coroutine *c);
 
   Capcom &capcom_;
   uint32_t id_;

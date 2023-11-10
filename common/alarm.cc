@@ -3,6 +3,7 @@
 namespace stagezero::capcom {
 
 void Alarm::ToProto(proto::Alarm *dest) const {
+  dest->set_id(id);
   dest->set_name(name);
   dest->set_details(details);
   switch (type) {
@@ -58,6 +59,7 @@ void Alarm::ToProto(proto::Alarm *dest) const {
 }
 
 void Alarm::FromProto(const proto::Alarm &src) {
+  id = src.id();
   name = src.name();
   details = src.details();
   switch (src.type()) {

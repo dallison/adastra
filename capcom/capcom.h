@@ -2,12 +2,12 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
-#include "stagezero/client/client.h"
-#include "capcom/subsystem.h"
+#include "capcom/bitset.h"
 #include "capcom/client_handler.h"
+#include "capcom/subsystem.h"
+#include "stagezero/client/client.h"
 #include "toolbelt/logging.h"
 #include "toolbelt/sockets.h"
-#include "capcom/bitset.h"
 
 #include <memory>
 #include <string>
@@ -19,11 +19,15 @@ constexpr int64_t kStopped = 2;
 
 class ClientHandler;
 
+struct Compute {
+  std::string name;
+  toolbelt::InetAddress addr;
+};
+
 class Capcom {
 public:
-  Capcom(co::CoroutineScheduler &scheduler,
-                     toolbelt::InetAddress addr, int notify_fd,
-                     toolbelt::InetAddress stagezero);
+  Capcom(co::CoroutineScheduler &scheduler, toolbelt::InetAddress addr,
+         int notify_fd);
   ~Capcom();
 
   absl::Status Run();
@@ -33,8 +37,7 @@ private:
   friend class ClientHandler;
   friend class Subsystem;
   friend class Process;
-  const toolbelt::InetAddress GetStageZeroAddress() const { return stagezero_; }
-
+ 
   absl::Status HandleIncomingConnection(toolbelt::TCPSocket &listen_socket,
                                         co::Coroutine *c);
 
@@ -45,16 +48,45 @@ private:
   void CloseHandler(std::shared_ptr<ClientHandler> handler);
   void ListenerCoroutine(toolbelt::TCPSocket &listen_socket, co::Coroutine *c);
 
-  bool AddSubsystem(std::string name, std::shared_ptr<Subsystem> subsystem) {
-    std::cerr << "adding subsystem " << name << std::endl;
+  bool AddCompute(std::string name, const Compute &compute) {
+    std::cerr << "adding compute " << name << std::endl;
     auto[it, inserted] =
-        subsystems_.emplace(std::make_pair(std::move(name), std::move(subsystem)));
+        computes_.emplace(std::make_pair(std::move(name), compute));
     return inserted;
   }
 
- absl::Status RemoveSubsystem(const std::string& name) {
+  absl::Status RemoveCompute(const std::string &name) {
+    std::cerr << "Removing compute " << name << std::endl;
+
+    auto it = computes_.find(name);
+    if (it == computes_.end()) {
+      return absl::InternalError(absl::StrFormat("No such compute %s", name));
+    }
+    computes_.erase(it);
+    return absl::OkStatus();
+  }
+
+  const Compute *FindCompute(const std::string &name) const {
+    if (name.empty()) {
+            return &local_compute_;
+    }
+    auto it = computes_.find(name);
+    if (it == computes_.end()) {
+      return nullptr;
+    }
+    return &it->second;
+  }
+
+  bool AddSubsystem(std::string name, std::shared_ptr<Subsystem> subsystem) {
+    std::cerr << "adding subsystem " << name << std::endl;
+    auto[it, inserted] = subsystems_.emplace(
+        std::make_pair(std::move(name), std::move(subsystem)));
+    return inserted;
+  }
+
+  absl::Status RemoveSubsystem(const std::string &name) {
     std::cerr << "Removing subsystem " << name << std::endl;
-  
+
     auto it = subsystems_.find(name);
     if (it == subsystems_.end()) {
       return absl::InternalError(absl::StrFormat("No such subsystem %s", name));
@@ -63,23 +95,54 @@ private:
     return absl::OkStatus();
   }
 
-  std::shared_ptr<Subsystem> FindSubsystem(const std::string& name) const {
-        auto it = subsystems_.find(name);
+  std::shared_ptr<Subsystem> FindSubsystem(const std::string &name) const {
+    auto it = subsystems_.find(name);
     if (it == subsystems_.end()) {
       return nullptr;
     }
     return it->second;
   }
 
-  void SendSubsystemStatusEvent(Subsystem* subsystem);
+  bool AddZygote(std::string name, Zygote *zygote) {
+    std::cerr << "adding zygote " << name << std::endl;
+    auto[it, inserted] =
+        zygotes_.emplace(std::make_pair(std::move(name), zygote));
+    return inserted;
+  }
 
-  void SendAlarm(const Alarm& alarm);
-  
+  Zygote *FindZygote(const std::string &name) {
+    auto it = zygotes_.find(name);
+    if (it == zygotes_.end()) {
+      return nullptr;
+    }
+    return it->second;
+  }
+
+  absl::Status RemoveZygote(const std::string &name) {
+    std::cerr << "Removing zygote " << name << std::endl;
+
+    auto it = zygotes_.find(name);
+    if (it == zygotes_.end()) {
+      return absl::InternalError(absl::StrFormat("No such zygote %s", name));
+    }
+    zygotes_.erase(it);
+    return absl::OkStatus();
+  }
+
+  void SendSubsystemStatusEvent(Subsystem *subsystem);
+
+  void SendAlarm(const Alarm &alarm);
+
+  std::vector<Subsystem *> GetSubsystems() const;
+  std::vector<Alarm *> GetAlarms() const;
+
 private:
   co::CoroutineScheduler &co_scheduler_;
   toolbelt::InetAddress addr_;
   toolbelt::FileDescriptor notify_fd_;
-  toolbelt::InetAddress stagezero_;
+
+  Compute local_compute_;
+  absl::flat_hash_map<std::string, Compute> computes_;
 
   // All coroutines are owned by this set.
   absl::flat_hash_set<std::unique_ptr<co::Coroutine>> coroutines_;
@@ -87,10 +150,11 @@ private:
   std::vector<std::shared_ptr<ClientHandler>> client_handlers_;
   bool running_ = false;
   absl::flat_hash_map<std::string, std::shared_ptr<Subsystem>> subsystems_;
+  absl::flat_hash_map<std::string, Zygote *> zygotes_;
   toolbelt::Logger logger_;
 
   std::unique_ptr<stagezero::Client> main_client_;
 
   BitSet client_ids_;
 };
-}
+} // namespace stagezero::capcom

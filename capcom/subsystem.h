@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <list>
 #include <memory>
 #include <string>
@@ -7,19 +8,24 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "capcom/bitset.h"
+#include "common/alarm.h"
 #include "common/states.h"
+#include "common/vars.h"
 #include "proto/capcom.pb.h"
 #include "stagezero/client/client.h"
 #include "toolbelt/fd.h"
 #include "toolbelt/logging.h"
 #include "toolbelt/triggerfd.h"
-#include "common/vars.h"
-#include "common/alarm.h"
 
 namespace stagezero::capcom {
 
+using namespace std::chrono_literals;
+
 class Capcom;
 class Subsystem;
+struct Compute;
+
+constexpr uint32_t kNoClient = -1U;
 
 // Messages are sent through the message pipe.
 struct Message {
@@ -38,10 +44,11 @@ struct Message {
 
 class Process {
 public:
-  Process(std::string name) : name_(name) {}
+  Process(std::string name, std::shared_ptr<stagezero::Client> client)
+      : name_(name), client_(client) {}
   virtual ~Process() = default;
-  virtual absl::Status Launch(stagezero::Client &client, co::Coroutine *c) = 0;
-  absl::Status Stop(stagezero::Client &client, co::Coroutine *c);
+  virtual absl::Status Launch(co::Coroutine *c) = 0;
+  absl::Status Stop(co::Coroutine *c);
 
   const std::string &Name() const { return name_; }
 
@@ -53,8 +60,8 @@ public:
 
   int GetPid() const { return pid_; }
 
-  void RaiseAlarm(Capcom& capcom, const Alarm& alarm);
-  void ClearAlarm(Capcom& capcom);
+  void RaiseAlarm(Capcom &capcom, const Alarm &alarm);
+  void ClearAlarm(Capcom &capcom);
 
 protected:
   void ParseOptions(const stagezero::config::ProcessOptions &options);
@@ -73,29 +80,41 @@ protected:
   int pid_;
   Alarm alarm_;
   bool alarm_raised_ = false;
+  std::shared_ptr<stagezero::Client> client_;
 };
 
 class StaticProcess : public Process {
 public:
   StaticProcess(std::string name, std::string executable,
-                const stagezero::config::ProcessOptions &options);
-  absl::Status Launch(stagezero::Client &client, co::Coroutine *c) override;
+                const stagezero::config::ProcessOptions &options,
+                std::shared_ptr<stagezero::Client> client);
+  absl::Status Launch(co::Coroutine *c) override;
 
-private:
+protected:
   std::string executable_;
 };
 
 class Zygote : public StaticProcess {
 public:
   Zygote(std::string name, std::string executable,
-         stagezero::config::ProcessOptions &options)
-      : StaticProcess(name, executable, options) {}
+         const stagezero::config::ProcessOptions &options,
+         std::shared_ptr<stagezero::Client> client)
+      : StaticProcess(name, executable, options, std::move(client)) {}
+  absl::Status Launch(co::Coroutine *c) override;
 };
 
 class VirtualProcess : public Process {
 public:
-  VirtualProcess(std::string name) : Process(name) {}
-  absl::Status Launch(stagezero::Client &client, co::Coroutine *c) override;
+  VirtualProcess(std::string name, std::string zygote_name, std::string dso,
+                 std::string main_func,
+                 const stagezero::config::ProcessOptions &options,
+                 std::shared_ptr<stagezero::Client> client);
+  absl::Status Launch(co::Coroutine *c) override;
+
+private:
+  std::string zygote_name_;
+  std::string dso_;
+  std::string main_func_;
 };
 
 class Subsystem : public std::enable_shared_from_this<Subsystem> {
@@ -107,7 +126,17 @@ public:
 
   absl::Status
   AddStaticProcess(const stagezero::config::StaticProcess &proc,
-                   const stagezero::config::ProcessOptions &options);
+                   const stagezero::config::ProcessOptions &options,
+                   const Compute *compute, co::Coroutine *c);
+
+  absl::Status AddZygote(const stagezero::config::StaticProcess &proc,
+                         const stagezero::config::ProcessOptions &options,
+                         const Compute *compute, co::Coroutine *c);
+
+  absl::Status
+  AddVirtualProcess(const stagezero::config::VirtualProcess &proc,
+                    const stagezero::config::ProcessOptions &options,
+                    const Compute *compute, co::Coroutine *c);
 
   void RemoveProcess(const std::string &name);
 
@@ -122,7 +151,7 @@ public:
 
   bool CheckRemove(bool recursive);
 
-  void BuildStatusEvent(capcom::proto::SubsystemStatus *event);
+  void BuildStatus(capcom::proto::SubsystemStatus *status);
 
   void AddChild(std::shared_ptr<Subsystem> child) {
     std::cerr << "ADDING CHILD " << child->Name() << " to " << Name()
@@ -134,6 +163,8 @@ public:
     parents_.push_back(parent);
   }
 
+  void CollectAlarms(std::vector<Alarm *> &alarms) const;
+
 private:
   enum class EventSource {
     kUnknown,
@@ -141,7 +172,16 @@ private:
     kMessage,   // Message from parents, children or API.
   };
 
+  enum class StateTransition {
+    kStay,
+    kLeave,
+  };
+
   static constexpr int kDefaultMaxRestarts = 3;
+
+  static std::function<void(std::shared_ptr<Subsystem>, uint32_t,
+                            co::Coroutine *)>
+      state_funcs_[];
 
   absl::Status BuildMessagePipe();
   absl::StatusOr<Message> ReadMessage() const;
@@ -166,6 +206,8 @@ private:
     return it->second;
   }
 
+  Zygote *FindZygote(const std::string &name);
+
   bool AllProcessesRunning() const {
     for (auto &p : processes_) {
       if (!p->IsRunning()) {
@@ -182,12 +224,19 @@ private:
     }
     return true;
   }
+
+  absl::StatusOr<std::shared_ptr<stagezero::Client>>
+  ConnectToStageZero(const Compute *compute, co::Coroutine *c);
+
   // State event processing coroutines.
   // General event processor.  Calls handler for incoming events
   // passing the file descriptor upon which the event arrived.  If it
   // returns false, the loop terminates.
-  void ProcessEvents(co::Coroutine *c,
-                     std::function<bool(EventSource, co::Coroutine *)> handler);
+  void RunSubsystemInState(
+      co::Coroutine *c,
+      std::function<StateTransition(EventSource, std::shared_ptr<stagezero::Client> client,
+                                    co::Coroutine *)>
+          handler);
 
   void Offline(uint32_t client_id, co::Coroutine *c);
   void StartingChildren(uint32_t client_id, co::Coroutine *c);
@@ -200,22 +249,27 @@ private:
 
   toolbelt::Logger &GetLogger() const;
 
-  void EnterState(
-      std::function<void(std::shared_ptr<Subsystem>, uint32_t, co::Coroutine *)>
-          func,
-      uint32_t client_id);
+  void EnterState(OperState state, uint32_t client_id);
 
-  void LaunchProcesses(co::Coroutine *c);
+  absl::Status LaunchProcesses(co::Coroutine *c);
   void StopProcesses(co::Coroutine *c);
 
-  void RestartIfPossible(std::string process_id, uint32_t client_id);
+  void RestartIfPossibleAfterProcessCrash(std::string process_id,
+                                          uint32_t client_id, co::Coroutine *c);
+
+  void RestartIfPossible(uint32_t client_id, co::Coroutine *c);
 
   void RestartNow(uint32_t client_id);
   void NotifyParents();
   void SendToChildren(AdminState state, uint32_t client_id);
 
-  void RaiseAlarm(const Alarm& alarm);
+  void RaiseAlarm(const Alarm &alarm);
   void ClearAlarm();
+
+  void ResetResartState() {
+    num_restarts_ = 0;
+    restart_delay_ = 1s;
+  }
 
   co::CoroutineScheduler &Scheduler();
 
@@ -226,7 +280,6 @@ private:
   OperState oper_state_;
 
   toolbelt::TriggerFd interrupt_;
-  std::unique_ptr<stagezero::Client> stagezero_client_;
 
   // The command pipe is a pipe connected to this subsystem. The
   // incoming_command_ fd is the read end and command_ is the
@@ -248,6 +301,15 @@ private:
 
   Alarm alarm_;
   bool alarm_raised_ = false;
+
+  static constexpr std::chrono::duration<int> kMaxRestartDelay = 32s;
+  std::chrono::duration<int> restart_delay_ = 1s;
+
+  // Mapping of compute name vs StageZero client for that compute.
+  // Each StageZero client is unique to this subsystem, so each subsystem
+  // maintains its own connections to the StageZeros on the computes.
+  absl::flat_hash_map<std::string, std::shared_ptr<stagezero::Client>>
+      computes_;
 };
 
 } // namespace stagezero::capcom

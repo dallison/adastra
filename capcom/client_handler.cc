@@ -22,11 +22,11 @@ void ClientHandler::AddCoroutine(std::unique_ptr<co::Coroutine> c) {
 absl::Status ClientHandler::SendSubsystemStatusEvent(Subsystem *subsystem) {
   auto event = std::make_unique<capcom::proto::Event>();
   auto s = event->mutable_subsystem_status();
-  subsystem->BuildStatusEvent(s);
+  subsystem->BuildStatus(s);
   return QueueEvent(std::move(event));
 }
 
-absl::Status ClientHandler::SendAlarm(const Alarm& alarm) {
+absl::Status ClientHandler::SendAlarm(const Alarm &alarm) {
   auto event = std::make_unique<capcom::proto::Event>();
   auto a = event->mutable_alarm();
   alarm.ToProto(a);
@@ -42,6 +42,14 @@ absl::Status ClientHandler::HandleMessage(const proto::Request &req,
   case proto::Request::kInit:
     HandleInit(req.init(), resp.mutable_init(), c);
     break;
+  case proto::Request::kAddCompute:
+    HandleAddCompute(req.add_compute(), resp.mutable_add_compute(), c);
+    break;
+
+  case proto::Request::kRemoveCompute:
+    HandleRemoveCompute(req.remove_compute(), resp.mutable_remove_compute(), c);
+    break;
+
   case proto::Request::kAddSubsystem:
     HandleAddSubsystem(req.add_subsystem(), resp.mutable_add_subsystem(), c);
     break;
@@ -56,6 +64,12 @@ absl::Status ClientHandler::HandleMessage(const proto::Request &req,
     break;
   case proto::Request::kStopSubsystem:
     HandleStopSubsystem(req.stop_subsystem(), resp.mutable_stop_subsystem(), c);
+    break;
+  case proto::Request::kGetSubsystems:
+    HandleGetSubsystems(req.get_subsystems(), resp.mutable_get_subsystems(), c);
+    break;
+  case proto::Request::kGetAlarms:
+    HandleGetAlarms(req.get_alarms(), resp.mutable_get_alarms(), c);
     break;
 
   case proto::Request::REQUEST_NOT_SET:
@@ -73,6 +87,50 @@ void ClientHandler::HandleInit(const proto::InitRequest &req,
     return;
   }
   response->set_event_port(*s);
+}
+
+void ClientHandler::HandleAddCompute(const proto::AddComputeRequest &req,
+                                     proto::AddComputeResponse *response,
+                                     co::Coroutine *c) {
+  struct sockaddr_in addr = {
+#if defined(__APPLE__)
+    .sin_len = sizeof(int),
+#endif
+    .sin_family = AF_INET,
+    .sin_port = htons(req.port()),
+  };
+  uint32_t ip_addr;
+
+  memcpy(&ip_addr, req.ip_addr().data(), req.ip_addr().size());
+  addr.sin_addr.s_addr = htonl(ip_addr);
+
+  toolbelt::InetAddress stagezero_addr(addr);
+
+  // Probe a connection to the stagezero instance to make sure it's
+  // there.
+  stagezero::Client sclient;
+  if (absl::Status status = sclient.Init(stagezero_addr, "<capcom probe>"); !status.ok()) {
+    response->set_error(absl::StrFormat(
+        "Cannot connect to StageZero on compute %s at address %s", req.name(),
+        stagezero_addr.ToString()));
+    return;
+  }
+
+  Compute compute = {req.name(), toolbelt::InetAddress(addr)};
+  bool ok = capcom_.AddCompute(req.name(), compute);
+  if (!ok) {
+    response->set_error(
+        absl::StrFormat("Failed to add compute %s", req.name()));
+  }
+}
+
+void ClientHandler::HandleRemoveCompute(const proto::RemoveComputeRequest &req,
+                                        proto::RemoveComputeResponse *response,
+                                        co::Coroutine *c) {
+  if (absl::Status status = capcom_.RemoveCompute(req.name()); !status.ok()) {
+    response->set_error(
+        absl::StrFormat("Failed to remove compute %s", req.name()));
+  }
 }
 
 void ClientHandler::HandleAddSubsystem(const proto::AddSubsystemRequest &req,
@@ -101,10 +159,18 @@ void ClientHandler::HandleAddSubsystem(const proto::AddSubsystemRequest &req,
 
   // Add the processes to the subsystem.
   for (auto &proc : req.processes()) {
+    const Compute *compute = capcom_.FindCompute(proc.compute());
+    if (compute == nullptr) {
+      response->set_error(absl::StrFormat(
+          "No such compute %s for process %s (have you added it?)",
+          proc.compute(), proc.options().name()));
+      return;
+    }
+
     switch (proc.proc_case()) {
     case proto::Process::kStaticProcess:
       if (absl::Status status = subsystem->AddStaticProcess(
-              proc.static_process(), proc.options());
+              proc.static_process(), proc.options(), compute, c);
           !status.ok()) {
         response->set_error(
             absl::StrFormat("Failed to add static process %s: %s",
@@ -113,8 +179,24 @@ void ClientHandler::HandleAddSubsystem(const proto::AddSubsystemRequest &req,
       }
       break;
     case proto::Process::kZygote:
+      if (absl::Status status =
+              subsystem->AddZygote(proc.zygote(), proc.options(), compute, c);
+          !status.ok()) {
+        response->set_error(absl::StrFormat("Failed to add zygote %s: %s",
+                                            proc.options().name(),
+                                            status.ToString()));
+        return;
+      }
       break;
     case proto::Process::kVirtualProcess:
+      if (absl::Status status = subsystem->AddVirtualProcess(
+              proc.virtual_process(), proc.options(), compute, c);
+          !status.ok()) {
+        response->set_error(
+            absl::StrFormat("Failed to add virtual process %s: %s",
+                            proc.options().name(), status.ToString()));
+        return;
+      }
       break;
     case proto::Process::PROC_NOT_SET:
       break;
@@ -161,7 +243,8 @@ void ClientHandler::HandleStartSubsystem(
     return;
   }
   Message message = {.code = Message::kChangeAdmin,
-                     .state.admin = AdminState::kOnline, .client_id = id_};
+                     .state.admin = AdminState::kOnline,
+                     .client_id = id_};
   if (absl::Status status = subsystem->SendMessage(message); !status.ok()) {
     response->set_error(absl::StrFormat("Failed to start subsystem %s: %s",
                                         req.subsystem(), status.ToString()));
@@ -179,11 +262,33 @@ void ClientHandler::HandleStopSubsystem(const proto::StopSubsystemRequest &req,
     return;
   }
   Message message = {.code = Message::kChangeAdmin,
-                     .state.admin = AdminState::kOffline, .client_id = id_};
+                     .state.admin = AdminState::kOffline,
+                     .client_id = id_};
   if (absl::Status status = subsystem->SendMessage(message); !status.ok()) {
     response->set_error(absl::StrFormat("Failed to stop subsystem %s: %s",
                                         req.subsystem(), status.ToString()));
     return;
   }
 }
+
+void ClientHandler::HandleGetSubsystems(const proto::GetSubsystemsRequest &req,
+                                        proto::GetSubsystemsResponse *response,
+                                        co::Coroutine *c) {
+  std::vector<Subsystem *> subsystems = capcom_.GetSubsystems();
+  for (auto subsystem : subsystems) {
+    auto *s = response->add_subsystems();
+    subsystem->BuildStatus(s);
+  }
+}
+
+void ClientHandler::HandleGetAlarms(const proto::GetAlarmsRequest &req,
+                                    proto::GetAlarmsResponse *response,
+                                    co::Coroutine *c) {
+  std::vector<Alarm *> alarms = capcom_.GetAlarms();
+  for (auto alarm : alarms) {
+    auto *a = response->add_alarms();
+    alarm->ToProto(a);
+  }
+}
+
 } // namespace stagezero::capcom

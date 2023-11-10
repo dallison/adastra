@@ -21,8 +21,10 @@ using OperState = stagezero::capcom::OperState;
 using SubsystemStatusEvent = stagezero::capcom::client::SubsystemStatusEvent;
 using Event = stagezero::capcom::client::Event;
 using EventType = stagezero::capcom::client::EventType;
+using ClientMode = stagezero::capcom::client::ClientMode;
 
 void SignalHandler(int sig);
+void SignalQuitHandler(int sig);
 
 class CapcomTest : public ::testing::Test {
 public:
@@ -60,6 +62,7 @@ public:
     (void)::read(stagezero_pipe_[0], buf, 8);
     std::cout << "stagezero running\n";
     signal(SIGINT, SignalHandler);
+    signal(SIGQUIT, SignalQuitHandler);
   }
 
   static void StartCapcom() {
@@ -71,7 +74,7 @@ public:
 
     capcom_addr_ = toolbelt::InetAddress("localhost", 6523);
     capcom_ = std::make_unique<stagezero::capcom::Capcom>(
-        capcom_scheduler_, capcom_addr_, capcom_pipe_[1], stagezero_addr_);
+        capcom_scheduler_, capcom_addr_, capcom_pipe_[1]);
 
     // Start capcom running in a thread.
     capcom_thread_ = std::thread([]() {
@@ -137,7 +140,7 @@ public:
                      std::string subsystem, AdminState admin_state,
                      OperState oper_state) {
     std::cout << "waiting for subsystem state change " << subsystem << " "
-              << (int)admin_state << " " << (int)oper_state << std::endl;
+              << admin_state << " " << oper_state << std::endl;
     for (int retry = 0; retry < 10; retry++) {
       absl::StatusOr<Event> event = client.WaitForEvent();
       EXPECT_TRUE(event.ok());
@@ -148,10 +151,10 @@ public:
       std::cerr << "GOT CAPCOM EVENT " << (int)event->type << std::endl;
       if (event->type == EventType::kSubsystemStatus) {
         SubsystemStatusEvent &s = std::get<0>(event->event);
-        std::cerr << s.subsystem << " " << (int)s.admin_state << " "
-                  << (int)s.oper_state << std::endl;
+        std::cerr << s.subsystem << " " << s.admin_state << " " << s.oper_state
+                  << std::endl;
         std::cerr << "waiting for subsystem state change " << subsystem << " "
-                  << (int)admin_state << " " << (int)oper_state << std::endl;
+                  << admin_state << " " << oper_state << std::endl;
         if (s.subsystem == subsystem && s.admin_state == admin_state &&
             s.oper_state == oper_state) {
           std::cerr << "event OK" << std::endl;
@@ -165,8 +168,8 @@ public:
 
   static const toolbelt::InetAddress &CapcomAddr() { return capcom_addr_; }
 
-  co::CoroutineScheduler &CapcomScheduler() const { return capcom_scheduler_; }
-  co::CoroutineScheduler &StageZeroScheduler() const {
+  static co::CoroutineScheduler &CapcomScheduler() { return capcom_scheduler_; }
+  static co::CoroutineScheduler &StageZeroScheduler() {
     return stagezero_scheduler_;
   }
 
@@ -209,13 +212,57 @@ void SignalHandler(int sig) {
   raise(sig);
 }
 
+void SignalQuitHandler(int sig) {
+  printf("Signal %d\n", sig);
+  CapcomTest::CapcomScheduler().Show();
+  CapcomTest::Capcom()->Stop();
+  CapcomTest::StageZero()->Stop();
+  CapcomTest::WaitForStop();
+
+  signal(sig, SIG_DFL);
+  raise(sig);
+}
+
 TEST_F(CapcomTest, Init) {
-  stagezero::capcom::client::Client client;
+  stagezero::capcom::client::Client client(ClientMode::kBlocking);
   InitClient(client, "foobar1");
 }
 
+TEST_F(CapcomTest, Compute) {
+  stagezero::capcom::client::Client client(ClientMode::kBlocking);
+  InitClient(client, "foobar1");
+
+  // Should work.
+  absl::Status status =
+      client.AddCompute("compute1", toolbelt::InetAddress("localhost", 6522));
+  ASSERT_TRUE(status.ok());
+
+  // Duplicate.
+  status =
+      client.AddCompute("compute1", toolbelt::InetAddress("localhost", 6522));
+  ASSERT_FALSE(status.ok());
+
+  // Bad host name
+  status =
+      client.AddCompute("compute1", toolbelt::InetAddress("foobarfoo", 6522));
+  ASSERT_FALSE(status.ok());
+
+  // Bad port.
+  status =
+      client.AddCompute("compute1", toolbelt::InetAddress("localhost", 6525));
+  ASSERT_FALSE(status.ok());
+
+  // No such compute.
+  status = client.RemoveCompute("compute2");
+  ASSERT_FALSE(status.ok());
+
+  // Will work.
+  status = client.RemoveCompute("compute1");
+  ASSERT_TRUE(status.ok());
+}
+
 TEST_F(CapcomTest, SimpleSubsystem) {
-  stagezero::capcom::client::Client client;
+  stagezero::capcom::client::Client client(ClientMode::kBlocking);
   InitClient(client, "foobar1");
 
   absl::Status status = client.AddSubsystem(
@@ -230,8 +277,79 @@ TEST_F(CapcomTest, SimpleSubsystem) {
   ASSERT_TRUE(status.ok());
 }
 
+TEST_F(CapcomTest, SimpleSubsystemCompute) {
+  stagezero::capcom::client::Client client(ClientMode::kBlocking);
+  InitClient(client, "foobar1");
+
+  absl::Status status =
+      client.AddCompute("localhost", toolbelt::InetAddress("localhost", 6522));
+  ASSERT_TRUE(status.ok());
+
+  status = client.AddSubsystem(
+      "foobar",
+      {.static_processes = {{
+           .name = "loop",
+           .executable = "${runfiles_dir}/__main__/stagezero/testdata/loop",
+           .compute = "localhost",
+       }}});
+  ASSERT_TRUE(status.ok());
+
+  // Unknown compute should fail.
+  status = client.AddSubsystem(
+      "foobar2",
+      {.static_processes = {{
+           .name = "loop",
+           .executable = "${runfiles_dir}/__main__/stagezero/testdata/loop",
+           .compute = "notknown",
+       }}});
+  ASSERT_FALSE(status.ok());
+
+  status = client.RemoveSubsystem("foobar", false);
+  ASSERT_TRUE(status.ok());
+
+  status = client.RemoveCompute("localhost");
+  ASSERT_TRUE(status.ok());
+}
+
+TEST_F(CapcomTest, SubsystemWithMultipleCompute) {
+  stagezero::capcom::client::Client client(ClientMode::kBlocking);
+  InitClient(client, "foobar1");
+
+  absl::Status status =
+      client.AddCompute("localhost1", toolbelt::InetAddress("localhost", 6522));
+  ASSERT_TRUE(status.ok());
+
+  status =
+      client.AddCompute("localhost2", toolbelt::InetAddress("localhost", 6522));
+  ASSERT_TRUE(status.ok());
+
+  status = client.AddSubsystem(
+      "foobar",
+      {.static_processes = {
+           {
+               .name = "loop1",
+               .executable = "${runfiles_dir}/__main__/stagezero/testdata/loop",
+               .compute = "localhost1",
+           },
+           {
+               .name = "loop2",
+               .executable = "${runfiles_dir}/__main__/stagezero/testdata/loop",
+               .compute = "localhost2",
+           }}});
+  ASSERT_TRUE(status.ok());
+
+  status = client.RemoveSubsystem("foobar", false);
+  ASSERT_TRUE(status.ok());
+
+  status = client.RemoveCompute("localhost1");
+  ASSERT_TRUE(status.ok());
+
+  status = client.RemoveCompute("localhost2");
+  ASSERT_TRUE(status.ok());
+}
+
 TEST_F(CapcomTest, StartSimpleSubsystem) {
-  stagezero::capcom::client::Client client;
+  stagezero::capcom::client::Client client(ClientMode::kBlocking);
   InitClient(client, "foobar1");
 
   absl::Status status = client.AddSubsystem(
@@ -242,23 +360,95 @@ TEST_F(CapcomTest, StartSimpleSubsystem) {
        }}});
   ASSERT_TRUE(status.ok());
 
-  WaitForState(client, "foobar1", AdminState::kOffline, OperState::kOffline);
-
   status = client.StartSubsystem("foobar1");
   ASSERT_TRUE(status.ok());
-  WaitForState(client, "foobar1", AdminState::kOnline, OperState::kOnline);
 
   std::cerr << "got online, stopping" << std::endl;
   status = client.StopSubsystem("foobar1");
   ASSERT_TRUE(status.ok());
-  WaitForState(client, "foobar1", AdminState::kOffline, OperState::kOffline);
 
   status = client.RemoveSubsystem("foobar1", false);
   ASSERT_TRUE(status.ok());
 }
 
+TEST_F(CapcomTest, StartSimpleSubsystemCompute) {
+  stagezero::capcom::client::Client client(ClientMode::kBlocking);
+  InitClient(client, "foobar1");
+
+  absl::Status status =
+      client.AddCompute("localhost", toolbelt::InetAddress("localhost", 6522));
+  ASSERT_TRUE(status.ok());
+
+  status = client.AddSubsystem(
+      "foobar1",
+      {.static_processes = {{
+           .name = "loop",
+           .executable = "${runfiles_dir}/__main__/stagezero/testdata/loop",
+           .compute = "localhost",
+       }}});
+  ASSERT_TRUE(status.ok());
+
+  status = client.StartSubsystem("foobar1");
+  ASSERT_TRUE(status.ok());
+
+  std::cerr << "got online, stopping" << std::endl;
+  status = client.StopSubsystem("foobar1");
+  ASSERT_TRUE(status.ok());
+
+  status = client.RemoveSubsystem("foobar1", false);
+  ASSERT_TRUE(status.ok());
+
+  status = client.RemoveCompute("localhost");
+  ASSERT_TRUE(status.ok());
+}
+
+TEST_F(CapcomTest, StartSimpleSubsystemWithMultipleCompute) {
+  stagezero::capcom::client::Client client(ClientMode::kBlocking);
+  InitClient(client, "foobar1");
+
+  absl::Status status =
+      client.AddCompute("localhost1", toolbelt::InetAddress("localhost", 6522));
+  ASSERT_TRUE(status.ok());
+
+  status =
+      client.AddCompute("localhost2", toolbelt::InetAddress("localhost", 6522));
+  ASSERT_TRUE(status.ok());
+
+  status = client.AddSubsystem(
+      "foobar1",
+      {.static_processes = {
+           {
+               .name = "loop1",
+               .executable = "${runfiles_dir}/__main__/stagezero/testdata/loop",
+               .compute = "localhost1",
+           },
+           {
+               .name = "loop2",
+               .executable = "${runfiles_dir}/__main__/stagezero/testdata/loop",
+               .compute = "localhost2",
+           },
+       }});
+  ASSERT_TRUE(status.ok());
+
+  status = client.StartSubsystem("foobar1");
+  ASSERT_TRUE(status.ok());
+
+  std::cerr << "got online, stopping" << std::endl;
+  status = client.StopSubsystem("foobar1");
+  ASSERT_TRUE(status.ok());
+
+  status = client.RemoveSubsystem("foobar1", false);
+  ASSERT_TRUE(status.ok());
+
+  status = client.RemoveCompute("localhost1");
+  ASSERT_TRUE(status.ok());
+
+  status = client.RemoveCompute("localhost2");
+  ASSERT_TRUE(status.ok());
+}
+
 TEST_F(CapcomTest, RestartSimpleSubsystem) {
-  stagezero::capcom::client::Client client;
+  stagezero::capcom::client::Client client(ClientMode::kNonBlocking);
   InitClient(client, "foobar1");
 
   absl::Status status = client.AddSubsystem(
@@ -299,7 +489,7 @@ TEST_F(CapcomTest, RestartSimpleSubsystem) {
 }
 
 TEST_F(CapcomTest, StartSimpleSubsystemTree) {
-  stagezero::capcom::client::Client client;
+  stagezero::capcom::client::Client client(ClientMode::kNonBlocking);
   InitClient(client, "foobar1");
 
   absl::Status status = client.AddSubsystem(
@@ -337,6 +527,133 @@ TEST_F(CapcomTest, StartSimpleSubsystemTree) {
   ASSERT_TRUE(status.ok());
 
   status = client.RemoveSubsystem("parent", false);
+  ASSERT_TRUE(status.ok());
+}
+
+TEST_F(CapcomTest, RestartSimpleSubsystemTree) {
+  stagezero::capcom::client::Client client(ClientMode::kNonBlocking);
+  InitClient(client, "foobar1");
+
+  absl::Status status = client.AddSubsystem(
+      "child",
+      {.static_processes = {{
+           .name = "loop1",
+           .executable = "${runfiles_dir}/__main__/stagezero/testdata/loop",
+       }}});
+  ASSERT_TRUE(status.ok());
+
+  WaitForState(client, "child", AdminState::kOffline, OperState::kOffline);
+
+  status = client.AddSubsystem("parent", {.children = {
+                                              "child",
+                                          }});
+  ASSERT_TRUE(status.ok());
+
+  WaitForState(client, "parent", AdminState::kOffline, OperState::kOffline);
+
+  status = client.StartSubsystem("parent");
+  ASSERT_TRUE(status.ok());
+
+  // Get the pid of the child process.
+  Event e =
+      WaitForState(client, "child", AdminState::kOnline, OperState::kOnline);
+  sleep(1);
+
+  // Wait for parent to go online.
+  WaitForState(client, "parent", AdminState::kOnline, OperState::kOnline);
+
+  // Kill the child process.
+  SubsystemStatusEvent s = std::get<0>(e.event);
+  ASSERT_EQ(1, s.processes.size());
+  int pid = s.processes[0].pid;
+  std::cerr << "pid is " << pid << std::endl;
+  kill(pid, SIGTERM);
+
+  // Wait for the subsytems to go into restarting, then back online.
+  WaitForState(client, "child", AdminState::kOnline, OperState::kRestarting);
+  WaitForState(client, "parent", AdminState::kOnline, OperState::kRestarting);
+
+  WaitForState(client, "child", AdminState::kOnline, OperState::kOnline);
+  WaitForState(client, "parent", AdminState::kOnline, OperState::kOnline);
+  sleep(1);
+
+  status = client.StopSubsystem("parent");
+  ASSERT_TRUE(status.ok());
+  WaitForState(client, "parent", AdminState::kOffline, OperState::kOffline);
+
+  status = client.RemoveSubsystem("child", false);
+  ASSERT_TRUE(status.ok());
+
+  status = client.RemoveSubsystem("parent", false);
+  ASSERT_TRUE(status.ok());
+}
+
+TEST_F(CapcomTest, Zygote) {
+  stagezero::capcom::client::Client client(ClientMode::kBlocking);
+  InitClient(client, "foobar1");
+
+  absl::Status status = client.AddSubsystem(
+      "zygote1",
+      {.zygotes = {{
+           .name = "loop",
+           .executable = "${runfiles_dir}/__main__/stagezero/testdata/zygote",
+       }}});
+  ASSERT_TRUE(status.ok());
+
+  status = client.StartSubsystem("zygote1");
+  ASSERT_TRUE(status.ok());
+
+  status = client.StopSubsystem("zygote1");
+  ASSERT_TRUE(status.ok());
+
+  status = client.RemoveSubsystem("zygote1", false);
+  ASSERT_TRUE(status.ok());
+}
+
+TEST_F(CapcomTest, VirtualProcess) {
+  stagezero::capcom::client::Client client(ClientMode::kBlocking);
+  InitClient(client, "foobar1");
+
+  absl::Status status = client.AddSubsystem(
+      "zygote1",
+      {.zygotes = {{
+           .name = "zygote1",
+           .executable = "${runfiles_dir}/__main__/stagezero/testdata/zygote",
+       }}});
+  ASSERT_TRUE(status.ok());
+
+  status = client.AddSubsystem(
+      "virtual",
+      {.virtual_processes = {{
+           .name = "virtual_module",
+           .zygote = "zygote1",
+           .dso = "${runfiles_dir}/__main__/stagezero/testdata/module.so",
+           .main_func = "Main",
+       }}});
+  ASSERT_TRUE(status.ok());
+
+  // Start zygote.
+  status = client.StartSubsystem("zygote1");
+  ASSERT_TRUE(status.ok());
+
+  // Start virtual.
+  status = client.StartSubsystem("virtual");
+  ASSERT_TRUE(status.ok());
+
+  sleep(2);
+
+  // Stop virtual.
+  status = client.StopSubsystem("virtual");
+  ASSERT_TRUE(status.ok());
+
+  // Stop zygote.
+  status = client.StopSubsystem("zygote1");
+  ASSERT_TRUE(status.ok());
+
+  // Remove virtual and zygote.
+  status = client.RemoveSubsystem("virtual", false);
+  ASSERT_TRUE(status.ok());
+  status = client.RemoveSubsystem("zygote1", false);
   ASSERT_TRUE(status.ok());
 }
 
