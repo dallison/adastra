@@ -75,6 +75,8 @@ private:
   void HandleGetAlarms(const proto::GetAlarmsRequest &req,
                        proto::GetAlarmsResponse *response, co::Coroutine *c);
 
+ void HandleAbort(const proto::AbortRequest &req, proto::AbortResponse* response,
+                  co::Coroutine *c);
   Capcom &capcom_;
   uint32_t id_;
 };

@@ -32,6 +32,7 @@ struct Message {
   enum Code {
     kChangeAdmin,
     kReportOper,
+    kAbort,
   };
   Code code;
   Subsystem *sender;
@@ -163,7 +164,34 @@ public:
     parents_.push_back(parent);
   }
 
+  absl::Status RemoveChild(Subsystem* child) {
+    for (auto it = children_.begin(); it != children_.end(); it++) {
+      if (it->get() == child) {
+        children_.erase(it);
+        return absl::OkStatus();
+      }
+    }
+    return absl::InternalError(absl::StrFormat(
+        "Subsystem %s is not a child of %s", child->Name(), Name()));
+  }
+
+  absl::Status RemoveParent(Subsystem* parent) {
+    for (auto it = parents_.begin(); it != parents_.end(); it++) {
+      if (it->get() == parent) {
+        parents_.erase(it);
+        return absl::OkStatus();
+      }
+    }
+    return absl::InternalError(absl::StrFormat(
+        "Subsystem %s is not a parent of %s", parent->Name(), Name()));
+  }
+
   void CollectAlarms(std::vector<Alarm *> &alarms) const;
+
+  bool IsOffline() const {
+    return admin_state_ == AdminState::kOffline &&
+           oper_state_ == OperState::kOffline;
+  }
 
 private:
   enum class EventSource {
@@ -234,7 +262,8 @@ private:
   // returns false, the loop terminates.
   void RunSubsystemInState(
       co::Coroutine *c,
-      std::function<StateTransition(EventSource, std::shared_ptr<stagezero::Client> client,
+      std::function<StateTransition(EventSource,
+                                    std::shared_ptr<stagezero::Client> client,
                                     co::Coroutine *)>
           handler);
 
@@ -246,6 +275,8 @@ private:
   void StoppingChildren(uint32_t client_id, co::Coroutine *c);
   void Restarting(uint32_t client_id, co::Coroutine *c);
   void Broken(uint32_t client_id, co::Coroutine *c);
+
+  void Abort();
 
   toolbelt::Logger &GetLogger() const;
 

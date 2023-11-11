@@ -4,7 +4,8 @@
 
 namespace stagezero {
 
-absl::Status Client::Init(toolbelt::InetAddress addr, const std::string &name, co::Coroutine *co) {
+absl::Status Client::Init(toolbelt::InetAddress addr, const std::string &name,
+                          co::Coroutine *co) {
   if (co == nullptr) {
     co = co_;
   }
@@ -52,10 +53,9 @@ absl::Status Client::Init(toolbelt::InetAddress addr, const std::string &name, c
   return absl::OkStatus();
 }
 
-absl::StatusOr<std::pair<std::string, int>>
-Client::LaunchStaticProcessInternal(const std::string &name,
-                                    const std::string &executable,
-                                    ProcessOptions opts, bool zygote, co::Coroutine *co) {
+absl::StatusOr<std::pair<std::string, int>> Client::LaunchStaticProcessInternal(
+    const std::string &name, const std::string &executable, ProcessOptions opts,
+    bool zygote, co::Coroutine *co) {
   if (co == nullptr) {
     co = co_;
   }
@@ -85,14 +85,13 @@ Client::LaunchStaticProcessInternal(const std::string &name,
   return std::make_pair(launch_resp.process_id(), launch_resp.pid());
 }
 
-absl::StatusOr<std::pair<std::string, int>>
-Client::LaunchVirtualProcess(const std::string &name, const std::string &zygote,
-                             const std::string &dso,
-                             const std::string &main_func, ProcessOptions opts, co::Coroutine *co) {
-   if (co == nullptr) {
+absl::StatusOr<std::pair<std::string, int>> Client::LaunchVirtualProcess(
+    const std::string &name, const std::string &zygote, const std::string &dso,
+    const std::string &main_func, ProcessOptions opts, co::Coroutine *co) {
+  if (co == nullptr) {
     co = co_;
   }
- stagezero::control::Request req;
+  stagezero::control::Request req;
   auto launch = req.mutable_launch_virtual_process();
   auto proc = launch->mutable_proc();
   proc->set_zygote(zygote);
@@ -120,8 +119,8 @@ Client::LaunchVirtualProcess(const std::string &name, const std::string &zygote,
 }
 
 void Client::BuildProcessOptions(const std::string &name,
-                                stagezero::config::ProcessOptions *options,
-                                ProcessOptions opts) const {
+                                 stagezero::config::ProcessOptions *options,
+                                 ProcessOptions opts) const {
   options->set_name(name);
   options->set_description(opts.description);
   for (auto &var : opts.vars) {
@@ -171,7 +170,8 @@ void Client::BuildStream(stagezero::control::StreamControl *out,
   }
 }
 
-absl::Status Client::StopProcess(const std::string &process_id, co::Coroutine *co) {
+absl::Status Client::StopProcess(const std::string &process_id,
+                                 co::Coroutine *co) {
   if (co == nullptr) {
     co = co_;
   }
@@ -205,7 +205,7 @@ absl::Status Client::SendInput(const std::string &process_id, int fd,
   if (co == nullptr) {
     co = co_;
   }
- stagezero::control::Request req;
+  stagezero::control::Request req;
   auto input = req.mutable_input_data();
   input->set_process_id(process_id);
   input->set_fd(fd);
@@ -294,9 +294,30 @@ Client::GetGlobalVariable(std::string name, co::Coroutine *co) {
   return std::make_pair(var_resp.value(), var_resp.exported());
 }
 
+absl::Status Client::Abort(const std::string &reason, co::Coroutine *co) {
+  if (co == nullptr) {
+    co = co_;
+  }
+  stagezero::control::Request req;
+  req.mutable_abort()->set_reason(reason);
+
+  stagezero::control::Response resp;
+  if (absl::Status status = SendRequestReceiveResponse(req, resp, co);
+      !status.ok()) {
+    return status;
+  }
+  auto &abort_resp = resp.abort();
+  if (!abort_resp.error().empty()) {
+    return absl::InternalError(
+        absl::StrFormat("Failed to abort: %s", abort_resp.error()));
+  }
+  return absl::OkStatus();
+}
+
 absl::Status
 Client::SendRequestReceiveResponse(const stagezero::control::Request &req,
-                                   stagezero::control::Response &response, co::Coroutine *co) {
+                                   stagezero::control::Response &response,
+                                   co::Coroutine *co) {
   // SendMessage needs 4 bytes before the buffer passed to
   // use for the length.
   char *sendbuf = command_buffer_ + sizeof(int32_t);

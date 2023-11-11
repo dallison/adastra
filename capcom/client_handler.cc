@@ -37,7 +37,6 @@ absl::Status ClientHandler::SendAlarm(const Alarm &alarm) {
 absl::Status ClientHandler::HandleMessage(const proto::Request &req,
                                           proto::Response &resp,
                                           co::Coroutine *c) {
-  std::cerr << "capcom handling message " << req.DebugString() << std::endl;
   switch (req.request_case()) {
   case proto::Request::kInit:
     HandleInit(req.init(), resp.mutable_init(), c);
@@ -70,6 +69,10 @@ absl::Status ClientHandler::HandleMessage(const proto::Request &req,
     break;
   case proto::Request::kGetAlarms:
     HandleGetAlarms(req.get_alarms(), resp.mutable_get_alarms(), c);
+    break;
+
+  case proto::Request::kAbort:
+    HandleAbort(req.abort(), resp.mutable_abort(), c);
     break;
 
   case proto::Request::REQUEST_NOT_SET:
@@ -109,7 +112,8 @@ void ClientHandler::HandleAddCompute(const proto::AddComputeRequest &req,
   // Probe a connection to the stagezero instance to make sure it's
   // there.
   stagezero::Client sclient;
-  if (absl::Status status = sclient.Init(stagezero_addr, "<capcom probe>"); !status.ok()) {
+  if (absl::Status status = sclient.Init(stagezero_addr, "<capcom probe>");
+      !status.ok()) {
     response->set_error(absl::StrFormat(
         "Cannot connect to StageZero on compute %s at address %s", req.name(),
         stagezero_addr.ToString()));
@@ -136,7 +140,6 @@ void ClientHandler::HandleRemoveCompute(const proto::RemoveComputeRequest &req,
 void ClientHandler::HandleAddSubsystem(const proto::AddSubsystemRequest &req,
                                        proto::AddSubsystemResponse *response,
                                        co::Coroutine *c) {
-  std::cerr << "HandleAddSubsystem" << std::endl;
   // Validate the children.
   std::vector<std::shared_ptr<Subsystem>> children;
   children.reserve(req.children_size());
@@ -151,11 +154,6 @@ void ClientHandler::HandleAddSubsystem(const proto::AddSubsystemRequest &req,
   }
 
   auto subsystem = std::make_shared<Subsystem>(req.name(), capcom_);
-  if (!capcom_.AddSubsystem(req.name(), subsystem)) {
-    response->set_error(absl::StrFormat(
-        "Failed to add subsystem %s; already exists", req.name()));
-    return;
-  }
 
   // Add the processes to the subsystem.
   for (auto &proc : req.processes()) {
@@ -201,6 +199,13 @@ void ClientHandler::HandleAddSubsystem(const proto::AddSubsystemRequest &req,
     case proto::Process::PROC_NOT_SET:
       break;
     }
+  }
+
+  // All OK, add the subsystem now.
+  if (!capcom_.AddSubsystem(req.name(), subsystem)) {
+    response->set_error(absl::StrFormat(
+        "Failed to add subsystem %s; already exists", req.name()));
+    return;
   }
 
   // Link the children.
@@ -288,6 +293,13 @@ void ClientHandler::HandleGetAlarms(const proto::GetAlarmsRequest &req,
   for (auto alarm : alarms) {
     auto *a = response->add_alarms();
     alarm->ToProto(a);
+  }
+}
+
+void ClientHandler::HandleAbort(const proto::AbortRequest &req, proto::AbortResponse* response,
+                                co::Coroutine *c) {
+  if (absl::Status status = capcom_.Abort(req.reason(), c); !status.ok()) {
+    response->set_error(status.ToString());
   }
 }
 

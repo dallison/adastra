@@ -136,6 +136,8 @@ public:
   }
   absl::StatusOr<Event> ReadEvent(co::Coroutine *c = nullptr);
 
+  absl::Status Abort(const std::string& reason, co::Coroutine *c = nullptr);
+  
 private:
   static constexpr size_t kMaxMessageSize = 4096;
 

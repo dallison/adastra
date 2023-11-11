@@ -24,8 +24,8 @@ namespace stagezero {
 
 Process::Process(co::CoroutineScheduler &scheduler,
                  std::shared_ptr<ClientHandler> client, std::string name)
-    : scheduler_(scheduler), client_(client), name_(std::move(name)),
-      local_symbols_(client->GetGlobalSymbols()) {}
+    : scheduler_(scheduler), client_(std::move(client)), name_(std::move(name)),
+      local_symbols_(client_->GetGlobalSymbols()) {}
 
 void Process::SetProcessId() {
   process_id_ =
@@ -72,7 +72,7 @@ const std::shared_ptr<StreamInfo> Process::FindNotifyStream() const {
 StaticProcess::StaticProcess(
     co::CoroutineScheduler &scheduler, std::shared_ptr<ClientHandler> client,
     const stagezero::control::LaunchStaticProcessRequest &&req)
-    : Process(scheduler, client, req.opts().name()), req_(std::move(req)) {
+    : Process(scheduler, std::move(client), req.opts().name()), req_(std::move(req)) {
   for (auto &var : req.opts().vars()) {
     local_symbols_.AddSymbol(var.name(), var.value(), var.exported());
   }
@@ -128,7 +128,7 @@ StaticProcess::StartInternal(const std::vector<std::string> extra_env_vars,
                                     proc->Name().c_str());
           }
         }
-        // Send start event to client->
+        // Send start event to client.
         if (send_start_event) {
           absl::Status eventStatus =
               client->SendProcessStartEvent(proc->GetId());
@@ -264,8 +264,6 @@ absl::Status Process::BuildStreams(
   }
 
   for (const control::StreamControl &s : streams) {
-    std::cout << "redirecting stream " << s.DebugString();
-
     auto stream = std::make_shared<StreamInfo>();
     control::StreamControl::Direction direction = s.direction();
     stream->direction = direction;
@@ -555,7 +553,6 @@ absl::Status Process::CloseFileDescriptor(int fd) {
 }
 
 absl::Status Zygote::Start(co::Coroutine *c) {
-  std::cerr << "Zygote::Start: " << req_.DebugString() << std::endl;
   // Open a listening Unix Domain Socket for the zygote to connect to.
   toolbelt::UnixSocket listen_socket;
 
@@ -670,9 +667,6 @@ Zygote::Spawn(const stagezero::control::LaunchVirtualProcessRequest &req,
     return absl::InternalError("Failed to serilize spawn message");
   }
 
-  std::cout << "ZYGOTE SEND\n";
-  toolbelt::Hexdump(buf, buflen);
-
   absl::StatusOr<ssize_t> n = control_socket_.SendMessage(buf, buflen, c);
   if (!n.ok()) {
     control_socket_.Close();
@@ -690,8 +684,6 @@ Zygote::Spawn(const stagezero::control::LaunchVirtualProcessRequest &req,
     control_socket_.Close();
     return n.status();
   }
-  std::cout << "ZYGOTE RECV\n";
-  toolbelt::Hexdump(buffer.data(), *n);
 
   control::SpawnResponse response;
   if (!response.ParseFromArray(buffer.data(), *n)) {
@@ -707,7 +699,7 @@ Zygote::Spawn(const stagezero::control::LaunchVirtualProcessRequest &req,
 VirtualProcess::VirtualProcess(
     co::CoroutineScheduler &scheduler, std::shared_ptr<ClientHandler> client,
     const stagezero::control::LaunchVirtualProcessRequest &&req)
-    : Process(scheduler, client, req.opts().name()), req_(std::move(req)) {
+    : Process(scheduler, std::move(client), req.opts().name()), req_(std::move(req)) {
   for (auto &var : req.opts().vars()) {
     local_symbols_.AddSymbol(var.name(), var.value(), var.exported());
   }

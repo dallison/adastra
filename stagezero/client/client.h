@@ -104,6 +104,8 @@ public:
   absl::StatusOr<std::pair<std::string, bool>>
   GetGlobalVariable(std::string name, co::Coroutine *co = nullptr);
 
+  absl::Status Abort(const std::string& reason, co::Coroutine *co = nullptr);
+  
 private:
   static constexpr size_t kMaxMessageSize = 4096;
 

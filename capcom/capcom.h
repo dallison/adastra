@@ -136,6 +136,8 @@ private:
   std::vector<Subsystem *> GetSubsystems() const;
   std::vector<Alarm *> GetAlarms() const;
 
+  absl::Status Abort(const std::string& reason, co::Coroutine* c);
+
 private:
   co::CoroutineScheduler &co_scheduler_;
   toolbelt::InetAddress addr_;

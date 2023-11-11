@@ -93,6 +93,9 @@ private:
       const control::CloseProcessFileDescriptorRequest &req,
       control::CloseProcessFileDescriptorResponse *response, co::Coroutine *c);
 
+  void HandleAbort(
+      const control::AbortRequest &req, control::AbortResponse* response, co::Coroutine *c);
+      
   void AddProcess(const std::string &id, std::shared_ptr<Process> proc) {
     processes_.emplace(std::make_pair(id, std::move(proc)));
   }

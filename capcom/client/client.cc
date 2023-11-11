@@ -64,13 +64,11 @@ absl::StatusOr<Event> Client::ReadEvent(co::Coroutine *c) {
     event_socket_.Close();
     return n.status();
   }
-  std::cerr << "CAPCOM EVENT\n";
-  toolbelt::Hexdump(event_buffer_, *n);
+
   if (!event.ParseFromArray(event_buffer_, *n)) {
     event_socket_.Close();
     return absl::InternalError("Failed to parse event");
   }
-  std::cerr << event.DebugString();
 
   Event result;
   switch (event.event_case()) {
@@ -367,6 +365,26 @@ absl::Status Client::WaitForSubsystemState(const std::string &subsystem,
       }
     }
   }
+}
+
+absl::Status Client::Abort(const std::string &reason, co::Coroutine *c) {
+  if (c == nullptr) {
+    c = co_;
+  }
+  stagezero::capcom::proto::Request req;
+  req.mutable_abort()->set_reason(reason);
+
+  stagezero::capcom::proto::Response resp;
+  if (absl::Status status = SendRequestReceiveResponse(req, resp, c);
+      !status.ok()) {
+    return status;
+  }
+  auto &abort_resp = resp.abort();
+  if (!abort_resp.error().empty()) {
+    return absl::InternalError(
+        absl::StrFormat("Failed to abort: %s", abort_resp.error()));
+  }
+  return absl::OkStatus();
 }
 
 absl::Status

@@ -89,7 +89,15 @@ message GetAlarmsRequest {
 message GetAlarmsResponse {
    string error = 1;
   repeated Alarm alarms = 2;
- 
+
+}
+
+message AbortRequest {
+  string reason = 1;      // Why we are aborting.
+}
+
+message AbortResponse {
+  string error = 1;     
 }
 
 message Request {
@@ -103,7 +111,7 @@ message Request {
     StopSubsystemRequest stop_subsystem = 7;
     GetSubsystemsRequest get_subsystems = 8;
     GetAlarmsRequest get_alarms = 9;
-
+    AbortRequest abort = 10;
   }
 }
 
@@ -118,6 +126,7 @@ message Response {
     StopSubsystemResponse stop_subsystem = 7;
     GetSubsystemsResponse get_subsystems = 8;
     GetAlarmsResponse get_alarms = 9;
+    AbortResponse abort = 10;
   }
 }
 

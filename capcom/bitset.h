@@ -29,6 +29,8 @@ class BitSet {
   // Is the given bit set?
   bool Contains(uint32_t bit) const;
 
+  void ClearAll();
+
  private:
   // Note the use of explicit long long type here because
   // we use ffsll to look for the set bits and that is
@@ -89,5 +91,11 @@ inline bool BitSet::Contains(uint32_t bit) const {
   }
   uint32_t b = bit % 64;
   return (bits_[word] & (1LL << b)) != 0;
+}
+
+inline void BitSet::ClearAll() {
+  for (size_t i = 0; i < bits_.size(); i++) {
+    bits_[i] = 0LL;
+  }
 }
 }  // namespace stagezero::capcom

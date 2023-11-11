@@ -112,6 +112,7 @@ private:
   }
 
   void KillAllProcesses();
+  void KillAllProcesses(co::Coroutine* c);
 
   co::CoroutineScheduler &co_scheduler_;
   toolbelt::InetAddress addr_;

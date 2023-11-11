@@ -85,8 +85,6 @@ void ZygoteCore::WaitForSpawn(co::Coroutine *c) {
     control_socket_->Close();
     return;
   }
-  std::cout << "zygote received\n";
-  toolbelt::Hexdump(buffer_, *n);
 
   std::vector<toolbelt::FileDescriptor> fds;
 
@@ -105,14 +103,11 @@ void ZygoteCore::WaitForSpawn(co::Coroutine *c) {
         !status.ok()) {
       response.set_error(status.ToString());
     }
-    std::cout << "server sending " << response.DebugString() << std::endl;
     if (!response.SerializeToArray(sendbuf, kSendBufLen)) {
       logger_.Log(toolbelt::LogLevel::kError, "Failed to serialize response");
       return;
     }
     size_t msglen = response.ByteSizeLong();
-    std::cout << "SERVER SEND\n";
-    toolbelt::Hexdump(sendbuf, msglen);
     absl::StatusOr<ssize_t> n =
         control_socket_->SendMessage(sendbuf, msglen, c);
     if (!n.ok()) {

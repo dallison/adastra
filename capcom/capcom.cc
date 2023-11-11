@@ -157,4 +157,70 @@ std::vector<Alarm *> Capcom::GetAlarms() const {
   return result;
 }
 
+absl::Status Capcom::Abort(const std::string &reason, co::Coroutine *c) {
+  // First take the subsystems offline with an abort.  This will not
+  // kill any running processes.
+  absl::Status result = absl::OkStatus();
+
+  for (auto & [ name, subsys ] : subsystems_) {
+    Message msg = {.code = Message::Code::kAbort};
+    if (absl::Status status = subsys->SendMessage(msg); !status.ok()) {
+      result = status;
+    }
+  }
+
+  // Make sure all the subsystems are admin offline, oper offline.  If we
+  // go ahead and kill the processes without waiting, the subsystems will
+  // get notified that their process has died and will attempt to restart it.
+  std::cerr << "waiting for subsystems to go offline\n";
+  for (;;) {
+    bool all_offline = true;
+    for (auto & [ name, subsys ] : subsystems_) {
+      std::cerr << "checking subsystem " << subsys->Name() << " "
+                << subsys->IsOffline() << std::endl;
+      if (!subsys->IsOffline()) {
+        std::cerr << subsys->Name() << " is not offline\n";
+        all_offline = false;
+        break;
+      }
+    }
+    if (all_offline) {
+      break;
+    }
+    c->Millisleep(20);
+  }
+
+  std::cerr << " all subsystems offline\n";
+  // Now tell all computes (the stagezero running on them) to kill
+  // all the processes.
+  std::vector<Compute *> computes;
+
+  for (auto & [ name, compute ] : computes_) {
+    computes.push_back(&compute);
+  }
+
+  // If we have no computes (like in testing), add the local compute.
+  if (computes.empty()) {
+    computes.push_back(&local_compute_);
+  }
+
+  for (auto &compute : computes) {
+    stagezero::Client client;
+    std::cerr << "sending abort to " << compute->name << std::endl;
+    if (absl::Status status = client.Init(compute->addr, "<capcom abort>");
+        !status.ok()) {
+      result = absl::InternalError(
+          absl::StrFormat("Failed to connect compute for abort%s: %s",
+                          compute->name, status.ToString()));
+      continue;
+    }
+    absl::Status status = client.Abort(reason);
+    if (!status.ok()) {
+      result = absl::InternalError(absl::StrFormat(
+          "Failed to abort compute %s: %s", compute->name, status.ToString()));
+    }
+  }
+  return result;
+}
+
 } // namespace stagezero::capcom

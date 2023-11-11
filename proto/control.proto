@@ -127,6 +127,10 @@ message GetGlobalVariableResponse {
   bool exported = 4; // True if exported to environment for processes.
 }
 
+message AbortRequest { string reason = 1; }
+
+message AbortResponse { string error = 1; }
+
 message Request {
   oneof request {
     InitRequest init = 1;
@@ -141,6 +145,7 @@ message Request {
     CloseProcessFileDescriptorRequest close_process_file_descriptor = 10;
     SetGlobalVariableRequest set_global_variable = 11;
     GetGlobalVariableRequest get_global_variable = 12;
+    AbortRequest abort = 13;
   }
 }
 
@@ -156,6 +161,7 @@ message Response {
     CloseProcessFileDescriptorResponse close_process_file_descriptor = 8;
     SetGlobalVariableResponse set_global_variable = 9;
     GetGlobalVariableResponse get_global_variable = 10;
+    AbortResponse abort = 11;
   }
 }
 
@@ -188,9 +194,9 @@ message Event {
 message SpawnRequest {
   // File descriptor redirection
   message Stream {
-    int32 fd = 1;       // FD to redirect
-    int32 index = 2;    // Index into SCM_RIGHTS for src fd.
-    bool close = 3;     // Close the stream, don't redirect.
+    int32 fd = 1;    // FD to redirect
+    int32 index = 2; // Index into SCM_RIGHTS for src fd.
+    bool close = 3;  // Close the stream, don't redirect.
   }
   string dso = 1; // Load this DSO (empty means already linked)
 
@@ -198,11 +204,11 @@ message SpawnRequest {
 
   repeated Stream streams = 3;
   repeated config.Variable global_vars = 4; // Global variables and environment.
-  repeated config.Variable vars = 5; // Local variables and environment.
-  repeated string args = 6;          // Use $var in expressions.
+  repeated config.Variable vars = 5;        // Local variables and environment.
+  repeated string args = 6;                 // Use $var in expressions.
 }
 
 message SpawnResponse {
   string error = 1;
-  int32 pid = 2;      // PID of child.
+  int32 pid = 2; // PID of child.
 }

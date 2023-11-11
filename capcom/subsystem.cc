@@ -78,7 +78,15 @@ absl::Status Subsystem::Remove(bool recursive) {
   if (absl::Status status = capcom_.RemoveSubsystem(Name()); !status.ok()) {
     return status;
   }
-  subsys->Stop();
+
+  // Remove the parent/child linkages.
+  for (auto& child : children_) {
+    if (absl::Status status = child->RemoveParent(this); !status.ok()) {
+      return status;
+    }
+  }
+  children_.clear();
+  subsys->Stop();           // Stop the state coroutine running.
   return absl::OkStatus();
 }
 
@@ -179,8 +187,6 @@ std::function<void(std::shared_ptr<Subsystem>, uint32_t, co::Coroutine *)>
 };
 
 void Subsystem::EnterState(OperState state, uint32_t client_id) {
-  std::cerr << Name() << " entering state " << state << std::endl;
-
   std::string coroutine_name =
       absl::StrFormat("%s/%s", Name(), OperStateName(state));
   co::Coroutine *coroutine = new co::Coroutine(
@@ -257,7 +263,30 @@ void Subsystem::Offline(uint32_t client_id, co::Coroutine *c) {
                        std::shared_ptr<stagezero::Client> stagezero_client,
                        co::Coroutine * c)
              ->StateTransition {
-               if (event_source == EventSource::kMessage) {
+               switch (event_source) {
+               case EventSource::kStageZero: {
+                 // Event from stagezero.
+                 absl::StatusOr<stagezero::control::Event> event =
+                     stagezero_client->ReadEvent(c);
+                 if (!event.ok()) {
+                   subsystem->capcom_.logger_.Log(
+                       toolbelt::LogLevel::kError, "Failed to read event %s",
+                       event.status().ToString().c_str());
+                 }
+                 switch (event->event_case()) {
+                 case stagezero::control::Event::kStart: {
+                   break;
+                 }
+                 case stagezero::control::Event::kStop:
+                 case stagezero::control::Event::kOutput:
+                   break;
+                 case stagezero::control::Event::EVENT_NOT_SET:
+                   break;
+                 }
+                 break;
+               }
+
+               case EventSource::kMessage: {
                  // Incoming message.
                  absl::StatusOr<Message> message = subsystem->ReadMessage();
                  if (!message.ok()) {
@@ -285,14 +314,20 @@ void Subsystem::Offline(uint32_t client_id, co::Coroutine *c) {
                        message->sender->Name().c_str(),
                        OperStateName(message->state.oper));
                    break;
+                 case Message::kAbort:
+                   break;
                  }
+                 break;
                }
+               case EventSource::kUnknown:
+                 break;
+               }
+
                return StateTransition::kStay;
              });
 }
 
 void Subsystem::StartingChildren(uint32_t client_id, co::Coroutine *c) {
-  std::cerr << Name() << " ENTERING STARTING_CHILDREN STATE\n";
   if (children_.empty()) {
     EnterState(OperState::kStartingProcesses, client_id);
     return;
@@ -324,7 +359,10 @@ void Subsystem::StartingChildren(uint32_t client_id, co::Coroutine *c) {
                    break;
                  }
                  case stagezero::control::Event::kStop:
-                   return StateTransition::kLeave;
+                   // One of our processes crashed while starting the children.
+                   // Since nothing should be running this is a late message.
+                   // Igore it.
+                   return StateTransition::kStay;
 
                  case stagezero::control::Event::kOutput:
                    break;
@@ -367,6 +405,9 @@ void Subsystem::StartingChildren(uint32_t client_id, co::Coroutine *c) {
                        message->sender->Name().c_str(),
                        OperStateName(message->state.oper));
                    break;
+                 case Message::kAbort:
+                   subsystem->Abort();
+                   return StateTransition::kLeave;
                  }
                  break;
                }
@@ -418,8 +459,6 @@ void Subsystem::StartingProcesses(uint32_t client_id, co::Coroutine *c) {
                     toolbelt::LogLevel::kError, "Failed to read event %s",
                     event.status().ToString().c_str());
               }
-              std::cerr << "*** GOT STAGEZERO EVENT " << event->DebugString()
-                        << std::endl;
               switch (event->event_case()) {
               case stagezero::control::Event::kStart: {
                 Process *proc =
@@ -476,6 +515,9 @@ void Subsystem::StartingProcesses(uint32_t client_id, co::Coroutine *c) {
                     message->sender->Name().c_str(),
                     OperStateName(message->state.oper));
                 break;
+              case Message::kAbort:
+                subsystem->Abort();
+                return StateTransition::kLeave;
               }
               break;
             }
@@ -569,6 +611,9 @@ void Subsystem::Online(uint32_t client_id, co::Coroutine *c) {
                   return StateTransition::kLeave;
                 }
                 break;
+              case Message::kAbort:
+                subsystem->Abort();
+                return StateTransition::kLeave;
               }
               break;
             }
@@ -652,6 +697,9 @@ void Subsystem::StoppingProcesses(uint32_t client_id, co::Coroutine *c) {
                        message->sender->Name().c_str(),
                        OperStateName(message->state.oper));
                    break;
+                 case Message::kAbort:
+                   subsystem->Abort();
+                   return StateTransition::kLeave;
                  }
                  break;
                }
@@ -738,6 +786,9 @@ void Subsystem::StoppingChildren(uint32_t client_id, co::Coroutine *c) {
                        message->sender->Name().c_str(),
                        OperStateName(message->state.oper));
                    break;
+                 case Message::kAbort:
+                   subsystem->Abort();
+                   return StateTransition::kLeave;
                  }
                  break;
                }
@@ -817,19 +868,22 @@ void Subsystem::RestartIfPossible(uint32_t client_id, co::Coroutine *c) {
   EnterState(OperState::kRestarting, client_id);
 }
 
+void Subsystem::Abort() {
+  admin_state_ = AdminState::kOffline;
+  active_clients_.ClearAll();
+  EnterState(OperState::kOffline, kNoClient);
+}
+
 void Subsystem::Restarting(uint32_t client_id, co::Coroutine *c) {
-  std::cerr << Name() << " ENTERING RESTARTING STATE\n";
   oper_state_ = OperState::kRestarting;
   capcom_.SendSubsystemStatusEvent(this);
   if (AllProcessesStopped()) {
-    std::cerr << "All processes stopped" << std::endl;
     if (parents_.empty()) {
       // We have no parents, restart now.
       RestartNow(client_id);
       return;
     }
     // Parents exist, notify them of the restart.
-    std::cerr << Name() << " Notifying parents" << std::endl;
     NotifyParents();
   }
 
@@ -890,8 +944,6 @@ void Subsystem::Restarting(uint32_t client_id, co::Coroutine *c) {
                  case Message::kChangeAdmin:
                    if (message->state.admin == AdminState::kOnline) {
                      // We are restarting and have been asked to go online.
-                     std::cerr << subsystem->Name()
-                               << " got admin online when in restarting\n";
                      subsystem->RestartNow(client_id);
                      return StateTransition::kLeave;
                    }
@@ -907,6 +959,9 @@ void Subsystem::Restarting(uint32_t client_id, co::Coroutine *c) {
                        message->sender->Name().c_str(),
                        OperStateName(message->state.oper));
                    break;
+                 case Message::kAbort:
+                   subsystem->Abort();
+                   return StateTransition::kLeave;
                  }
                  break;
                }
@@ -972,6 +1027,9 @@ void Subsystem::Broken(uint32_t client_id, co::Coroutine *c) {
                        message->sender->Name().c_str(),
                        OperStateName(message->state.oper));
                    break;
+                 case Message::kAbort:
+                   subsystem->Abort();
+                   return StateTransition::kLeave;
                  }
                }
                return StateTransition::kStay;
@@ -1036,7 +1094,6 @@ Subsystem::AddZygote(const stagezero::config::StaticProcess &proc,
         absl::StrFormat("Zygote %s already exists", options.name()));
   }
 
-  std::cerr << "ADDING ZYGOTE " << options.name() << std::endl;
   auto p = std::make_unique<Zygote>(options.name(), proc.executable(), options,
                                     *client);
   capcom_.AddZygote(options.name(), p.get());

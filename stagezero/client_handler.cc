@@ -7,7 +7,8 @@
 
 namespace stagezero {
 
-ClientHandler::~ClientHandler() { KillAllProcesses(); }
+ClientHandler::~ClientHandler() { 
+  KillAllProcesses(); }
 
 SymbolTable *ClientHandler::GetGlobalSymbols() const {
   return &stagezero_.global_symbols_;
@@ -80,6 +81,10 @@ absl::Status ClientHandler::HandleMessage(const control::Request &req,
   case control::Request::kGetGlobalVariable:
     HandleGetGlobalVariable(req.get_global_variable(),
                             resp.mutable_get_global_variable(), c);
+    break;
+
+  case control::Request::kAbort:
+    HandleAbort(req.abort(), resp.mutable_abort(), c);
     break;
 
   case control::Request::REQUEST_NOT_SET:
@@ -296,6 +301,15 @@ void ClientHandler::HandleGetGlobalVariable(
   response->set_name(sym->Name());
   response->set_value(sym->Value());
   response->set_exported(sym->Exported());
-  std::cout << response->DebugString();
+}
+
+void ClientHandler::HandleAbort(const control::AbortRequest &req,
+                                control::AbortResponse *response,
+                                co::Coroutine *c) {
+  GetLogger().Log(toolbelt::LogLevel::kError, "Aborting all processes: %s",
+                  req.reason().c_str());
+  stagezero_.KillAllProcesses(c);
+  GetLogger().Log(toolbelt::LogLevel::kError, "All processes aborted: %s",
+                  req.reason().c_str());
 }
 } // namespace stagezero

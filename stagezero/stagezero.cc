@@ -29,7 +29,7 @@ void StageZero::CloseHandler(std::shared_ptr<ClientHandler> handler) {
   for (auto it = client_handlers_.begin(); it != client_handlers_.end(); it++) {
     if (*it == handler) {
       client_handlers_.erase(it);
-      break;
+      return;
     }
   }
 }
@@ -42,8 +42,6 @@ StageZero::HandleIncomingConnection(toolbelt::TCPSocket &listen_socket,
     return s.status();
   }
 
-  std::cout << "client handler address: " << s->BoundAddress().ToString()
-            << std::endl;
   if (absl::Status status = s->SetCloseOnExec(); !status.ok()) {
     return status;
   }
@@ -53,11 +51,9 @@ StageZero::HandleIncomingConnection(toolbelt::TCPSocket &listen_socket,
   client_handlers_.push_back(handler);
 
   coroutines_.insert(std::make_unique<co::Coroutine>(
-      co_scheduler_,
-      [this, handler](co::Coroutine *c) {
+      co_scheduler_, [ this, handler = std::move(handler) ](co::Coroutine * c) {
+
         handler->Run(c);
-        logger_.Log(toolbelt::LogLevel::kInfo, "client %s closed",
-                    handler->GetClientName().c_str());
         CloseHandler(handler);
       },
       "Client handler"));
@@ -164,8 +160,9 @@ absl::Status StageZero::Run() {
   // Register a callback to be called when a coroutine completes.  The
   // server keeps track of all coroutines created.
   // This deletes them when they are done.
-  co_scheduler_.SetCompletionCallback(
-      [this](co::Coroutine *c) { coroutines_.erase(c); });
+  co_scheduler_.SetCompletionCallback([this](co::Coroutine *c) {
+    coroutines_.erase(c);
+  });
 
   // Start the listener coroutine.
   coroutines_.insert(
@@ -199,6 +196,34 @@ void StageZero::KillAllProcesses() {
   }
   for (auto &proc : procs) {
     proc->KillNow();
+  }
+}
+
+void StageZero::KillAllProcesses(co::Coroutine *c) {
+  // Copy all processes out of the processes_ map as we will
+  // be removing them as they are killed.
+  std::vector<std::shared_ptr<Process>> procs;
+
+  for (auto & [ id, proc ] : processes_) {
+    procs.push_back(proc);
+  }
+  for (auto &proc : procs) {
+    proc->KillNow();
+  }
+
+  // Wait for all the processes to stop.
+  for (;;) {
+    bool all_dead = true;
+    for (auto &proc : procs) {
+      if (proc->IsRunning()) {
+        all_dead = false;
+        break;
+      }
+    }
+    if (all_dead) {
+      break;
+    }
+    c->Millisleep(100);
   }
 }
 } // namespace stagezero

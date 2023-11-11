@@ -44,7 +44,7 @@ protected:
 
   virtual absl::Status HandleMessage(const Request &req, Response &resp,
                                      co::Coroutine *c) = 0;
-  
+
   // Init the client and return the port number for the event channel.
   absl::StatusOr<int> Init(const std::string &client_name, co::Coroutine *c);
 
@@ -62,7 +62,6 @@ protected:
 
   char event_buffer_[kMaxMessageSize];
   toolbelt::TCPSocket event_socket_;
-  std::unique_ptr<co::Coroutine> event_channel_acceptor_;
 
   std::list<std::unique_ptr<Event>> events_;
   toolbelt::TriggerFd event_trigger_;
@@ -82,8 +81,6 @@ inline void TCPClientHandler<Request, Response, Event>::Run(co::Coroutine *c) {
       printf("ReceiveMessage error %s\n", n.status().ToString().c_str());
       return;
     }
-    std::cout << getpid() << " " << this << " server received\n";
-    toolbelt::Hexdump(command_buffer_, *n);
 
     Request request;
     if (request.ParseFromArray(command_buffer_, *n)) {
@@ -94,16 +91,12 @@ inline void TCPClientHandler<Request, Response, Event>::Run(co::Coroutine *c) {
         return;
       }
 
-      std::cout << getpid() << " server sending " << response.DebugString()
-                << std::endl;
       if (!response.SerializeToArray(sendbuf, kSendBufLen)) {
         GetLogger().Log(toolbelt::LogLevel::kError,
                         "Failed to serialize response\n");
         return;
       }
       size_t msglen = response.ByteSizeLong();
-      std::cout << getpid() << " SERVER SEND\n";
-      toolbelt::Hexdump(sendbuf, msglen);
       absl::StatusOr<ssize_t> n =
           command_socket_.SendMessage(sendbuf, msglen, c);
       if (!n.ok()) {
@@ -145,35 +138,34 @@ TCPClientHandler<Request, Response, Event>::Init(const std::string &client_name,
   }
 
   // Spawn a coroutine to accept the event channel connection.
-  event_channel_acceptor_ =
-      std::make_unique<co::Coroutine>(GetScheduler(), [
-        client = this->shared_from_this(), listen_socket = std::move(listen_socket)
-      ](co::Coroutine * c2) mutable {
-        std::cout << "accepting event channel " << std::endl;
-        absl::StatusOr socket = listen_socket.Accept(c2);
-        if (!socket.ok()) {
-          client->GetLogger().Log(toolbelt::LogLevel::kError,
-                                  "Failed to open event channel: %s",
-                                  socket.status().ToString().c_str());
-          return;
-        }
+  AddCoroutine(std::make_unique<co::Coroutine>(GetScheduler(), [
+    client = this->shared_from_this(), listen_socket = std::move(listen_socket)
+  ](co::Coroutine * c2) mutable {
+    std::cout << "accepting event channel " << std::endl;
+    absl::StatusOr socket = listen_socket.Accept(c2);
+    if (!socket.ok()) {
+      client->GetLogger().Log(toolbelt::LogLevel::kError,
+                              "Failed to open event channel: %s",
+                              socket.status().ToString().c_str());
+      return;
+    }
 
-        if (absl::Status status = socket->SetCloseOnExec(); !status.ok()) {
-          client->GetLogger().Log(
-              toolbelt::LogLevel::kError,
-              "Failed to set close-on-exec on event channel: %s",
-              socket.status().ToString().c_str());
-          return;
-        }
-        client->SetEventSocket(std::move(*socket));
-        client->GetLogger().Log(toolbelt::LogLevel::kInfo,
-                                "Event channel open");
+    if (absl::Status status = socket->SetCloseOnExec(); !status.ok()) {
+      client->GetLogger().Log(
+          toolbelt::LogLevel::kError,
+          "Failed to set close-on-exec on event channel: %s",
+          socket.status().ToString().c_str());
+      return;
+    }
+    client->SetEventSocket(std::move(*socket));
+    client->GetLogger().Log(toolbelt::LogLevel::kInfo, "Event channel open");
 
-        // Start the event sender coroutine.
-        client->AddCoroutine(std::make_unique<co::Coroutine>(
-            client->GetScheduler(),
-            [client](co::Coroutine *c2) { client->EventSenderCoroutine(c2); }));
-      });
+    // Start the event sender coroutine.
+    client->AddCoroutine(std::make_unique<co::Coroutine>(
+        client->GetScheduler(),
+        [client](co::Coroutine *c2) { client->EventSenderCoroutine(c2); },
+        absl::StrFormat("EventSender.%s", client->GetClientName())));
+  }, absl::StrFormat("ClientHandler/event_acceptor.%s", GetClientName())));
   return event_port;
 }
 
@@ -184,7 +176,6 @@ inline absl::Status TCPClientHandler<Request, Response, Event>::QueueEvent(
     return absl::InternalError(
         "Unable to send event: event socket is not connected");
   }
-  std::cerr << "queueing event" << std::endl;
   events_.push_back(std::move(event));
   event_trigger_.Trigger();
   return absl::OkStatus();
@@ -196,7 +187,12 @@ inline void TCPClientHandler<Request, Response, Event>::EventSenderCoroutine(
   auto client = this->shared_from_this();
   while (client->event_socket_.Connected()) {
     // Wait for an event to be queued.
-    c->Wait(client->event_trigger_.GetPollFd().Fd(), POLLIN);
+    int fd = c->Wait({client->event_trigger_.GetPollFd().Fd(),
+                      event_socket_.GetFileDescriptor().Fd()},
+                     POLLIN);
+    if (fd == event_socket_.GetFileDescriptor().Fd()) {
+      break;
+    }
     client->event_trigger_.Clear();
 
     // Empty event queue by sending all events before going back

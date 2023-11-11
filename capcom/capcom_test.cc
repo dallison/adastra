@@ -148,7 +148,6 @@ public:
         std::cerr << event.status().ToString() << std::endl;
         return {};
       }
-      std::cerr << "GOT CAPCOM EVENT " << (int)event->type << std::endl;
       if (event->type == EventType::kSubsystemStatus) {
         SubsystemStatusEvent &s = std::get<0>(event->event);
         std::cerr << s.subsystem << " " << s.admin_state << " " << s.oper_state
@@ -363,7 +362,6 @@ TEST_F(CapcomTest, StartSimpleSubsystem) {
   status = client.StartSubsystem("foobar1");
   ASSERT_TRUE(status.ok());
 
-  std::cerr << "got online, stopping" << std::endl;
   status = client.StopSubsystem("foobar1");
   ASSERT_TRUE(status.ok());
 
@@ -391,7 +389,6 @@ TEST_F(CapcomTest, StartSimpleSubsystemCompute) {
   status = client.StartSubsystem("foobar1");
   ASSERT_TRUE(status.ok());
 
-  std::cerr << "got online, stopping" << std::endl;
   status = client.StopSubsystem("foobar1");
   ASSERT_TRUE(status.ok());
 
@@ -433,7 +430,6 @@ TEST_F(CapcomTest, StartSimpleSubsystemWithMultipleCompute) {
   status = client.StartSubsystem("foobar1");
   ASSERT_TRUE(status.ok());
 
-  std::cerr << "got online, stopping" << std::endl;
   status = client.StopSubsystem("foobar1");
   ASSERT_TRUE(status.ok());
 
@@ -471,7 +467,6 @@ TEST_F(CapcomTest, RestartSimpleSubsystem) {
   SubsystemStatusEvent s = std::get<0>(e.event);
   ASSERT_EQ(1, s.processes.size());
   int pid = s.processes[0].pid;
-  std::cerr << "pid is " << pid << std::endl;
   kill(pid, SIGTERM);
 
   // Wait for the subsytem to go into restarting, then back online.
@@ -489,7 +484,7 @@ TEST_F(CapcomTest, RestartSimpleSubsystem) {
 }
 
 TEST_F(CapcomTest, StartSimpleSubsystemTree) {
-  stagezero::capcom::client::Client client(ClientMode::kNonBlocking);
+  stagezero::capcom::client::Client client(ClientMode::kBlocking);
   InitClient(client, "foobar1");
 
   absl::Status status = client.AddSubsystem(
@@ -499,8 +494,6 @@ TEST_F(CapcomTest, StartSimpleSubsystemTree) {
            .executable = "${runfiles_dir}/__main__/stagezero/testdata/loop",
        }}});
   ASSERT_TRUE(status.ok());
-
-  WaitForState(client, "child", AdminState::kOffline, OperState::kOffline);
 
   status = client.AddSubsystem(
       "parent",
@@ -513,20 +506,76 @@ TEST_F(CapcomTest, StartSimpleSubsystemTree) {
        }});
   ASSERT_TRUE(status.ok());
 
-  WaitForState(client, "parent", AdminState::kOffline, OperState::kOffline);
-
   status = client.StartSubsystem("parent");
   ASSERT_TRUE(status.ok());
-  WaitForState(client, "parent", AdminState::kOnline, OperState::kOnline);
 
   status = client.StopSubsystem("parent");
   ASSERT_TRUE(status.ok());
-  WaitForState(client, "parent", AdminState::kOffline, OperState::kOffline);
 
   status = client.RemoveSubsystem("child", false);
   ASSERT_TRUE(status.ok());
 
   status = client.RemoveSubsystem("parent", false);
+  ASSERT_TRUE(status.ok());
+}
+
+TEST_F(CapcomTest, Abort) {
+  stagezero::capcom::client::Client client(ClientMode::kBlocking);
+  InitClient(client, "foobar1");
+
+  absl::Status status = client.AddSubsystem(
+      "subsys",
+      {.static_processes = {{
+           .name = "loop",
+           .executable = "${runfiles_dir}/__main__/stagezero/testdata/loop",
+       }}});
+  ASSERT_TRUE(status.ok());
+
+  status = client.StartSubsystem("subsys");
+  ASSERT_TRUE(status.ok());
+
+  sleep(1);
+
+  status = client.Abort("Just because");
+  ASSERT_TRUE(status.ok());
+
+  WaitForState(client, "subsys", AdminState::kOffline, OperState::kOffline);
+
+  status = client.RemoveSubsystem("subsys", false);
+  ASSERT_TRUE(status.ok());
+}
+
+TEST_F(CapcomTest, AbortThenGoAgain) {
+  stagezero::capcom::client::Client client(ClientMode::kBlocking);
+  InitClient(client, "foobar1");
+
+  absl::Status status = client.AddSubsystem(
+      "subsys",
+      {.static_processes = {{
+           .name = "loop",
+           .executable = "${runfiles_dir}/__main__/stagezero/testdata/loop",
+       }}});
+  ASSERT_TRUE(status.ok());
+
+  status = client.StartSubsystem("subsys");
+  ASSERT_TRUE(status.ok());
+
+  sleep(1);
+
+  status = client.Abort("Just because");
+  ASSERT_TRUE(status.ok());
+
+  WaitForState(client, "subsys", AdminState::kOffline, OperState::kOffline);
+
+  status = client.StartSubsystem("subsys");
+  ASSERT_TRUE(status.ok());
+
+  sleep(1);
+
+  status = client.StopSubsystem("subsys");
+  ASSERT_TRUE(status.ok());
+
+  status = client.RemoveSubsystem("subsys", false);
   ASSERT_TRUE(status.ok());
 }
 
@@ -566,7 +615,6 @@ TEST_F(CapcomTest, RestartSimpleSubsystemTree) {
   SubsystemStatusEvent s = std::get<0>(e.event);
   ASSERT_EQ(1, s.processes.size());
   int pid = s.processes[0].pid;
-  std::cerr << "pid is " << pid << std::endl;
   kill(pid, SIGTERM);
 
   // Wait for the subsytems to go into restarting, then back online.
@@ -640,7 +688,7 @@ TEST_F(CapcomTest, VirtualProcess) {
   status = client.StartSubsystem("virtual");
   ASSERT_TRUE(status.ok());
 
-  sleep(2);
+  sleep(1);
 
   // Stop virtual.
   status = client.StopSubsystem("virtual");
@@ -653,6 +701,50 @@ TEST_F(CapcomTest, VirtualProcess) {
   // Remove virtual and zygote.
   status = client.RemoveSubsystem("virtual", false);
   ASSERT_TRUE(status.ok());
+  status = client.RemoveSubsystem("zygote1", false);
+  ASSERT_TRUE(status.ok());
+}
+
+TEST_F(CapcomTest, AbortVirtual) {
+  stagezero::capcom::client::Client client(ClientMode::kBlocking);
+  InitClient(client, "foobar1");
+
+  absl::Status status = client.AddSubsystem(
+      "zygote1",
+      {.zygotes = {{
+           .name = "zygote1",
+           .executable = "${runfiles_dir}/__main__/stagezero/testdata/zygote",
+       }}});
+  ASSERT_TRUE(status.ok());
+
+  status = client.AddSubsystem(
+      "virtual",
+      {.virtual_processes = {{
+           .name = "virtual_module",
+           .zygote = "zygote1",
+           .dso = "${runfiles_dir}/__main__/stagezero/testdata/module.so",
+           .main_func = "Main",
+       }}});
+  ASSERT_TRUE(status.ok());
+
+  // Start zygote.
+  status = client.StartSubsystem("zygote1");
+  ASSERT_TRUE(status.ok());
+
+  // Start virtual.
+  status = client.StartSubsystem("virtual");
+  ASSERT_TRUE(status.ok());
+
+  sleep(1);
+
+  status = client.Abort("Just because");
+  ASSERT_TRUE(status.ok());
+
+  WaitForState(client, "virtual", AdminState::kOffline, OperState::kOffline);
+
+  status = client.RemoveSubsystem("virtual", false);
+  ASSERT_TRUE(status.ok());
+
   status = client.RemoveSubsystem("zygote1", false);
   ASSERT_TRUE(status.ok());
 }
