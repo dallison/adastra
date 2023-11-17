@@ -391,7 +391,7 @@ public:
                                      callback);
   }
 
-  void RunForever(double frequency,
+  void RunPeriodically(double frequency,
                   std::function<void(co::Coroutine *)> callback);
 
   void RunAfterDelay(std::chrono::nanoseconds delay,

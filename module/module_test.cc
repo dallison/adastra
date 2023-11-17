@@ -18,6 +18,8 @@
 void SignalHandler(int sig) { printf("Signal %d", sig); }
 
 template <typename T> using Message = stagezero::module::Message<T>;
+template <typename T> using Subscriber = stagezero::module::Subscriber<T>;
+template <typename T> using Publisher = stagezero::module::Publisher<T>;
 using Module = stagezero::module::Module;
 using namespace std::chrono_literals;
 
@@ -98,7 +100,7 @@ TEST_F(ModuleTest, Ticker) {
   ASSERT_TRUE(mod.ModuleInit().ok());
 
   int count = 0;
-  mod.RunForever(20, [&mod, &count](co::Coroutine *c) {
+  mod.RunPeriodically(20, [&mod, &count](co::Coroutine *c) {
     count++;
     if (count == 3) {
       mod.Stop();
@@ -123,7 +125,7 @@ TEST_F(ModuleTest, PubSub) {
 
   auto p = mod.RegisterPublisher<moduletest::TestMessage>(
       "foobar", 256, 10,
-      [](const stagezero::module::Publisher<moduletest::TestMessage> &pub,
+      [](const Publisher<moduletest::TestMessage> &pub,
          moduletest::TestMessage &msg, co::Coroutine *c) -> bool {
         msg.set_x(1234);
         msg.set_s("dave");
@@ -134,7 +136,7 @@ TEST_F(ModuleTest, PubSub) {
 
   auto sub = mod.RegisterSubscriber<moduletest::TestMessage>(
       "foobar",
-      [&mod](const stagezero::module::Subscriber<moduletest::TestMessage> &sub,
+      [&mod](const Subscriber<moduletest::TestMessage> &sub,
              Message<const moduletest::TestMessage> msg, co::Coroutine *c) {
         mod.Stop();
       });
@@ -246,7 +248,7 @@ TEST_F(ModuleTest, PublishOnTick) {
 
   auto p = mod.RegisterPublisher<moduletest::TestMessage>(
       "foobar", 256, 10,
-      [](const stagezero::module::Publisher<moduletest::TestMessage> &pub,
+      [](const Publisher<moduletest::TestMessage> &pub,
          moduletest::TestMessage &msg, co::Coroutine *c) -> bool {
         msg.set_x(1234);
         msg.set_s("dave");
@@ -259,7 +261,7 @@ TEST_F(ModuleTest, PublishOnTick) {
   auto sub = mod.RegisterSubscriber<moduletest::TestMessage>(
       "foobar",
       [&mod, &count](
-          const stagezero::module::Subscriber<moduletest::TestMessage> &sub,
+          const Subscriber<moduletest::TestMessage> &sub,
           Message<const moduletest::TestMessage> msg, co::Coroutine *c) {
         count++;
         if (count == 4) {
@@ -268,7 +270,7 @@ TEST_F(ModuleTest, PublishOnTick) {
       });
   ASSERT_TRUE(sub.ok());
 
-  mod.RunForever(10, [&pub](co::Coroutine *c) { pub->Publish(); });
+  mod.RunPeriodically(10, [&pub](co::Coroutine *c) { pub->Publish(); });
 
   mod.Run();
 }
@@ -280,7 +282,7 @@ TEST_F(ModuleTest, MultipleSubscribers) {
   int count = 1;
   auto p = mod.RegisterPublisher<moduletest::TestMessage>(
       "foobar", 256, 10,
-      [&count](const stagezero::module::Publisher<moduletest::TestMessage> &pub,
+      [&count](const Publisher<moduletest::TestMessage> &pub,
                moduletest::TestMessage &msg, co::Coroutine *c) -> bool {
         msg.set_x(count++);
         msg.set_s("dave");
@@ -292,14 +294,14 @@ TEST_F(ModuleTest, MultipleSubscribers) {
   constexpr int kNumSubs = 4;
   constexpr int kNumMessages = 10;
   std::vector<
-      std::shared_ptr<stagezero::module::Subscriber<moduletest::TestMessage>>>
+      std::shared_ptr<Subscriber<moduletest::TestMessage>>>
       subs;
   std::vector<int> counts(kNumSubs);
   for (int i = 0; i < kNumSubs; i++) {
     auto sub = mod.RegisterSubscriber<moduletest::TestMessage>(
         "foobar",
         [&mod, i, &counts](
-            const stagezero::module::Subscriber<moduletest::TestMessage> &sub,
+            const Subscriber<moduletest::TestMessage> &sub,
             Message<const moduletest::TestMessage> msg, co::Coroutine *c) {
           counts[i]++;
 
@@ -333,10 +335,10 @@ TEST_F(ModuleTest, MultiplePublishersAndSubscribers) {
   constexpr int kNumMessages = 10;
 
   std::vector<
-      std::shared_ptr<stagezero::module::Publisher<moduletest::TestMessage>>>
+      std::shared_ptr<Publisher<moduletest::TestMessage>>>
       pubs;
   std::vector<
-      std::shared_ptr<stagezero::module::Subscriber<moduletest::TestMessage>>>
+      std::shared_ptr<Subscriber<moduletest::TestMessage>>>
       subs;
   std::vector<int> counts(kNumSubs);
   int count = 1;
@@ -346,7 +348,7 @@ TEST_F(ModuleTest, MultiplePublishersAndSubscribers) {
     auto pub = mod.RegisterPublisher<moduletest::TestMessage>(
         "foobar", 256, 20,
         [&count, pub_name](
-            const stagezero::module::Publisher<moduletest::TestMessage> &pub,
+            const Publisher<moduletest::TestMessage> &pub,
             moduletest::TestMessage &msg, co::Coroutine *c) -> bool {
           msg.set_x(count++);
           msg.set_s(pub_name);
@@ -360,7 +362,7 @@ TEST_F(ModuleTest, MultiplePublishersAndSubscribers) {
     auto sub = mod.RegisterSubscriber<moduletest::TestMessage>(
         "foobar",
         [&mod, i, &counts](
-            const stagezero::module::Subscriber<moduletest::TestMessage> &sub,
+            const Subscriber<moduletest::TestMessage> &sub,
             Message<const moduletest::TestMessage> msg, co::Coroutine *c) {
           counts[i]++;
           bool all_done = true;
@@ -380,7 +382,7 @@ TEST_F(ModuleTest, MultiplePublishersAndSubscribers) {
 
   // Publish at 10Hz
   for (int i = 0; i < kNumPubs; i++) {
-    mod.RunForever(10, [&pubs, i](co::Coroutine *c) { pubs[i]->Publish(); });
+    mod.RunPeriodically(10, [&pubs, i](co::Coroutine *c) { pubs[i]->Publish(); });
   }
 
   mod.Run();
@@ -398,7 +400,7 @@ TEST_F(ModuleTest, ReliablePubSub) {
   auto p = mod.RegisterPublisher<moduletest::TestMessage>(
       "foobar", 256, 10, {.reliable = true},
       [&pub_count](
-          const stagezero::module::Publisher<moduletest::TestMessage> &pub,
+          const Publisher<moduletest::TestMessage> &pub,
           moduletest::TestMessage &msg, co::Coroutine *c) -> bool {
         msg.set_x(pub_count++);
         msg.set_s("dave");
@@ -411,7 +413,7 @@ TEST_F(ModuleTest, ReliablePubSub) {
   auto sub = mod.RegisterSubscriber<moduletest::TestMessage>(
       "foobar", {.reliable = true},
       [&mod, &sub_count](
-          const stagezero::module::Subscriber<moduletest::TestMessage> &sub,
+          const Subscriber<moduletest::TestMessage> &sub,
           Message<const moduletest::TestMessage> msg, co::Coroutine *c) {
         sub_count++;
         if (sub_count == kNumMessages) {
@@ -440,12 +442,12 @@ TEST_F(ModuleTest, ReliablePubSubBackpressure) {
   // channel, they will still get through.
   constexpr int kNumMessages = 100;
 
-  std::shared_ptr<stagezero::module::Publisher<moduletest::TestMessage>> pub2;
+  std::shared_ptr<Publisher<moduletest::TestMessage>> pub2;
 
   // Subscriber to "one" and publish to "two"
   auto sub1 = mod.RegisterSubscriber<moduletest::TestMessage>(
       "one", {.reliable = true},
-      [&pub2](const stagezero::module::Subscriber<moduletest::TestMessage> &sub,
+      [&pub2](const Subscriber<moduletest::TestMessage> &sub,
               Message<const moduletest::TestMessage> msg, co::Coroutine *c) {
         pub2->Publish(*msg, c);
       });
@@ -463,7 +465,7 @@ TEST_F(ModuleTest, ReliablePubSubBackpressure) {
   auto p1 = mod.RegisterPublisher<moduletest::TestMessage>(
       "one", 256, 10, {.reliable = true},
       [&pub_count](
-          const stagezero::module::Publisher<moduletest::TestMessage> &pub,
+          const Publisher<moduletest::TestMessage> &pub,
           moduletest::TestMessage &msg, co::Coroutine *c) -> bool {
         msg.set_x(pub_count++);
         msg.set_s("dave");
@@ -477,7 +479,7 @@ TEST_F(ModuleTest, ReliablePubSubBackpressure) {
   auto sub2 = mod.RegisterSubscriber<moduletest::TestMessage>(
       "two", {.reliable = true},
       [&mod, &sub_count](
-          const stagezero::module::Subscriber<moduletest::TestMessage> &sub,
+          const Subscriber<moduletest::TestMessage> &sub,
           Message<const moduletest::TestMessage> msg, co::Coroutine *c) {
         sub_count++;
         if (sub_count == kNumMessages) {

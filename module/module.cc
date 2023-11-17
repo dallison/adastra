@@ -31,7 +31,7 @@ absl::Status Module::NotifyStartup() {
   return absl::OkStatus();
 }
 
-void Module::RunForever(double frequency,
+void Module::RunPeriodically(double frequency,
                         std::function<void(co::Coroutine *)> callback) {
   AddCoroutine(std::make_unique<co::Coroutine>(
       scheduler_,
