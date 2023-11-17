@@ -32,7 +32,7 @@ absl::Status Module::NotifyStartup() {
 }
 
 void Module::RunPeriodically(double frequency,
-                        std::function<void(co::Coroutine *)> callback) {
+                             std::function<void(co::Coroutine *)> callback) {
   AddCoroutine(std::make_unique<co::Coroutine>(
       scheduler_,
       [ frequency, callback = std::move(callback) ](co::Coroutine * c) {
@@ -63,11 +63,13 @@ void Module::RunNow(std::function<void(co::Coroutine *)> callback) {
 }
 
 void Module::RunOnEvent(int fd,
-                        std::function<void(int, co::Coroutine *)> callback) {
+                        std::function<void(int, co::Coroutine *)> callback,
+                        short poll_events) {
   AddCoroutine(std::make_unique<co::Coroutine>(
-      scheduler_, [ fd, callback = std::move(callback) ](co::Coroutine * c) {
+      scheduler_,
+      [ fd, poll_events, callback = std::move(callback) ](co::Coroutine * c) {
         for (;;) {
-          c->Wait(fd);
+          c->Wait(fd, poll_events);
           callback(fd, c);
         }
       },
@@ -76,13 +78,48 @@ void Module::RunOnEvent(int fd,
 
 void Module::RunOnEventWithTimeout(
     int fd, std::chrono::nanoseconds timeout,
-    std::function<void(int, co::Coroutine *)> callback) {
+    std::function<void(int, co::Coroutine *)> callback, short poll_events) {
+  AddCoroutine(std::make_unique<co::Coroutine>(
+      scheduler_, [ fd, timeout, poll_events,
+                    callback = std::move(callback) ](co::Coroutine * c) {
+        for (;;) {
+          int result_fd = c->Wait(fd, poll_events, timeout.count());
+          callback(result_fd, c);
+        }
+      },
+      "event"));
+}
+
+void Module::RunOnEvent(
+    toolbelt::FileDescriptor fd,
+    std::function<void(toolbelt::FileDescriptor, co::Coroutine *)> callback,
+    short poll_events) {
   AddCoroutine(std::make_unique<co::Coroutine>(
       scheduler_,
-      [ fd, timeout, callback = std::move(callback) ](co::Coroutine * c) {
+      [ fd, poll_events, callback = std::move(callback) ](co::Coroutine * c) {
         for (;;) {
-          int result_fd = c->Wait(fd, POLLIN, timeout.count());
-          callback(result_fd, c);
+          c->Wait(fd.Fd(), poll_events);
+          callback(fd, c);
+        }
+      },
+      "ticker"));
+}
+
+void Module::RunOnEventWithTimeout(
+    toolbelt::FileDescriptor fd, std::chrono::nanoseconds timeout,
+    std::function<void(toolbelt::FileDescriptor, co::Coroutine *)> callback,
+    short poll_events) {
+  AddCoroutine(std::make_unique<co::Coroutine>(
+      scheduler_, [ fd, timeout, poll_events,
+                    callback = std::move(callback) ](co::Coroutine * c) {
+        for (;;) {
+          int result_fd = c->Wait(fd.Fd(), poll_events, timeout.count());
+          if (result_fd == -1) {
+            // Timeout;
+            callback({}, c);
+          } else {
+            callback(fd, c);
+          }
         }
       },
       "event"));
@@ -111,8 +148,8 @@ SubscriberBase::SubscriberBase(Module &module, subspace::Subscriber sub,
   coroutine_name_ = absl::StrFormat("sub/%s/%s", module_.name_, sub_.Name());
 }
 
-absl::StatusOr<void *>
-PublisherBase::GetMessageBuffer(size_t size, co::Coroutine *c) {
+absl::StatusOr<void *> PublisherBase::GetMessageBuffer(size_t size,
+                                                       co::Coroutine *c) {
   auto pub = this->shared_from_this();
   // If we are a reliable publisher we need to keep trying to get a buffer.
   // We will wait for the reliable publisher's trigger to be triggered if
@@ -154,22 +191,21 @@ PublisherBase::GetMessageBuffer(size_t size, co::Coroutine *c) {
   }
 }
 
- PublisherBase::PublisherBase(Module &module, subspace::Publisher pub,
-                PublisherOptions options)
-      : module_(module), pub_(std::move(pub)), options_(std::move(options)) {
-    if (absl::Status status = trigger_.Open(); !status.ok()) {
-      // TODO log.
-      std::cerr << "Failed to open trigger: " << status.ToString() << std::endl;
-    }
-    coroutine_name_ = absl::StrFormat("pub/%s/%s", module_.name_, pub_.Name());
+PublisherBase::PublisherBase(Module &module, subspace::Publisher pub,
+                             PublisherOptions options)
+    : module_(module), pub_(std::move(pub)), options_(std::move(options)) {
+  if (absl::Status status = trigger_.Open(); !status.ok()) {
+    // TODO log.
+    std::cerr << "Failed to open trigger: " << status.ToString() << std::endl;
   }
+  coroutine_name_ = absl::StrFormat("pub/%s/%s", module_.name_, pub_.Name());
+}
 
 void PublisherBase::Stop() {
   running_ = false;
   pending_count_ = 0;
   trigger_.Trigger();
 }
-
 
 void PublisherBase::BackpressureSubscribers() {
   for (auto sub : options_.backpressured_subscribers) {

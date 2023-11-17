@@ -15,6 +15,8 @@
 #include <sys/resource.h>
 #include <thread>
 
+using namespace stagezero::module::frequency_literals;
+
 void SignalHandler(int sig) { printf("Signal %d", sig); }
 
 template <typename T> using Message = stagezero::module::Message<T>;
@@ -90,9 +92,7 @@ class MyModule : public Module {
 public:
   MyModule() : Module("test", ModuleTest::Socket()) {}
 
-  absl::Status Init(int argc, char** argv) override {
-    return absl::OkStatus();
-  }
+  absl::Status Init(int argc, char **argv) override { return absl::OkStatus(); }
 };
 
 TEST_F(ModuleTest, Ticker) {
@@ -113,9 +113,78 @@ TEST_F(ModuleTest, Timer) {
   MyModule mod;
   ASSERT_TRUE(mod.ModuleInit().ok());
 
-  mod.RunAfterDelay(100ms, [&mod](co::Coroutine *c) {
+  mod.RunAfterDelay(100ms, [&mod](co::Coroutine *c) { mod.Stop(); });
+  mod.Run();
+}
+
+TEST_F(ModuleTest, Event) {
+  MyModule mod;
+  ASSERT_TRUE(mod.ModuleInit().ok());
+
+  int pipes[2];
+  pipe(pipes);
+
+  mod.RunOnEvent(pipes[0], [&mod, &pipes](int fd, co::Coroutine *c) {
+    ASSERT_EQ(pipes[0], fd);
     mod.Stop();
   });
+
+  mod.RunNow([&pipes](co::Coroutine *c) { write(pipes[1], "x", 1); });
+  mod.Run();
+  close(pipes[0]);
+  close(pipes[1]);
+}
+
+TEST_F(ModuleTest, EventFileDescriptor) {
+  MyModule mod;
+  ASSERT_TRUE(mod.ModuleInit().ok());
+
+  int pipes[2];
+  pipe(pipes);
+
+  toolbelt::FileDescriptor r(pipes[0]);
+
+  mod.RunOnEvent(r, [r, &mod](toolbelt::FileDescriptor fd, co::Coroutine *c) {
+    ASSERT_EQ(r, fd);
+    mod.Stop();
+  });
+
+  mod.RunNow([&pipes](co::Coroutine *c) { write(pipes[1], "x", 1); });
+  mod.Run();
+}
+
+TEST_F(ModuleTest, EventTimeout) {
+  MyModule mod;
+  ASSERT_TRUE(mod.ModuleInit().ok());
+
+  int pipes[2];
+  pipe(pipes);
+
+  mod.RunOnEventWithTimeout(pipes[0], 100ms, [&mod](int fd, co::Coroutine *c) {
+    ASSERT_EQ(-1, fd);
+    mod.Stop();
+  });
+
+  mod.Run();
+  close(pipes[0]);
+  close(pipes[1]);
+}
+
+TEST_F(ModuleTest, EventFileDescriptorTimeout) {
+  MyModule mod;
+  ASSERT_TRUE(mod.ModuleInit().ok());
+
+  int pipes[2];
+  pipe(pipes);
+
+  toolbelt::FileDescriptor r(pipes[0]);
+
+  mod.RunOnEventWithTimeout(
+      r, 100ms, [r, &mod](toolbelt::FileDescriptor fd, co::Coroutine *c) {
+        ASSERT_FALSE(fd.Valid());
+        mod.Stop();
+      });
+
   mod.Run();
 }
 
@@ -135,11 +204,9 @@ TEST_F(ModuleTest, PubSub) {
   auto pub = *p;
 
   auto sub = mod.RegisterSubscriber<moduletest::TestMessage>(
-      "foobar",
-      [&mod](const Subscriber<moduletest::TestMessage> &sub,
-             Message<const moduletest::TestMessage> msg, co::Coroutine *c) {
-        mod.Stop();
-      });
+      "foobar", [&mod](const Subscriber<moduletest::TestMessage> &sub,
+                       Message<const moduletest::TestMessage> msg,
+                       co::Coroutine *c) { mod.Stop(); });
   ASSERT_TRUE(sub.ok());
 
   pub->Publish();
@@ -151,16 +218,18 @@ TEST_F(ModuleTest, PubSubZeroCopy) {
   ASSERT_TRUE(mod.ModuleInit().ok());
 
   auto sub = mod.RegisterZeroCopySubscriber<std::byte>(
-      "foobar", [&mod](const stagezero::module::ZeroCopySubscriber<std::byte> &sub,
-                       Message<const std::byte> msg, co::Coroutine *c) {
+      "foobar",
+      [&mod](const stagezero::module::ZeroCopySubscriber<std::byte> &sub,
+             Message<const std::byte> msg, co::Coroutine *c) {
         absl::Span<const std::byte> span = msg;
         ASSERT_EQ(6, span.size());
-        ASSERT_STREQ("foobar", reinterpret_cast<const char*>(span.data()));
+        ASSERT_STREQ("foobar", reinterpret_cast<const char *>(span.data()));
         mod.Stop();
       });
   ASSERT_TRUE(sub.ok());
 
-  auto p = mod.RegisterZeroCopyPublisher<absl::Span<std::byte>>("foobar", 256, 10);
+  auto p =
+      mod.RegisterZeroCopyPublisher<absl::Span<std::byte>>("foobar", 256, 10);
   ASSERT_TRUE(p.ok());
   auto pub = std::move(*p);
 
@@ -184,8 +253,9 @@ TEST_F(ModuleTest, PubSubZeroCopyStruct) {
   };
 
   auto sub = mod.RegisterZeroCopySubscriber<MyMessage>(
-      "foobar", [&mod](const stagezero::module::ZeroCopySubscriber<MyMessage> &sub,
-                       Message<const MyMessage> msg, co::Coroutine *c) {
+      "foobar",
+      [&mod](const stagezero::module::ZeroCopySubscriber<MyMessage> &sub,
+             Message<const MyMessage> msg, co::Coroutine *c) {
         ASSERT_EQ(1234, msg->x);
         ASSERT_STREQ("foobar", msg->s);
         mod.Stop();
@@ -200,7 +270,7 @@ TEST_F(ModuleTest, PubSubZeroCopyStruct) {
     absl::StatusOr<void *> buffer = pub->GetMessageBuffer(sizeof(MyMessage), c);
     ASSERT_TRUE(buffer.ok());
     ASSERT_NE(nullptr, *buffer);
-    MyMessage* msg = reinterpret_cast<MyMessage*>(*buffer);
+    MyMessage *msg = reinterpret_cast<MyMessage *>(*buffer);
     msg->x = 1234;
     strcpy(msg->s, "foobar");
     pub->Publish(sizeof(MyMessage), c);
@@ -218,16 +288,18 @@ TEST_F(ModuleTest, PubSubZeroCopyStructCallback) {
   };
 
   auto sub = mod.RegisterZeroCopySubscriber<MyMessage>(
-      "foobar", [&mod](const stagezero::module::ZeroCopySubscriber<MyMessage> &sub,
-                       Message<const MyMessage> msg, co::Coroutine *c) {
+      "foobar",
+      [&mod](const stagezero::module::ZeroCopySubscriber<MyMessage> &sub,
+             Message<const MyMessage> msg, co::Coroutine *c) {
         ASSERT_EQ(1234, msg->x);
         ASSERT_STREQ("foobar", msg->s);
         mod.Stop();
       });
   ASSERT_TRUE(sub.ok());
 
-  auto p = mod.RegisterZeroCopyPublisher<MyMessage>("foobar", 256, 10,      
-  [](const stagezero::module::ZeroCopyPublisher<MyMessage> &pub,
+  auto p = mod.RegisterZeroCopyPublisher<MyMessage>(
+      "foobar", 256, 10,
+      [](const stagezero::module::ZeroCopyPublisher<MyMessage> &pub,
          MyMessage &msg, co::Coroutine *c) -> bool {
         msg.x = 1234;
         strcpy(msg.s, "foobar");
@@ -236,9 +308,7 @@ TEST_F(ModuleTest, PubSubZeroCopyStructCallback) {
   ASSERT_TRUE(p.ok());
   auto pub = std::move(*p);
 
-  mod.RunNow([&pub](co::Coroutine *c) {
-    pub->Publish();
-  });
+  mod.RunNow([&pub](co::Coroutine *c) { pub->Publish(); });
   mod.Run();
 }
 
@@ -259,10 +329,9 @@ TEST_F(ModuleTest, PublishOnTick) {
 
   int count = 0;
   auto sub = mod.RegisterSubscriber<moduletest::TestMessage>(
-      "foobar",
-      [&mod, &count](
-          const Subscriber<moduletest::TestMessage> &sub,
-          Message<const moduletest::TestMessage> msg, co::Coroutine *c) {
+      "foobar", [&mod, &count](const Subscriber<moduletest::TestMessage> &sub,
+                               Message<const moduletest::TestMessage> msg,
+                               co::Coroutine *c) {
         count++;
         if (count == 4) {
           mod.Stop();
@@ -293,16 +362,14 @@ TEST_F(ModuleTest, MultipleSubscribers) {
 
   constexpr int kNumSubs = 4;
   constexpr int kNumMessages = 10;
-  std::vector<
-      std::shared_ptr<Subscriber<moduletest::TestMessage>>>
-      subs;
+  std::vector<std::shared_ptr<Subscriber<moduletest::TestMessage>>> subs;
   std::vector<int> counts(kNumSubs);
   for (int i = 0; i < kNumSubs; i++) {
     auto sub = mod.RegisterSubscriber<moduletest::TestMessage>(
         "foobar",
-        [&mod, i, &counts](
-            const Subscriber<moduletest::TestMessage> &sub,
-            Message<const moduletest::TestMessage> msg, co::Coroutine *c) {
+        [&mod, i, &counts](const Subscriber<moduletest::TestMessage> &sub,
+                           Message<const moduletest::TestMessage> msg,
+                           co::Coroutine *c) {
           counts[i]++;
 
           bool all_done = true;
@@ -334,12 +401,8 @@ TEST_F(ModuleTest, MultiplePublishersAndSubscribers) {
   constexpr int kNumSubs = 4;
   constexpr int kNumMessages = 10;
 
-  std::vector<
-      std::shared_ptr<Publisher<moduletest::TestMessage>>>
-      pubs;
-  std::vector<
-      std::shared_ptr<Subscriber<moduletest::TestMessage>>>
-      subs;
+  std::vector<std::shared_ptr<Publisher<moduletest::TestMessage>>> pubs;
+  std::vector<std::shared_ptr<Subscriber<moduletest::TestMessage>>> subs;
   std::vector<int> counts(kNumSubs);
   int count = 1;
 
@@ -347,9 +410,9 @@ TEST_F(ModuleTest, MultiplePublishersAndSubscribers) {
     std::string pub_name = absl::StrFormat("pub-%d", i);
     auto pub = mod.RegisterPublisher<moduletest::TestMessage>(
         "foobar", 256, 20,
-        [&count, pub_name](
-            const Publisher<moduletest::TestMessage> &pub,
-            moduletest::TestMessage &msg, co::Coroutine *c) -> bool {
+        [&count, pub_name](const Publisher<moduletest::TestMessage> &pub,
+                           moduletest::TestMessage &msg,
+                           co::Coroutine *c) -> bool {
           msg.set_x(count++);
           msg.set_s(pub_name);
           return true;
@@ -361,9 +424,9 @@ TEST_F(ModuleTest, MultiplePublishersAndSubscribers) {
   for (int i = 0; i < kNumSubs; i++) {
     auto sub = mod.RegisterSubscriber<moduletest::TestMessage>(
         "foobar",
-        [&mod, i, &counts](
-            const Subscriber<moduletest::TestMessage> &sub,
-            Message<const moduletest::TestMessage> msg, co::Coroutine *c) {
+        [&mod, i, &counts](const Subscriber<moduletest::TestMessage> &sub,
+                           Message<const moduletest::TestMessage> msg,
+                           co::Coroutine *c) {
           counts[i]++;
           bool all_done = true;
           for (int j = 0; j < kNumSubs; j++) {
@@ -382,7 +445,8 @@ TEST_F(ModuleTest, MultiplePublishersAndSubscribers) {
 
   // Publish at 10Hz
   for (int i = 0; i < kNumPubs; i++) {
-    mod.RunPeriodically(10, [&pubs, i](co::Coroutine *c) { pubs[i]->Publish(); });
+    mod.RunPeriodically(10_hz,
+                        [&pubs, i](co::Coroutine *c) { pubs[i]->Publish(); });
   }
 
   mod.Run();
@@ -399,9 +463,8 @@ TEST_F(ModuleTest, ReliablePubSub) {
   int pub_count = 1;
   auto p = mod.RegisterPublisher<moduletest::TestMessage>(
       "foobar", 256, 10, {.reliable = true},
-      [&pub_count](
-          const Publisher<moduletest::TestMessage> &pub,
-          moduletest::TestMessage &msg, co::Coroutine *c) -> bool {
+      [&pub_count](const Publisher<moduletest::TestMessage> &pub,
+                   moduletest::TestMessage &msg, co::Coroutine *c) -> bool {
         msg.set_x(pub_count++);
         msg.set_s("dave");
         return true;
@@ -412,9 +475,9 @@ TEST_F(ModuleTest, ReliablePubSub) {
   int sub_count = 0;
   auto sub = mod.RegisterSubscriber<moduletest::TestMessage>(
       "foobar", {.reliable = true},
-      [&mod, &sub_count](
-          const Subscriber<moduletest::TestMessage> &sub,
-          Message<const moduletest::TestMessage> msg, co::Coroutine *c) {
+      [&mod, &sub_count](const Subscriber<moduletest::TestMessage> &sub,
+                         Message<const moduletest::TestMessage> msg,
+                         co::Coroutine *c) {
         sub_count++;
         if (sub_count == kNumMessages) {
           mod.Stop();
@@ -448,9 +511,8 @@ TEST_F(ModuleTest, ReliablePubSubBackpressure) {
   auto sub1 = mod.RegisterSubscriber<moduletest::TestMessage>(
       "one", {.reliable = true},
       [&pub2](const Subscriber<moduletest::TestMessage> &sub,
-              Message<const moduletest::TestMessage> msg, co::Coroutine *c) {
-        pub2->Publish(*msg, c);
-      });
+              Message<const moduletest::TestMessage> msg,
+              co::Coroutine *c) { pub2->Publish(*msg, c); });
   ASSERT_TRUE(sub1.ok());
 
   // Publisher for "two" that backpressures channel "one"
@@ -464,9 +526,8 @@ TEST_F(ModuleTest, ReliablePubSubBackpressure) {
   int pub_count = 1;
   auto p1 = mod.RegisterPublisher<moduletest::TestMessage>(
       "one", 256, 10, {.reliable = true},
-      [&pub_count](
-          const Publisher<moduletest::TestMessage> &pub,
-          moduletest::TestMessage &msg, co::Coroutine *c) -> bool {
+      [&pub_count](const Publisher<moduletest::TestMessage> &pub,
+                   moduletest::TestMessage &msg, co::Coroutine *c) -> bool {
         msg.set_x(pub_count++);
         msg.set_s("dave");
         return true;
@@ -478,9 +539,9 @@ TEST_F(ModuleTest, ReliablePubSubBackpressure) {
   int sub_count = 0;
   auto sub2 = mod.RegisterSubscriber<moduletest::TestMessage>(
       "two", {.reliable = true},
-      [&mod, &sub_count](
-          const Subscriber<moduletest::TestMessage> &sub,
-          Message<const moduletest::TestMessage> msg, co::Coroutine *c) {
+      [&mod, &sub_count](const Subscriber<moduletest::TestMessage> &sub,
+                         Message<const moduletest::TestMessage> msg,
+                         co::Coroutine *c) {
         sub_count++;
         if (sub_count == kNumMessages) {
           mod.Stop();

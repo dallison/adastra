@@ -24,6 +24,17 @@ namespace stagezero::module {
 
 class Module;
 
+// User defined literals for frequency for the RunPeriodically function.
+// Not really needed but makes the caller easier to read.
+namespace frequency_literals {
+constexpr long double operator"" _hz(long double f) { return f; }
+constexpr long double operator"" _khz(long double f) { return f * 1000; }
+constexpr long double operator"" _mhz(long double f) { return f * 1000000; }
+constexpr long double operator"" _hz(uint64_t f) { return f; }
+constexpr long double operator"" _khz(uint64_t f) { return f * 1000.0; }
+constexpr long double operator"" _mhz(uint64_t f) { return f * 1000000.0; }
+} // namespace frequency_literals
+
 // This is a message received from IPC.  It is either a pointer to
 // a deserialized protobuf message or a pointer to a message held
 // in an IPC slot (as a subspace::shared_ptr).
@@ -391,18 +402,51 @@ public:
                                      callback);
   }
 
+  // Run the callback at a frequency in Hertz.
+  // NOTE: you can use the user-defined literals for frequencey if you like.
+  //
+  // For example: 1.5_hz or 1_khz.
+  //
+  // Like I said, not needed but kinda cute.  It would be better if C++ didn't
+  // force you to use an underscore like in std::chrono_literals.  However, that
+  // nicety is reserved for the standard library for some reason.
   void RunPeriodically(double frequency,
-                  std::function<void(co::Coroutine *)> callback);
+                       std::function<void(co::Coroutine *)> callback);
 
+  // Run the callback once after a delay in nanoseconds.
   void RunAfterDelay(std::chrono::nanoseconds delay,
                      std::function<void(co::Coroutine *)> callback);
 
+  // Run the callback immediately.
   void RunNow(std::function<void(co::Coroutine *)> callback);
 
-  void RunOnEvent(int fd, std::function<void(int, co::Coroutine *)> callback);
-  void
-  RunOnEventWithTimeout(int fd, std::chrono::nanoseconds timeout,
-                        std::function<void(int, co::Coroutine *)> callback);
+  // Run the callback when the file descriptor is available for the poll_events.
+  // The callback is passed the file descriptor.
+  void RunOnEvent(int fd, std::function<void(int, co::Coroutine *)> callback,
+                  short poll_events = POLLIN);
+
+  // Run the callback when the file descriptor is available for the poll_evnets
+  // or after a timeout in nanoseconds.  The callback is passed the file
+  // descriptor of -1 if a timeout occurred.
+  void RunOnEventWithTimeout(int fd, std::chrono::nanoseconds timeout,
+                             std::function<void(int, co::Coroutine *)> callback,
+                             short poll_events = POLLIN);
+
+  // Run the callback when the file descriptor is available for the poll_events.
+  // The callback is passed the file descriptor.
+  void RunOnEvent(
+      toolbelt::FileDescriptor fd,
+      std::function<void(toolbelt::FileDescriptor, co::Coroutine *)> callback,
+      short poll_events = POLLIN);
+
+  // Run the callback when the file descriptor is available for the poll_evnets
+  // or after a timeout in nanoseconds.  The callback is passed the file
+  // descriptor of an invalid FileDescriptor (.Valid() == false) if a timeout
+  // occurred.
+  void RunOnEventWithTimeout(
+      toolbelt::FileDescriptor fd, std::chrono::nanoseconds timeout,
+      std::function<void(toolbelt::FileDescriptor, co::Coroutine *)> callback,
+      short poll_events = POLLIN);
 
   absl::Status NotifyStartup();
 
@@ -563,8 +607,7 @@ inline void Publisher<MessageType>::PublishMessage(const MessageType &msg,
   // We got a buffer, serialize the message into it and publish
   // it.
   if (!msg.SerializeToArray(*buffer, length)) {
-    std::cerr << "Failed to serialize message" 
-              << std::endl;
+    std::cerr << "Failed to serialize message" << std::endl;
     abort();
   }
   absl::StatusOr<subspace::Message> m = pub_.PublishMessage(length);
