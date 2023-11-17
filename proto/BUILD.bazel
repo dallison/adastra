@@ -36,3 +36,18 @@ cc_proto_library(
     name = "capcom_cc_proto",
     deps = [":capcom_proto"],
 )
+
+
+proto_library(
+    name = "flight_proto",
+    srcs = ["flight.proto"],
+    deps = [
+        ":capcom_proto",
+        ":config_proto",
+    ],
+)
+
+cc_proto_library(
+    name = "flight_cc_proto",
+    deps = [":flight_proto"],
+)

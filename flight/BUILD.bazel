@@ -4,14 +4,17 @@ cc_library(
     name = "flight_lib",
     srcs = [
         "flight_director.cc",
+        "client_handler.cc",
     ],
     hdrs = [
         "flight_director.h",
-    ],
+         "client_handler.h",
+   ],
     deps = [
         "//capcom/client",
         "//proto:capcom_cc_proto",
         "//proto:config_cc_proto",
+        "//proto:flight_cc_proto",
         "//common",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",

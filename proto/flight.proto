@@ -2,17 +2,19 @@ syntax = "proto3";
 
 package stagezero.flight;
 
+import "proto/capcom.proto";
+
 message Variable {
-  string name = 1;     // Varible name
-  string value = 2;    // Expression for value (use $ for var names)
-  bool exported = 3;     // Export to environment.
+  string name = 1;   // Variable name
+  string value = 2;  // Expression for value (use $ for var names)
+  bool exported = 3; // Export to environment.
 }
 
 message ModuleOptions {
   string description = 1;
 
   repeated Variable vars = 2; // Local variables and environment.
-  repeated string args = 3;          // Use $var in expressions.
+  repeated string args = 3;   // Use $var in expressions.
 
   // Timeouts for shutdown.  The sigint timeout is the number of
   // seconds beteen sending SIGINT and SIGTERM.  -1 means no
@@ -31,7 +33,7 @@ message ProcessOptions {
   string description = 1;
 
   repeated Variable vars = 2; // Local variables and environment.
-  repeated string args = 3;          // Use $var in expressions.
+  repeated string args = 3;   // Use $var in expressions.
 
   // Timeouts for shutdown.  The sigint timeout is the number of
   // seconds beteen sending SIGINT and SIGTERM.  -1 means no
@@ -41,7 +43,7 @@ message ProcessOptions {
   int32 sigint_shutdown_timeout_secs = 4;
   int32 sigterm_shutdown_timeout_secs = 5;
 
-  bool notify = 6;      // Notify of startup via pipe.
+  bool notify = 6; // Notify of startup via pipe.
 
   // If the process will notify us, we wait this long for it
   // to do so.
@@ -65,18 +67,19 @@ message Subsystem {
   string name = 1;
   repeated StaticProcess static_processes = 2;
   repeated Module modules = 3;
+  repeated StaticProcess zygotes = 4;
 
   // Variables common to this subsystem.
-  repeated Variable vars = 4;
+  repeated Variable vars = 5;
 
   // Args to pass to all processes in this subsystem.
-  repeated string args = 5;
+  repeated string args = 6;
 
   // Names of dependent subsystems.  These must be online in
   // order for this module to be online.  They are started before
   // this module and shutdown after this module.  If a dependency
   // restart, this module will restart.
-  repeated string deps = 6;
+  repeated string deps = 7;
 }
 
 message SubsystemGraph {
@@ -84,13 +87,16 @@ message SubsystemGraph {
   repeated string interfaces = 2;
 }
 
-message LoadGraphRequest {
+message InitRequest { string client_name = 1; }
 
+message InitResponse {
+  string error = 1;
+  int32 event_port = 2;
 }
 
-message LoadGraphResponse {
+message LoadGraphRequest { string filename = 1; }
 
-}
+message LoadGraphResponse { string error = 1; }
 
 message StartSubsystemRequest { string subsystem = 1; }
 
@@ -100,47 +106,46 @@ message StopSubsystemRequest { string subsystem = 1; }
 
 message StopSubsystemResponse { string error = 1; }
 
-message GetSubsystemsRequest {
-}
+message GetSubsystemsRequest {}
 
 message GetSubsystemsResponse {
   string error = 1;
-  repeated SubsystemStatus subsystems = 2;
+  repeated stagezero.capcom.proto.SubsystemStatus subsystems = 2;
 }
 
-message GetAlarmsRequest {
-}
+message GetAlarmsRequest {}
 
 message GetAlarmsResponse {
-   string error = 1;
-  repeated Alarm alarms = 2;
-
+  string error = 1;
+  repeated stagezero.capcom.proto.Alarm alarms = 2;
 }
 
 message AbortRequest {
-  string reason = 1;      // Why we are aborting.
+  string reason = 1; // Why we are aborting.
 }
 
-message AbortResponse {
-  string error = 1;     
-}
+message AbortResponse { string error = 1; }
 
 message Request {
   oneof request {
-    LoadGraphRequest load_graph = 1;
-    StartSubsystemRequest start_subsystem = 2;
-    StopSubsystemRequest stop_subsystem = 3;
-    GetSubsystemsRequest get_subsystems = 4;
-    GetAlarmsRequest get_alarms = 5;
-    AbortRequest abort = 6;  }
+    InitRequest init = 1;
+    LoadGraphRequest load_graph = 2;
+    StartSubsystemRequest start_subsystem = 3;
+    StopSubsystemRequest stop_subsystem = 4;
+    GetSubsystemsRequest get_subsystems = 5;
+    GetAlarmsRequest get_alarms = 6;
+    AbortRequest abort = 7;
+  }
 }
 
 message Response {
   oneof response {
-    LoadGraphResponse load_graph = 1;
-    StartSubsystemResponse start_subsystem = 2;
-    StopSubsystemResponse stop_subsystem = 3;
-    GetSubsystemsResponse get_subsystems = 4;
-    GetAlarmsResponse get_alarms = 5;
-    AbortResponse abort = 6;  }
+    InitResponse init = 1;
+    LoadGraphResponse load_graph = 2;
+    StartSubsystemResponse start_subsystem = 3;
+    StopSubsystemResponse stop_subsystem = 4;
+    GetSubsystemsResponse get_subsystems = 5;
+    GetAlarmsResponse get_alarms = 6;
+    AbortResponse abort = 7;
+  }
 }
