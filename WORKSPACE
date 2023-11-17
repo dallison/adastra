@@ -124,3 +124,16 @@ http_archive(
   sha256 = "225df6e6dea7cea7c5754d4ed954e9ca7c43947b849b3795f87cb56437f1bd19",
   urls = ["https://github.com/pybind/pybind11/archive/refs/tags/v2.10.0.zip"],
 )
+
+# http_archive(
+#   name = "subspace",
+#   urls = ["https://github.com/dallison/subspace/archive/refs/tags/1.3.1.tar.gz"],
+#   strip_prefix = "subspace-1.3.1",
+#   sha256 = "213a89907da644a2ffd1d8c26d1afef99450e856ff5fcbcd1112358456d3e51b"
+# )
+
+# For local debugging of toolbelt subspace library.
+local_repository(
+    name = "subspace",
+    path = "../subspace",
+)

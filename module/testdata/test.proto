@@ -1,0 +1,8 @@
+syntax = "proto3";
+
+package moduletest;
+
+message TestMessage {
+  int32 x = 1;
+  string s = 2;
+}

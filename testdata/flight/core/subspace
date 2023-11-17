@@ -1,0 +1,8 @@
+static_process {
+  executable: "${runfiles}/foo/bar/subspace_server"
+}
+
+options {
+  name: "subspace"
+  description: "Subspace server"
+}

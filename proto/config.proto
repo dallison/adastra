@@ -28,7 +28,6 @@ message ProcessOptions {
   // If the process will notify us, we wait this long for it
   // to do so.
   int32 startup_timeout_secs = 8;
-
 }
 
 message StaticProcess {

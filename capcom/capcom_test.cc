@@ -268,7 +268,7 @@ TEST_F(CapcomTest, SimpleSubsystem) {
       "foobar",
       {.static_processes = {{
            .name = "loop",
-           .executable = "${runfiles_dir}/__main__/stagezero/testdata/loop",
+           .executable = "${runfiles_dir}/__main__/testdata/loop",
        }}});
   ASSERT_TRUE(status.ok());
 
@@ -288,7 +288,7 @@ TEST_F(CapcomTest, SimpleSubsystemCompute) {
       "foobar",
       {.static_processes = {{
            .name = "loop",
-           .executable = "${runfiles_dir}/__main__/stagezero/testdata/loop",
+           .executable = "${runfiles_dir}/__main__/testdata/loop",
            .compute = "localhost",
        }}});
   ASSERT_TRUE(status.ok());
@@ -298,7 +298,7 @@ TEST_F(CapcomTest, SimpleSubsystemCompute) {
       "foobar2",
       {.static_processes = {{
            .name = "loop",
-           .executable = "${runfiles_dir}/__main__/stagezero/testdata/loop",
+           .executable = "${runfiles_dir}/__main__/testdata/loop",
            .compute = "notknown",
        }}});
   ASSERT_FALSE(status.ok());
@@ -327,12 +327,12 @@ TEST_F(CapcomTest, SubsystemWithMultipleCompute) {
       {.static_processes = {
            {
                .name = "loop1",
-               .executable = "${runfiles_dir}/__main__/stagezero/testdata/loop",
+               .executable = "${runfiles_dir}/__main__/testdata/loop",
                .compute = "localhost1",
            },
            {
                .name = "loop2",
-               .executable = "${runfiles_dir}/__main__/stagezero/testdata/loop",
+               .executable = "${runfiles_dir}/__main__/testdata/loop",
                .compute = "localhost2",
            }}});
   ASSERT_TRUE(status.ok());
@@ -355,7 +355,7 @@ TEST_F(CapcomTest, StartSimpleSubsystem) {
       "foobar1",
       {.static_processes = {{
            .name = "loop",
-           .executable = "${runfiles_dir}/__main__/stagezero/testdata/loop",
+           .executable = "${runfiles_dir}/__main__/testdata/loop",
        }}});
   ASSERT_TRUE(status.ok());
 
@@ -381,7 +381,7 @@ TEST_F(CapcomTest, StartSimpleSubsystemCompute) {
       "foobar1",
       {.static_processes = {{
            .name = "loop",
-           .executable = "${runfiles_dir}/__main__/stagezero/testdata/loop",
+           .executable = "${runfiles_dir}/__main__/testdata/loop",
            .compute = "localhost",
        }}});
   ASSERT_TRUE(status.ok());
@@ -416,12 +416,12 @@ TEST_F(CapcomTest, StartSimpleSubsystemWithMultipleCompute) {
       {.static_processes = {
            {
                .name = "loop1",
-               .executable = "${runfiles_dir}/__main__/stagezero/testdata/loop",
+               .executable = "${runfiles_dir}/__main__/testdata/loop",
                .compute = "localhost1",
            },
            {
                .name = "loop2",
-               .executable = "${runfiles_dir}/__main__/stagezero/testdata/loop",
+               .executable = "${runfiles_dir}/__main__/testdata/loop",
                .compute = "localhost2",
            },
        }});
@@ -451,7 +451,7 @@ TEST_F(CapcomTest, RestartSimpleSubsystem) {
       "foobar1",
       {.static_processes = {{
            .name = "loop",
-           .executable = "${runfiles_dir}/__main__/stagezero/testdata/loop",
+           .executable = "${runfiles_dir}/__main__/testdata/loop",
        }}});
   ASSERT_TRUE(status.ok());
 
@@ -491,7 +491,7 @@ TEST_F(CapcomTest, StartSimpleSubsystemTree) {
       "child",
       {.static_processes = {{
            .name = "loop1",
-           .executable = "${runfiles_dir}/__main__/stagezero/testdata/loop",
+           .executable = "${runfiles_dir}/__main__/testdata/loop",
        }}});
   ASSERT_TRUE(status.ok());
 
@@ -499,7 +499,7 @@ TEST_F(CapcomTest, StartSimpleSubsystemTree) {
       "parent",
       {.static_processes = {{
            .name = "loop2",
-           .executable = "${runfiles_dir}/__main__/stagezero/testdata/loop",
+           .executable = "${runfiles_dir}/__main__/testdata/loop",
        }},
        .children = {
            "child",
@@ -527,7 +527,7 @@ TEST_F(CapcomTest, Abort) {
       "subsys",
       {.static_processes = {{
            .name = "loop",
-           .executable = "${runfiles_dir}/__main__/stagezero/testdata/loop",
+           .executable = "${runfiles_dir}/__main__/testdata/loop",
        }}});
   ASSERT_TRUE(status.ok());
 
@@ -553,7 +553,7 @@ TEST_F(CapcomTest, AbortThenGoAgain) {
       "subsys",
       {.static_processes = {{
            .name = "loop",
-           .executable = "${runfiles_dir}/__main__/stagezero/testdata/loop",
+           .executable = "${runfiles_dir}/__main__/testdata/loop",
        }}});
   ASSERT_TRUE(status.ok());
 
@@ -587,7 +587,7 @@ TEST_F(CapcomTest, RestartSimpleSubsystemTree) {
       "child",
       {.static_processes = {{
            .name = "loop1",
-           .executable = "${runfiles_dir}/__main__/stagezero/testdata/loop",
+           .executable = "${runfiles_dir}/__main__/testdata/loop",
        }}});
   ASSERT_TRUE(status.ok());
 
@@ -644,7 +644,7 @@ TEST_F(CapcomTest, Zygote) {
       "zygote1",
       {.zygotes = {{
            .name = "loop",
-           .executable = "${runfiles_dir}/__main__/stagezero/testdata/zygote",
+           .executable = "${runfiles_dir}/__main__/testdata/zygote",
        }}});
   ASSERT_TRUE(status.ok());
 
@@ -666,7 +666,7 @@ TEST_F(CapcomTest, VirtualProcess) {
       "zygote1",
       {.zygotes = {{
            .name = "zygote1",
-           .executable = "${runfiles_dir}/__main__/stagezero/testdata/zygote",
+           .executable = "${runfiles_dir}/__main__/testdata/zygote",
        }}});
   ASSERT_TRUE(status.ok());
 
@@ -675,7 +675,7 @@ TEST_F(CapcomTest, VirtualProcess) {
       {.virtual_processes = {{
            .name = "virtual_module",
            .zygote = "zygote1",
-           .dso = "${runfiles_dir}/__main__/stagezero/testdata/module.so",
+           .dso = "${runfiles_dir}/__main__/testdata/module.so",
            .main_func = "Main",
        }}});
   ASSERT_TRUE(status.ok());
@@ -713,7 +713,7 @@ TEST_F(CapcomTest, AbortVirtual) {
       "zygote1",
       {.zygotes = {{
            .name = "zygote1",
-           .executable = "${runfiles_dir}/__main__/stagezero/testdata/zygote",
+           .executable = "${runfiles_dir}/__main__/testdata/zygote",
        }}});
   ASSERT_TRUE(status.ok());
 
@@ -722,7 +722,7 @@ TEST_F(CapcomTest, AbortVirtual) {
       {.virtual_processes = {{
            .name = "virtual_module",
            .zygote = "zygote1",
-           .dso = "${runfiles_dir}/__main__/stagezero/testdata/module.so",
+           .dso = "${runfiles_dir}/__main__/testdata/module.so",
            .main_func = "Main",
        }}});
   ASSERT_TRUE(status.ok());
