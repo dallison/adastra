@@ -1,3 +1,6 @@
+// Copyright 2023 David Allison
+// All Rights Reserved
+// See LICENSE file for licensing information.
 #pragma once
 
 #include "absl/status/status.h"
@@ -137,7 +140,7 @@ public:
   absl::StatusOr<Event> ReadEvent(co::Coroutine *c = nullptr);
 
   absl::Status Abort(const std::string& reason, co::Coroutine *c = nullptr);
-  
+
 private:
   static constexpr size_t kMaxMessageSize = 4096;
 

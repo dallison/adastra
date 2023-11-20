@@ -1,6 +1,10 @@
+// Copyright 2023 David Allison
+// All Rights Reserved
+// See LICENSE file for licensing information.
+
 syntax = "proto3";
 
-package stagezero.flight;
+package stagezero.flight.proto;
 
 import "proto/capcom.proto";
 
@@ -55,36 +59,46 @@ message Module {
   string dso = 2;
   string zygote = 3;
   ModuleOptions options = 4;
+  string compute = 5;
 }
 
 message StaticProcess {
   string name = 1;
   string executable = 2;
   ProcessOptions options = 3;
+  string compute = 4;
 }
 
 message Subsystem {
   string name = 1;
-  repeated StaticProcess static_processes = 2;
-  repeated Module modules = 3;
-  repeated StaticProcess zygotes = 4;
+  repeated StaticProcess static_process = 2;
+  repeated Module module = 3;
+  repeated StaticProcess zygote = 4;
 
   // Variables common to this subsystem.
-  repeated Variable vars = 5;
+  repeated Variable var = 5;
 
   // Args to pass to all processes in this subsystem.
-  repeated string args = 6;
+  repeated string arg = 6;
 
   // Names of dependent subsystems.  These must be online in
   // order for this module to be online.  They are started before
   // this module and shutdown after this module.  If a dependency
   // restart, this module will restart.
-  repeated string deps = 7;
+  repeated string dep = 7;
+}
+
+message Compute {
+  string name = 1;
+  bytes ip_addr = 2;  // Host byte order.
+  int32 port = 3;       // Host byte order.
 }
 
 message SubsystemGraph {
-  repeated Subsystem subsystems = 1;
-  repeated string interfaces = 2;
+  repeated Subsystem subsystem = 1;
+  repeated string interface = 2;
+  repeated string autostart = 3;
+  repeated Compute compute = 4;
 }
 
 message InitRequest { string client_name = 1; }
@@ -94,9 +108,6 @@ message InitResponse {
   int32 event_port = 2;
 }
 
-message LoadGraphRequest { string filename = 1; }
-
-message LoadGraphResponse { string error = 1; }
 
 message StartSubsystemRequest { string subsystem = 1; }
 
@@ -129,23 +140,21 @@ message AbortResponse { string error = 1; }
 message Request {
   oneof request {
     InitRequest init = 1;
-    LoadGraphRequest load_graph = 2;
-    StartSubsystemRequest start_subsystem = 3;
-    StopSubsystemRequest stop_subsystem = 4;
-    GetSubsystemsRequest get_subsystems = 5;
-    GetAlarmsRequest get_alarms = 6;
-    AbortRequest abort = 7;
+    StartSubsystemRequest start_subsystem = 2;
+    StopSubsystemRequest stop_subsystem = 3;
+    GetSubsystemsRequest get_subsystems = 4;
+    GetAlarmsRequest get_alarms = 5;
+    AbortRequest abort = 6;
   }
 }
 
 message Response {
   oneof response {
     InitResponse init = 1;
-    LoadGraphResponse load_graph = 2;
-    StartSubsystemResponse start_subsystem = 3;
-    StopSubsystemResponse stop_subsystem = 4;
-    GetSubsystemsResponse get_subsystems = 5;
-    GetAlarmsResponse get_alarms = 6;
-    AbortResponse abort = 7;
+    StartSubsystemResponse start_subsystem = 2;
+    StopSubsystemResponse stop_subsystem = 3;
+    GetSubsystemsResponse get_subsystems = 4;
+    GetAlarmsResponse get_alarms = 5;
+    AbortResponse abort = 6;
   }
 }

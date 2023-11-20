@@ -1,3 +1,7 @@
+// Copyright 2023 David Allison
+// All Rights Reserved
+// See LICENSE file for licensing information.
+
 #pragma once
 
 #include "common/tcp_client_handler.h"

@@ -1,7 +1,11 @@
+// Copyright 2023 David Allison
+// All Rights Reserved
+// See LICENSE file for licensing information.
+
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
 #include "client/client.h"
-#include "module/module.h"
+#include "module/protobuf_module.h"
 #include "module/testdata/test.pb.h"
 #include "server/server.h"
 #include "toolbelt/hexdump.h"
@@ -20,9 +24,9 @@ using namespace stagezero::module::frequency_literals;
 void SignalHandler(int sig) { printf("Signal %d", sig); }
 
 template <typename T> using Message = stagezero::module::Message<T>;
-template <typename T> using Subscriber = stagezero::module::Subscriber<T>;
-template <typename T> using Publisher = stagezero::module::Publisher<T>;
-using Module = stagezero::module::Module;
+template <typename T> using Subscriber = stagezero::module::ProtobufSubscriber<T>;
+template <typename T> using Publisher = stagezero::module::ProtobufPublisher<T>;
+using ProtobufModule = stagezero::module::ProtobufModule;
 using namespace std::chrono_literals;
 
 class ModuleTest : public ::testing::Test {
@@ -88,9 +92,9 @@ int ModuleTest::server_pipe_[2];
 std::unique_ptr<subspace::Server> ModuleTest::server_;
 std::thread ModuleTest::server_thread_;
 
-class MyModule : public Module {
+class MyModule : public ProtobufModule {
 public:
-  MyModule() : Module("test", ModuleTest::Socket()) {}
+  MyModule() : ProtobufModule("test", ModuleTest::Socket()) {}
 
   absl::Status Init(int argc, char **argv) override { return absl::OkStatus(); }
 };

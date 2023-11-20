@@ -22,16 +22,6 @@ cc_binary(
 )
 
 cc_binary(
-  name = "zygote",
-  srcs = [
-    "zygote.cc",
-  ],
-  deps = [
-    "//stagezero/zygote:zygote_core",
-  ],
-)
-
-cc_binary(
   name = "module.so",
   srcs = [
     "module.cc",

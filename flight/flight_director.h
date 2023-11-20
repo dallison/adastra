@@ -1,13 +1,18 @@
+// Copyright 2023 David Allison
+// All Rights Reserved
+// See LICENSE file for licensing information.
+
 #pragma once
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
-#include "flight/client_handler.h"
 #include "capcom/client/client.h"
+#include "flight/client_handler.h"
+#include "flight/subsystem.h"
 #include "toolbelt/logging.h"
 #include "toolbelt/sockets.h"
-#include "capcom/client/client.h"
 
+#include <filesystem>
 #include <memory>
 #include <string>
 
@@ -18,11 +23,17 @@ constexpr int64_t kStopped = 2;
 
 class ClientHandler;
 
+struct Compute {
+  std::string name;
+  std::string ip_addr;
+  int port;
+};
+
 class FlightDirector {
 public:
   FlightDirector(co::CoroutineScheduler &scheduler, toolbelt::InetAddress addr,
-  toolbelt::InetAddress capcom_addr,
-         int notify_fd);
+                 toolbelt::InetAddress capcom_addr, const std::string &root_dir,
+                 int notify_fd);
   ~FlightDirector();
 
   absl::Status Run();
@@ -42,9 +53,35 @@ private:
   void ListenerCoroutine(toolbelt::TCPSocket &listen_socket, co::Coroutine *c);
 
 private:
+  absl::Status LoadAllSubsystemGraphs(const std::filesystem::path &dir);
+  absl::Status LoadAllSubsystemGraphsFromDir(
+      const std::filesystem::path &dir,
+      std::vector<std::unique_ptr<proto::SubsystemGraph>> &graphs);
+  absl::StatusOr<std::unique_ptr<proto::SubsystemGraph>>
+  PreloadSubsystemGraph(const std::filesystem::path &file);
+  absl::Status LoadSubsystemGraph(std::unique_ptr<proto::SubsystemGraph> graph);
+  absl::Status CheckForSubsystemLoops();
+  absl::Status
+  CheckForSubsystemLoopsRecurse(absl::flat_hash_set<Subsystem *> &visited,
+                                Subsystem *subsystem, std::string path);
+
+  std::vector<Subsystem*> FlattenSubsystemGraph(Subsystem* root);
+  void FlattenSubsystemGraphRecurse(absl::flat_hash_set<Subsystem *> &visited, Subsystem* subsystem, std::vector<Subsystem*>& vec);
+  
+  absl::Status AddSubsystemGraph(Subsystem* root);
+
+  Subsystem *FindSubsystem(const std::string &name) const {
+    auto it = subsystems_.find(name);
+    if (it == subsystems_.end()) {
+      return nullptr;
+    }
+    return it->second.get();
+  }
+
   co::CoroutineScheduler &co_scheduler_;
   toolbelt::InetAddress addr_;
   toolbelt::InetAddress capcom_addr_;
+  std::string root_dir_;
   toolbelt::FileDescriptor notify_fd_;
 
   capcom::client::Client capcom_client_;
@@ -52,9 +89,14 @@ private:
   // All coroutines are owned by this set.
   absl::flat_hash_set<std::unique_ptr<co::Coroutine>> coroutines_;
 
+  absl::flat_hash_map<std::string, std::unique_ptr<Subsystem>> subsystems_;
+  absl::flat_hash_map<std::string, Subsystem *> autostarts_;
+  absl::flat_hash_map<std::string, Subsystem *> interfaces_;
+
+  absl::flat_hash_map<std::string, std::unique_ptr<Compute>> computes_;
+
   std::vector<std::shared_ptr<ClientHandler>> client_handlers_;
   bool running_ = false;
   toolbelt::Logger logger_;
 };
-}
-
+} // namespace stagezero::flight

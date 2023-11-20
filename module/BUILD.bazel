@@ -22,12 +22,22 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "protobuf_module",
+    hdrs = [
+        "protobuf_module.h",
+    ],
+    deps = [
+        ":module",
+    ],
+)
+
 cc_test(
     name = "module_test",
     size = "small",
     srcs = ["module_test.cc"],
     deps = [
-        ":module",
+        ":protobuf_module",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/status",

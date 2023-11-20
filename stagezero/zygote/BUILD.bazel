@@ -21,3 +21,14 @@ cc_library(
         "@toolbelt//toolbelt",
     ],
 )
+
+
+cc_binary(
+  name = "standard_zygote",
+  srcs = [
+    "standard_zygote.cc",
+  ],
+  deps = [
+    ":zygote_core",
+  ],
+)

@@ -1,3 +1,7 @@
+// Copyright 2023 David Allison
+// All Rights Reserved
+// See LICENSE file for licensing information.
+
 #pragma once
 
 #include "absl/status/status.h"
@@ -105,7 +109,7 @@ public:
   GetGlobalVariable(std::string name, co::Coroutine *co = nullptr);
 
   absl::Status Abort(const std::string& reason, co::Coroutine *co = nullptr);
-  
+
 private:
   static constexpr size_t kMaxMessageSize = 4096;
 

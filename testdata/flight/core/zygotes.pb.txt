@@ -1,0 +1,9 @@
+subsystem {
+  name: "zygotes"
+  zygote {
+    name: "standard_zyote"
+    executable: "${runfiles_dir}/foobar/standard_zygote"
+  }
+}
+
+autostart: "zygotes"

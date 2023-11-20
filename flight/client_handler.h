@@ -1,3 +1,7 @@
+// Copyright 2023 David Allison
+// All Rights Reserved
+// See LICENSE file for licensing information.
+
 #pragma once
 
 #include "common/alarm.h"
@@ -8,6 +12,7 @@
 #include "toolbelt/sockets.h"
 #include "toolbelt/triggerfd.h"
 #include "capcom/client/client.h"
+#include "flight/subsystem.h"
 
 #include "absl/container/flat_hash_map.h"
 #include <list>
@@ -19,7 +24,7 @@ namespace stagezero::flight {
 class FlightDirector;
 
 class ClientHandler
-    : public common::TCPClientHandler<flight::Request, flight::Response,
+    : public common::TCPClientHandler<flight::proto::Request, flight::proto::Response,
                                       capcom::proto::Event> {
 public:
   ClientHandler(FlightDirector &flight, toolbelt::TCPSocket socket)
@@ -38,34 +43,31 @@ public:
 private:
   std::shared_ptr<ClientHandler> shared_from_this() {
     return std::static_pointer_cast<ClientHandler>(
-        TCPClientHandler<flight::Request, flight::Response,
+        TCPClientHandler<flight::proto::Request, flight::proto::Response,
                          capcom::proto::Event>::shared_from_this());
   }
 
-  absl::Status HandleMessage(const flight::Request &req, flight::Response &resp,
+  absl::Status HandleMessage(const flight::proto::Request &req, flight::proto::Response &resp,
                              co::Coroutine *c) override;
 
-  void HandleInit(const flight::InitRequest &req,
-                  flight::InitResponse *response, co::Coroutine *c);
+  void HandleInit(const flight::proto::InitRequest &req,
+                  flight::proto::InitResponse *response, co::Coroutine *c);
 
-  void HandleLoadGraph(const flight::LoadGraphRequest &req,
-                       flight::LoadGraphResponse *response, co::Coroutine *c);
-
-  void HandleStartSubsystem(const flight::StartSubsystemRequest &req,
-                            flight::StartSubsystemResponse *response,
+  void HandleStartSubsystem(const flight::proto::StartSubsystemRequest &req,
+                            flight::proto::StartSubsystemResponse *response,
                             co::Coroutine *c);
 
-  void HandleStopSubsystem(const flight::StopSubsystemRequest &req,
-                           flight::StopSubsystemResponse *response,
+  void HandleStopSubsystem(const flight::proto::StopSubsystemRequest &req,
+                           flight::proto::StopSubsystemResponse *response,
                            co::Coroutine *c);
-  void HandleGetSubsystems(const flight::GetSubsystemsRequest &req,
-                           flight::GetSubsystemsResponse *response,
+  void HandleGetSubsystems(const flight::proto::GetSubsystemsRequest &req,
+                           flight::proto::GetSubsystemsResponse *response,
                            co::Coroutine *c);
-  void HandleGetAlarms(const flight::GetAlarmsRequest &req,
-                       flight::GetAlarmsResponse *response, co::Coroutine *c);
+  void HandleGetAlarms(const flight::proto::GetAlarmsRequest &req,
+                       flight::proto::GetAlarmsResponse *response, co::Coroutine *c);
 
-  void HandleAbort(const flight::AbortRequest &req,
-                   flight::AbortResponse *response, co::Coroutine *c);
+  void HandleAbort(const flight::proto::AbortRequest &req,
+                   flight::proto::AbortResponse *response, co::Coroutine *c);
 
   FlightDirector &flight_;
 };

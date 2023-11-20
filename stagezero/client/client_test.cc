@@ -1,3 +1,7 @@
+// Copyright 2023 David Allison
+// All Rights Reserved
+// See LICENSE file for licensing information.
+
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
 #include "stagezero/client/client.h"
@@ -610,7 +614,7 @@ TEST_F(ClientTest, LaunchZygoteAndStop) {
   InitClient(client, "foobar2");
 
   absl::StatusOr<std::pair<std::string, int>> status = client.LaunchZygote(
-      "zygote", "${runfiles_dir}/__main__/testdata/zygote");
+      "zygote", "${runfiles_dir}/__main__/stagezero/zygotes/standard_zygote");
   ASSERT_TRUE(status.ok());
 
   std::string process_id = status->first;
@@ -627,7 +631,7 @@ TEST_F(ClientTest, LaunchZygoteAndKill) {
   InitClient(client, "foobar2");
 
   absl::StatusOr<std::pair<std::string, int>> status = client.LaunchZygote(
-      "zygote", "${runfiles_dir}/__main__/testdata/zygote");
+      "zygote", "${runfiles_dir}/__main__/stagezero/zygotes/standard_zygote");
   ASSERT_TRUE(status.ok());
 
   int pid = status->second;
@@ -645,7 +649,7 @@ TEST_F(ClientTest, Launch2ZygotesAndStop) {
   for (int i = 0; i < 2; i++) {
     absl::StatusOr<std::pair<std::string, int>> status = client.LaunchZygote(
         absl::StrFormat("zygote_%d", i),
-        "${runfiles_dir}/__main__/testdata/zygote");
+        "${runfiles_dir}/__main__/stagezero/zygotes/standard_zygote");
     ASSERT_TRUE(status.ok());
 
     std::string process_id = status->first;
@@ -667,7 +671,7 @@ TEST_F(ClientTest, LaunchAndStopVirtual) {
   // Launch zygote.
   absl::StatusOr<std::pair<std::string, int>> zygote_status =
       client.LaunchZygote("zygote",
-                          "${runfiles_dir}/__main__/testdata/zygote");
+                          "${runfiles_dir}/__main__/stagezero/zygotes/standard_zygote");
   ASSERT_TRUE(zygote_status.ok());
 
   std::string zygote_process_id = zygote_status->first;
@@ -700,7 +704,7 @@ TEST_F(ClientTest, LaunchAndStopVirtualVars) {
   // Launch zygote.
   absl::StatusOr<std::pair<std::string, int>> zygote_status =
       client.LaunchZygote("zygote",
-                          "${runfiles_dir}/__main__/testdata/zygote");
+                          "${runfiles_dir}/__main__/stagezero/zygotes/standard_zygote");
   ASSERT_TRUE(zygote_status.ok());
 
   std::string zygote_process_id = zygote_status->first;
@@ -744,7 +748,7 @@ TEST_F(ClientTest, LaunchAndKillVirtual) {
   // Launch zygote.
   absl::StatusOr<std::pair<std::string, int>> zygote_status =
       client.LaunchZygote("zygote",
-                          "${runfiles_dir}/__main__/testdata/zygote");
+                          "${runfiles_dir}/__main__/stagezero/zygotes/standard_zygote");
   ASSERT_TRUE(zygote_status.ok());
 
   std::string zygote_process_id = zygote_status->first;
@@ -776,7 +780,7 @@ TEST_F(ClientTest, VirtualOutput) {
   // Launch zygote.
   absl::StatusOr<std::pair<std::string, int>> zygote_status =
       client.LaunchZygote("zygote",
-                          "${runfiles_dir}/__main__/testdata/zygote");
+                          "${runfiles_dir}/__main__/stagezero/zygotes/standard_zygote");
   ASSERT_TRUE(zygote_status.ok());
 
   std::string zygote_process_id = zygote_status->first;

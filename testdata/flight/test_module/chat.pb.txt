@@ -1,0 +1,15 @@
+subsystem {
+  name: "chat"
+  module {
+    name: "talker"
+    zygote: "standard_zygote"
+    dso: "${runfiles_dir}/foobar/talker.so"
+  }
+  module {
+    name: "listener"
+    zygote: "standard_zygote"
+    dso: "${runfiles_dir}/foobar/listener.so"
+  }
+}
+
+interface: "chat"

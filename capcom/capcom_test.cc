@@ -1,3 +1,7 @@
+// Copyright 2023 David Allison
+// All Rights Reserved
+// See LICENSE file for licensing information.
+
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
 #include "capcom/capcom.h"
@@ -644,7 +648,7 @@ TEST_F(CapcomTest, Zygote) {
       "zygote1",
       {.zygotes = {{
            .name = "loop",
-           .executable = "${runfiles_dir}/__main__/testdata/zygote",
+           .executable = "${runfiles_dir}/__main__/stagezero/zygotes/standard_zygote",
        }}});
   ASSERT_TRUE(status.ok());
 
@@ -666,7 +670,7 @@ TEST_F(CapcomTest, VirtualProcess) {
       "zygote1",
       {.zygotes = {{
            .name = "zygote1",
-           .executable = "${runfiles_dir}/__main__/testdata/zygote",
+           .executable = "${runfiles_dir}/__main__/stagezero/zygotes/standard_zygote",
        }}});
   ASSERT_TRUE(status.ok());
 
@@ -713,7 +717,7 @@ TEST_F(CapcomTest, AbortVirtual) {
       "zygote1",
       {.zygotes = {{
            .name = "zygote1",
-           .executable = "${runfiles_dir}/__main__/testdata/zygote",
+           .executable = "${runfiles_dir}/__main__/stagezero/zygotes/standard_zygote",
        }}});
   ASSERT_TRUE(status.ok());
 

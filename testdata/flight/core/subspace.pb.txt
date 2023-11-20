@@ -1,0 +1,11 @@
+subsystem {
+ name: "subspace"
+
+ static_process {
+  name: "subspace_server"
+  executable: "${runfiles_dir}/foobar/subspace_server"
+  notify: false
+ }
+}
+
+autostart: "subspace"

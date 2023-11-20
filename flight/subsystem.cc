@@ -2,8 +2,8 @@
 // All Rights Reserved
 // See LICENSE file for licensing information.
 
-#include "stagezero/flight/flight_director.h"
+#include "flight/subsystem.h"
 
-int main(int argc, char** argv) {
+namespace stagezero::flight {
+
 }
-

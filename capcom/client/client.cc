@@ -1,3 +1,6 @@
+// Copyright 2023 David Allison
+// All Rights Reserved
+// See LICENSE file for licensing information.
 #include "capcom/client/client.h"
 #include "toolbelt/hexdump.h"
 
