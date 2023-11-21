@@ -41,7 +41,7 @@ absl::Status ClientHandler::SendAlarm(const Alarm &alarm) {
 absl::Status ClientHandler::HandleMessage(const proto::Request &req,
                                           proto::Response &resp,
                                           co::Coroutine *c) {
-                                            std::cerr << "incoming capcom " << req.DebugString();
+  std::cerr << "incoming capcom " << req.DebugString();
   switch (req.request_case()) {
   case proto::Request::kInit:
     HandleInit(req.init(), resp.mutable_init(), c);
@@ -80,6 +80,11 @@ absl::Status ClientHandler::HandleMessage(const proto::Request &req,
     HandleAbort(req.abort(), resp.mutable_abort(), c);
     break;
 
+  case proto::Request::kAddGlobalVariable:
+    HandleAddGlobalVariable(req.add_global_variable(),
+                            resp.mutable_add_global_variable(), c);
+    break;
+
   case proto::Request::REQUEST_NOT_SET:
     return absl::InternalError("Protocol error: unknown request");
   }
@@ -100,7 +105,7 @@ void ClientHandler::HandleInit(const proto::InitRequest &req,
 void ClientHandler::HandleAddCompute(const proto::AddComputeRequest &req,
                                      proto::AddComputeResponse *response,
                                      co::Coroutine *c) {
-  const config::Compute& compute = req.compute();
+  const config::Compute &compute = req.compute();
   struct sockaddr_in addr = {
 #if defined(__APPLE__)
     .sin_len = sizeof(int),
@@ -118,11 +123,12 @@ void ClientHandler::HandleAddCompute(const proto::AddComputeRequest &req,
   // Probe a connection to the stagezero instance to make sure it's
   // there.
   stagezero::Client sclient;
-  if (absl::Status status = sclient.Init(stagezero_addr, "<capcom probe>", compute.name(), c);
+  if (absl::Status status =
+          sclient.Init(stagezero_addr, "<capcom probe>", compute.name(), c);
       !status.ok()) {
     response->set_error(absl::StrFormat(
-        "Cannot connect to StageZero on compute %s at address %s", compute.name(),
-        stagezero_addr.ToString()));
+        "Cannot connect to StageZero on compute %s at address %s",
+        compute.name(), stagezero_addr.ToString()));
     return;
   }
 
@@ -304,9 +310,20 @@ void ClientHandler::HandleGetAlarms(const proto::GetAlarmsRequest &req,
   }
 }
 
-void ClientHandler::HandleAbort(const proto::AbortRequest &req, proto::AbortResponse* response,
+void ClientHandler::HandleAbort(const proto::AbortRequest &req,
+                                proto::AbortResponse *response,
                                 co::Coroutine *c) {
   if (absl::Status status = capcom_.Abort(req.reason(), c); !status.ok()) {
+    response->set_error(status.ToString());
+  }
+}
+
+void ClientHandler::HandleAddGlobalVariable(
+    const proto::AddGlobalVariableRequest &req,
+    proto::AddGlobalVariableResponse *response, co::Coroutine *c) {
+      Variable var = {.name = req.var().name(), .value = req.var().value(), .exported = req.var().exported()};
+  if (absl::Status status = capcom_.AddGlobalVariable(std::move(var), c);
+      !status.ok()) {
     response->set_error(status.ToString());
   }
 }

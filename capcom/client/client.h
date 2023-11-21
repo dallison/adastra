@@ -128,6 +128,9 @@ public:
   absl::Status StopSubsystem(const std::string &name,
                              co::Coroutine *c = nullptr);
 
+
+  absl::Status AddGlobalVariable(const Variable& var,
+                          co::Coroutine *c = nullptr);
   toolbelt::FileDescriptor GetEventFd() const {
     return event_socket_.GetFileDescriptor();
   }

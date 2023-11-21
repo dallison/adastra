@@ -4,6 +4,7 @@
 
 #include "stagezero/zygote/zygote_core.h"
 
+#include "absl/strings/numbers.h"
 #include "absl/strings/str_format.h"
 #include "toolbelt/fd.h"
 #include "toolbelt/hexdump.h"
@@ -29,10 +30,13 @@ ZygoteCore::ZygoteCore(int argc, char **argv) {
 absl::Status ZygoteCore::Run() {
   char *notify = getenv("STAGEZERO_NOTIFY_FD");
   if (notify != nullptr) {
-    int notify_fd = atoi(notify);
-    printf("Notifying via fd %d\n", notify_fd);
-    int64_t val = 1;
-    (void)write(notify_fd, &val, 8);
+    int notify_fd;
+    bool ok = absl::SimpleAtoi(notify, &notify_fd);
+    if (ok) {
+      printf("Notifying via fd %d\n", notify_fd);
+      int64_t val = 1;
+      (void)write(notify_fd, &val, 8);
+    }
   }
 
   const char *sname = getenv("STAGEZERO_ZYGOTE_SOCKET_NAME");
@@ -199,7 +203,6 @@ ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
 // This is called in the child process and does not return.
 void ZygoteCore::InvokeMainAfterSpawn(const control::SpawnRequest &&req,
                                       SymbolTable &&local_symbols) {
-  std::cerr << "Invoking main func" << std::endl;
   void *handle = RTLD_DEFAULT;
   std::string exe = args_[0];
   if (!req.dso().empty()) {

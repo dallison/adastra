@@ -5,9 +5,28 @@ subsystem {
   name: "subspace_server"
   executable: "${runfiles_dir}/subspace/server/subspace_server"
   options {
-    notify: false
+    args: "--socket=${subspace_socket}"
+    args: "--interface=${subspace_interface}"
+    args: "--local=${subspace_local}"
+    notify: true
   }
  }
 }
 
 autostart: "subspace"
+
+# Global variables for the subspace server.
+var {
+  name: "subspace_socket"
+  value: "/tmp/subspace"
+}
+
+var {
+  name: "subspace_interface"
+  value: "lo0"
+}
+
+var {
+  name: "subspace_local"
+  value: "true"
+}

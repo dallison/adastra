@@ -81,6 +81,9 @@ private:
 
  void HandleAbort(const proto::AbortRequest &req, proto::AbortResponse* response,
                   co::Coroutine *c);
+
+                    void HandleAddGlobalVariable(const proto::AddGlobalVariableRequest &req,
+                        proto::AddGlobalVariableResponse *response, co::Coroutine *c);
   Capcom &capcom_;
   uint32_t id_;
 };

@@ -12,6 +12,7 @@
 #include "stagezero/client/client.h"
 #include "toolbelt/logging.h"
 #include "toolbelt/sockets.h"
+#include "common/vars.h"
 
 #include <memory>
 #include <string>
@@ -141,6 +142,7 @@ private:
   std::vector<Alarm *> GetAlarms() const;
 
   absl::Status Abort(const std::string& reason, co::Coroutine* c);
+  absl::Status AddGlobalVariable(const Variable& var, co::Coroutine* c);
 
 private:
   co::CoroutineScheduler &co_scheduler_;

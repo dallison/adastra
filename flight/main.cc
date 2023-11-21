@@ -7,6 +7,24 @@
 #include "flight/flight_director.h"
 #include <filesystem>
 #include <iostream>
+#include <signal.h>
+
+stagezero::flight::FlightDirector *g_flight;
+co::CoroutineScheduler *g_scheduler;
+
+static void Signal(int sig) {
+  if (sig == SIGQUIT && g_scheduler != nullptr) {
+    g_scheduler->Show();
+  }
+  if (g_flight != nullptr) {
+    g_flight->Stop();
+  } 
+  if (sig == SIGINT || sig == SIGTERM) {
+    return;
+  }
+  signal(sig, SIG_DFL);
+  raise(sig);
+}
 
 ABSL_FLAG(std::string, config_root_dir, "", "Root director for configuration");
 ABSL_FLAG(int, port, 6524, "TCP listening port");
@@ -16,6 +34,12 @@ int main(int argc, char **argv) {
   absl::ParseCommandLine(argc, argv);
 
   co::CoroutineScheduler scheduler;
+  g_scheduler = &scheduler;
+
+  signal(SIGINT, Signal);
+  signal(SIGTERM, Signal);
+  signal(SIGQUIT, Signal);
+  
   toolbelt::InetAddress capcom("localhost", absl::GetFlag(FLAGS_capcom_port));
   toolbelt::InetAddress flight_addr("localhost", absl::GetFlag(FLAGS_port));
 
@@ -31,6 +55,7 @@ int main(int argc, char **argv) {
   }
   stagezero::flight::FlightDirector flight(scheduler, flight_addr, capcom,
                                            root_dir, -1);
+  g_flight = &flight;
   if (absl::Status status = flight.Run(); !status.ok()) {
     std::cerr << "Failed to run FlightDirector: " << status.ToString()
               << std::endl;

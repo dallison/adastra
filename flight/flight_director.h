@@ -7,6 +7,7 @@
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "capcom/client/client.h"
+#include "common/vars.h"
 #include "flight/client_handler.h"
 #include "flight/subsystem.h"
 #include "toolbelt/logging.h"
@@ -64,14 +65,18 @@ private:
   CheckForSubsystemLoopsRecurse(absl::flat_hash_set<Subsystem *> &visited,
                                 Subsystem *subsystem, std::string path);
 
-  std::vector<Subsystem*> FlattenSubsystemGraph(Subsystem* root);
-  void FlattenSubsystemGraphRecurse(absl::flat_hash_set<Subsystem *> &visited, Subsystem* subsystem, std::vector<Subsystem*>& vec);
-  
-  absl::Status RegisterSubsystemGraph(Subsystem* root, co::Coroutine* c);
-    absl::Status RegisterCompute(const Compute& compute, co::Coroutine* c);
+  std::vector<Subsystem *> FlattenSubsystemGraph(Subsystem *root);
+  void FlattenSubsystemGraphRecurse(absl::flat_hash_set<Subsystem *> &visited,
+                                    Subsystem *subsystem,
+                                    std::vector<Subsystem *> &vec);
 
-  absl::Status AutostartSubsystem(Subsystem* subsystem, co::Coroutine* c);
-  
+  absl::Status RegisterSubsystemGraph(Subsystem *root, co::Coroutine *c);
+  absl::Status RegisterCompute(const Compute &compute, co::Coroutine *c);
+  absl::Status RegisterGlobalVariable(const Variable &compute,
+                                     co::Coroutine *c);
+
+  absl::Status AutostartSubsystem(Subsystem *subsystem, co::Coroutine *c);
+
   Subsystem *FindSubsystem(const std::string &name) const {
     auto it = subsystems_.find(name);
     if (it == subsystems_.end()) {
@@ -88,8 +93,12 @@ private:
     return &it->second;
   }
 
-  void AddCompute(const std::string& name, const Compute& compute) {
+  void AddCompute(const std::string &name, const Compute &compute) {
     computes_.emplace(std::make_pair(name, std::move(compute)));
+  }
+
+  void AddGlobalVariable(Variable var) {
+    global_variables_.push_back(std::move(var));
   }
 
   co::CoroutineScheduler &co_scheduler_;
@@ -108,6 +117,8 @@ private:
   absl::flat_hash_map<std::string, Subsystem *> interfaces_;
 
   absl::flat_hash_map<std::string, Compute> computes_;
+
+  std::vector<Variable> global_variables_;
 
   std::vector<std::shared_ptr<ClientHandler>> client_handlers_;
   bool running_ = false;

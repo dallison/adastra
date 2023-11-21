@@ -15,26 +15,39 @@ public:
       : ProtobufModule(name, subspace_server) {}
 
   absl::Status Init(int argc, char **argv) override {
-    int count = 0;
-
     auto pub = RegisterPublisher<chat::Question>(
-        "chat", 256, 10,
-        [&count](const Publisher<chat::Question> &pub, chat::Question &msg,
-                 co::Coroutine *c) -> bool {
-          msg.set_serial_number(++count);
-          msg.set_text(absl::StrFormat("Question #%d", count));
+        "question", 256, 10,
+        [this](const Publisher<chat::Question> &pub, chat::Question &msg,
+               co::Coroutine *c) -> bool {
+          msg.set_x(++count_);
+          msg.set_y(3);
+          msg.set_text(absl::StrFormat("What is %d times %d", count_, 3));
           return true;
         });
+    if (!pub.ok()) {
+      return pub.status();
+    }
+    pub_ = std::move(*pub);
 
-    auto sub = RegisterSubscriber<chat::Answer>("chat", [](const Subscriber<chat::Answer> &sub,
-                                             Message<const chat::Answer> msg, co::Coroutine* c) {
-      std::cout << msg->serial_number() << " answer: " << msg->text()
-                << std::endl;
-    });
+    auto sub = RegisterSubscriber<chat::Answer>(
+        "answer", [](const Subscriber<chat::Answer> &sub,
+                     Message<const chat::Answer> msg, co::Coroutine *c) {
+          std::cout << " The answer is " << msg->text() << std::endl;
+        });
 
-    RunPeriodically(2, [&pub](co::Coroutine *c) { (*pub)->Publish(); });
+    if (!sub.ok()) {
+      return sub.status();
+    }
+    sub_ = std::move(*sub);
+
+    RunPeriodically(2, [this](co::Coroutine *c) { pub_->Publish(); });
     return absl::OkStatus();
   }
+
+private:
+  int count_ = 0;
+  std::shared_ptr<Publisher<chat::Question>> pub_;
+  std::shared_ptr<Subscriber<chat::Answer>> sub_;
 };
 
 DEFINE_MODULE(Talker);

@@ -229,4 +229,36 @@ absl::Status Capcom::Abort(const std::string &reason, co::Coroutine *c) {
   return result;
 }
 
+  absl::Status Capcom::AddGlobalVariable(const Variable& var, co::Coroutine* c) {
+      std::vector<Compute *> computes;
+  absl::Status result = absl::OkStatus();
+
+  for (auto & [ name, compute ] : computes_) {
+    computes.push_back(&compute);
+  }
+
+  // If we have no computes (like in testing), add the local compute.
+  if (computes.empty()) {
+    computes.push_back(&local_compute_);
+  }
+
+    for (auto &compute : computes) {
+    stagezero::Client client;
+    std::cerr << "sending set global variable to " << compute->name << std::endl;
+    if (absl::Status status = client.Init(compute->addr, "<set global variable>");
+        !status.ok()) {
+      result = absl::InternalError(
+          absl::StrFormat("Failed to connect compute for abort%s: %s",
+                          compute->name, status.ToString()));
+      continue;
+    }
+    absl::Status status = client.SetGlobalVariable(var.name, var.value, var.exported, c);
+    if (!status.ok()) {
+      result = absl::InternalError(absl::StrFormat(
+          "Failed to set global variable %s on compute %s: %s", var.name, compute->name, status.ToString()));
+    }
+  }
+  return result;
+  }
+
 } // namespace stagezero::capcom

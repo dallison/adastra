@@ -213,6 +213,10 @@ absl::Status Client::AddSubsystem(const std::string &name,
     auto *s = proc->mutable_static_process();
     s->set_executable(sproc.executable);
     proc->set_compute(sproc.compute);
+    for (auto &arg : sproc.args) {
+      auto *a = opts->add_args();
+      *a = arg;
+    }
   }
 
   // Add Zygotes.
@@ -228,6 +232,10 @@ absl::Status Client::AddSubsystem(const std::string &name,
     auto *s = proc->mutable_zygote();
     s->set_executable(z.executable);
     proc->set_compute(z.compute);
+    for (auto &arg : z.args) {
+      auto *a = opts->add_args();
+      *a = arg;
+    }
   }
 
   // Add all virtual processes to the proto message.
@@ -245,6 +253,10 @@ absl::Status Client::AddSubsystem(const std::string &name,
     s->set_dso(vproc.dso);
     s->set_main_func(vproc.main_func);
     proc->set_compute(vproc.compute);
+    for (auto &arg : vproc.args) {
+      auto *a = opts->add_args();
+      *a = arg;
+    }
   }
 
   for (auto &child : options.children) {
@@ -391,6 +403,30 @@ absl::Status Client::Abort(const std::string &reason, co::Coroutine *c) {
   if (!abort_resp.error().empty()) {
     return absl::InternalError(
         absl::StrFormat("Failed to abort: %s", abort_resp.error()));
+  }
+  return absl::OkStatus();
+}
+
+absl::Status Client::AddGlobalVariable(const Variable &var,
+                                       co::Coroutine *c) {
+  if (c == nullptr) {
+    c = co_;
+  }
+  stagezero::capcom::proto::Request req;
+  auto *v = req.mutable_add_global_variable()->mutable_var();
+  v->set_name(var.name);
+  v->set_value(var.value);
+  v->set_exported(var.exported);
+
+  stagezero::capcom::proto::Response resp;
+  if (absl::Status status = SendRequestReceiveResponse(req, resp, c);
+      !status.ok()) {
+    return status;
+  }
+  auto &var_resp = resp.add_global_variable();
+  if (!var_resp.error().empty()) {
+    return absl::InternalError(
+        absl::StrFormat("Failed to abort: %s", var_resp.error()));
   }
   return absl::OkStatus();
 }

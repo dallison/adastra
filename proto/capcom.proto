@@ -103,6 +103,14 @@ message AbortResponse {
   string error = 1;     
 }
 
+message AddGlobalVariableRequest {
+  config.Variable var = 1;
+}
+
+message AddGlobalVariableResponse {
+  string error = 1;     
+}
+
 message Request {
   oneof request {
     InitRequest init = 1;
@@ -115,6 +123,7 @@ message Request {
     GetSubsystemsRequest get_subsystems = 8;
     GetAlarmsRequest get_alarms = 9;
     AbortRequest abort = 10;
+    AddGlobalVariableRequest add_global_variable = 11;
   }
 }
 
@@ -130,6 +139,7 @@ message Response {
     GetSubsystemsResponse get_subsystems = 8;
     GetAlarmsResponse get_alarms = 9;
     AbortResponse abort = 10;
+    AddGlobalVariableResponse add_global_variable = 11;
   }
 }
 

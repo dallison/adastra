@@ -49,12 +49,15 @@ cc_test(
     size = "small",
     srcs = ["capcom_test.cc"],
     data = [
+        "//stagezero/zygote:standard_zygote",
         "//testdata:echo",
         "//testdata:files",
+        "//testdata:listener.so",
         "//testdata:loop",
         "//testdata:module.so",
+        "//testdata:talker.so",
         "//testdata:vars",
-        "//testdata:zygote",
+        "@subspace//server:subspace_server",
     ],
     deps = [
         ":capcom_lib",

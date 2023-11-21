@@ -88,6 +88,7 @@ message SubsystemGraph {
   repeated string interface = 2;
   repeated string autostart = 3;
   repeated config.Compute compute = 4;
+  repeated config.Variable var = 5;   // Global variables.
 }
 
 message InitRequest { string client_name = 1; }

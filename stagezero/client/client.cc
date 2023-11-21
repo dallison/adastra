@@ -29,7 +29,7 @@ const std::string& compute,
   auto init = req.mutable_init();
   init->set_client_name(name);
   init->set_compute(compute);
-  
+
   stagezero::control::Response resp;
   status = SendRequestReceiveResponse(req, resp, co);
   if (!status.ok()) {

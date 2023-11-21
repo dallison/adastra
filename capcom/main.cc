@@ -8,6 +8,24 @@
 #include "coroutine.h"
 
 #include <iostream>
+#include <signal.h>
+
+stagezero::capcom::Capcom *g_capcom;
+co::CoroutineScheduler *g_scheduler;
+
+static void Signal(int sig) {
+  if (sig == SIGQUIT && g_scheduler != nullptr) {
+    g_scheduler->Show();
+  }
+  if (g_capcom != nullptr) {
+    g_capcom->Stop();
+  }
+  if (sig == SIGINT || sig == SIGTERM) {
+    return;
+  }
+  signal(sig, SIG_DFL);
+  raise(sig);
+}
 
 ABSL_FLAG(int, port, 6523, "TCP listening port");
 
@@ -15,9 +33,18 @@ int main(int argc, char **argv) {
   absl::ParseCommandLine(argc, argv);
 
   co::CoroutineScheduler scheduler;
+  g_scheduler = &scheduler;
+
+  signal(SIGINT, Signal);
+  signal(SIGTERM, Signal);
+  signal(SIGQUIT, Signal);
+  signal(SIGHUP, Signal);
+
   toolbelt::InetAddress capcom_addr("localhost", absl::GetFlag(FLAGS_port));
 
   stagezero::capcom::Capcom capcom(scheduler, capcom_addr, -1);
+  g_capcom = &capcom;
+
   if (absl::Status status = capcom.Run(); !status.ok()) {
     std::cerr << "Failed to run Capcom: " << status.ToString() << std::endl;
     exit(1);

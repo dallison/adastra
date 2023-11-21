@@ -12,7 +12,8 @@ subsystem {
   }
 
   dep: "subspace"
-  dep: "standard_zygote"
 }
 
 interface: "chat"
+autostart: "chat"
+

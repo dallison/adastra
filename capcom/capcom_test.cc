@@ -269,11 +269,10 @@ TEST_F(CapcomTest, SimpleSubsystem) {
   InitClient(client, "foobar1");
 
   absl::Status status = client.AddSubsystem(
-      "foobar",
-      {.static_processes = {{
-           .name = "loop",
-           .executable = "${runfiles_dir}/__main__/testdata/loop",
-       }}});
+      "foobar", {.static_processes = {{
+                     .name = "loop",
+                     .executable = "${runfiles_dir}/__main__/testdata/loop",
+                 }}});
   ASSERT_TRUE(status.ok());
 
   status = client.RemoveSubsystem("foobar", false);
@@ -289,22 +288,20 @@ TEST_F(CapcomTest, SimpleSubsystemCompute) {
   ASSERT_TRUE(status.ok());
 
   status = client.AddSubsystem(
-      "foobar",
-      {.static_processes = {{
-           .name = "loop",
-           .executable = "${runfiles_dir}/__main__/testdata/loop",
-           .compute = "localhost",
-       }}});
+      "foobar", {.static_processes = {{
+                     .name = "loop",
+                     .executable = "${runfiles_dir}/__main__/testdata/loop",
+                     .compute = "localhost",
+                 }}});
   ASSERT_TRUE(status.ok());
 
   // Unknown compute should fail.
   status = client.AddSubsystem(
-      "foobar2",
-      {.static_processes = {{
-           .name = "loop",
-           .executable = "${runfiles_dir}/__main__/testdata/loop",
-           .compute = "notknown",
-       }}});
+      "foobar2", {.static_processes = {{
+                      .name = "loop",
+                      .executable = "${runfiles_dir}/__main__/testdata/loop",
+                      .compute = "notknown",
+                  }}});
   ASSERT_FALSE(status.ok());
 
   status = client.RemoveSubsystem("foobar", false);
@@ -327,18 +324,17 @@ TEST_F(CapcomTest, SubsystemWithMultipleCompute) {
   ASSERT_TRUE(status.ok());
 
   status = client.AddSubsystem(
-      "foobar",
-      {.static_processes = {
-           {
-               .name = "loop1",
-               .executable = "${runfiles_dir}/__main__/testdata/loop",
-               .compute = "localhost1",
-           },
-           {
-               .name = "loop2",
-               .executable = "${runfiles_dir}/__main__/testdata/loop",
-               .compute = "localhost2",
-           }}});
+      "foobar", {.static_processes = {
+                     {
+                         .name = "loop1",
+                         .executable = "${runfiles_dir}/__main__/testdata/loop",
+                         .compute = "localhost1",
+                     },
+                     {
+                         .name = "loop2",
+                         .executable = "${runfiles_dir}/__main__/testdata/loop",
+                         .compute = "localhost2",
+                     }}});
   ASSERT_TRUE(status.ok());
 
   status = client.RemoveSubsystem("foobar", false);
@@ -356,11 +352,10 @@ TEST_F(CapcomTest, StartSimpleSubsystem) {
   InitClient(client, "foobar1");
 
   absl::Status status = client.AddSubsystem(
-      "foobar1",
-      {.static_processes = {{
-           .name = "loop",
-           .executable = "${runfiles_dir}/__main__/testdata/loop",
-       }}});
+      "foobar1", {.static_processes = {{
+                      .name = "loop",
+                      .executable = "${runfiles_dir}/__main__/testdata/loop",
+                  }}});
   ASSERT_TRUE(status.ok());
 
   status = client.StartSubsystem("foobar1");
@@ -382,12 +377,11 @@ TEST_F(CapcomTest, StartSimpleSubsystemCompute) {
   ASSERT_TRUE(status.ok());
 
   status = client.AddSubsystem(
-      "foobar1",
-      {.static_processes = {{
-           .name = "loop",
-           .executable = "${runfiles_dir}/__main__/testdata/loop",
-           .compute = "localhost",
-       }}});
+      "foobar1", {.static_processes = {{
+                      .name = "loop",
+                      .executable = "${runfiles_dir}/__main__/testdata/loop",
+                      .compute = "localhost",
+                  }}});
   ASSERT_TRUE(status.ok());
 
   status = client.StartSubsystem("foobar1");
@@ -452,11 +446,10 @@ TEST_F(CapcomTest, RestartSimpleSubsystem) {
   InitClient(client, "foobar1");
 
   absl::Status status = client.AddSubsystem(
-      "foobar1",
-      {.static_processes = {{
-           .name = "loop",
-           .executable = "${runfiles_dir}/__main__/testdata/loop",
-       }}});
+      "foobar1", {.static_processes = {{
+                      .name = "loop",
+                      .executable = "${runfiles_dir}/__main__/testdata/loop",
+                  }}});
   ASSERT_TRUE(status.ok());
 
   WaitForState(client, "foobar1", AdminState::kOffline, OperState::kOffline);
@@ -492,22 +485,20 @@ TEST_F(CapcomTest, StartSimpleSubsystemTree) {
   InitClient(client, "foobar1");
 
   absl::Status status = client.AddSubsystem(
-      "child",
-      {.static_processes = {{
-           .name = "loop1",
-           .executable = "${runfiles_dir}/__main__/testdata/loop",
-       }}});
+      "child", {.static_processes = {{
+                    .name = "loop1",
+                    .executable = "${runfiles_dir}/__main__/testdata/loop",
+                }}});
   ASSERT_TRUE(status.ok());
 
   status = client.AddSubsystem(
-      "parent",
-      {.static_processes = {{
-           .name = "loop2",
-           .executable = "${runfiles_dir}/__main__/testdata/loop",
-       }},
-       .children = {
-           "child",
-       }});
+      "parent", {.static_processes = {{
+                     .name = "loop2",
+                     .executable = "${runfiles_dir}/__main__/testdata/loop",
+                 }},
+                 .children = {
+                     "child",
+                 }});
   ASSERT_TRUE(status.ok());
 
   status = client.StartSubsystem("parent");
@@ -528,11 +519,10 @@ TEST_F(CapcomTest, Abort) {
   InitClient(client, "foobar1");
 
   absl::Status status = client.AddSubsystem(
-      "subsys",
-      {.static_processes = {{
-           .name = "loop",
-           .executable = "${runfiles_dir}/__main__/testdata/loop",
-       }}});
+      "subsys", {.static_processes = {{
+                     .name = "loop",
+                     .executable = "${runfiles_dir}/__main__/testdata/loop",
+                 }}});
   ASSERT_TRUE(status.ok());
 
   status = client.StartSubsystem("subsys");
@@ -554,11 +544,10 @@ TEST_F(CapcomTest, AbortThenGoAgain) {
   InitClient(client, "foobar1");
 
   absl::Status status = client.AddSubsystem(
-      "subsys",
-      {.static_processes = {{
-           .name = "loop",
-           .executable = "${runfiles_dir}/__main__/testdata/loop",
-       }}});
+      "subsys", {.static_processes = {{
+                     .name = "loop",
+                     .executable = "${runfiles_dir}/__main__/testdata/loop",
+                 }}});
   ASSERT_TRUE(status.ok());
 
   status = client.StartSubsystem("subsys");
@@ -588,11 +577,10 @@ TEST_F(CapcomTest, RestartSimpleSubsystemTree) {
   InitClient(client, "foobar1");
 
   absl::Status status = client.AddSubsystem(
-      "child",
-      {.static_processes = {{
-           .name = "loop1",
-           .executable = "${runfiles_dir}/__main__/testdata/loop",
-       }}});
+      "child", {.static_processes = {{
+                    .name = "loop1",
+                    .executable = "${runfiles_dir}/__main__/testdata/loop",
+                }}});
   ASSERT_TRUE(status.ok());
 
   WaitForState(client, "child", AdminState::kOffline, OperState::kOffline);
@@ -648,7 +636,8 @@ TEST_F(CapcomTest, Zygote) {
       "zygote1",
       {.zygotes = {{
            .name = "loop",
-           .executable = "${runfiles_dir}/__main__/stagezero/zygotes/standard_zygote",
+           .executable =
+               "${runfiles_dir}/__main__/stagezero/zygote/standard_zygote",
        }}});
   ASSERT_TRUE(status.ok());
 
@@ -670,18 +659,18 @@ TEST_F(CapcomTest, VirtualProcess) {
       "zygote1",
       {.zygotes = {{
            .name = "zygote1",
-           .executable = "${runfiles_dir}/__main__/stagezero/zygotes/standard_zygote",
+           .executable =
+               "${runfiles_dir}/__main__/stagezero/zygote/standard_zygote",
        }}});
   ASSERT_TRUE(status.ok());
 
   status = client.AddSubsystem(
-      "virtual",
-      {.virtual_processes = {{
-           .name = "virtual_module",
-           .zygote = "zygote1",
-           .dso = "${runfiles_dir}/__main__/testdata/module.so",
-           .main_func = "Main",
-       }}});
+      "virtual", {.virtual_processes = {{
+                      .name = "virtual_module",
+                      .zygote = "zygote1",
+                      .dso = "${runfiles_dir}/__main__/testdata/module.so",
+                      .main_func = "Main",
+                  }}});
   ASSERT_TRUE(status.ok());
 
   // Start zygote.
@@ -717,18 +706,18 @@ TEST_F(CapcomTest, AbortVirtual) {
       "zygote1",
       {.zygotes = {{
            .name = "zygote1",
-           .executable = "${runfiles_dir}/__main__/stagezero/zygotes/standard_zygote",
+           .executable =
+               "${runfiles_dir}/__main__/stagezero/zygote/standard_zygote",
        }}});
   ASSERT_TRUE(status.ok());
 
   status = client.AddSubsystem(
-      "virtual",
-      {.virtual_processes = {{
-           .name = "virtual_module",
-           .zygote = "zygote1",
-           .dso = "${runfiles_dir}/__main__/testdata/module.so",
-           .main_func = "Main",
-       }}});
+      "virtual", {.virtual_processes = {{
+                      .name = "virtual_module",
+                      .zygote = "zygote1",
+                      .dso = "${runfiles_dir}/__main__/testdata/module.so",
+                      .main_func = "Main",
+                  }}});
   ASSERT_TRUE(status.ok());
 
   // Start zygote.
@@ -751,6 +740,69 @@ TEST_F(CapcomTest, AbortVirtual) {
 
   status = client.RemoveSubsystem("zygote1", false);
   ASSERT_TRUE(status.ok());
+}
+
+TEST_F(CapcomTest, TalkAndListen) {
+  stagezero::capcom::client::Client client(ClientMode::kBlocking);
+  InitClient(client, "foobar1");
+
+  absl::Status status = client.AddSubsystem(
+      "subspace",
+      {.static_processes = {{
+           .name = "subspace_server",
+           .executable = "${runfiles_dir}/__main__/external/subspace/server/"
+                         "subspace_server",
+           .notify = true,
+       }},
+       .zygotes = {{
+           .name = "standard_zygote",
+           .executable =
+               "${runfiles_dir}/__main__/stagezero/zygote/standard_zygote",
+
+       }}});
+  ASSERT_TRUE(status.ok());
+
+  status = client.AddSubsystem(
+      "chat", {.virtual_processes =
+                   {{
+                        .name = "talker",
+                        .zygote = "standard_zygote",
+                        .dso = "${runfiles_dir}/__main__/testdata/talker.so",
+                        .main_func = "ModuleMain",
+                        .args =
+                            {
+                                "talker", "/tmp/subspace",
+                            },
+                    },
+                    {
+                        .name = "listener",
+                        .zygote = "standard_zygote",
+                        .dso = "${runfiles_dir}/__main__/testdata/listener.so",
+                        .main_func = "ModuleMain",
+                        .args =
+                            {
+                                "listener", "/tmp/subspace",
+                            },
+                    }},
+               .children = {
+                   "subspace",
+               }});
+  std::cerr << status.ToString() << std::endl;
+  ASSERT_TRUE(status.ok());
+
+  status = client.StartSubsystem("subspace");
+  ASSERT_TRUE(status.ok());
+
+  status = client.StartSubsystem("chat");
+  ASSERT_TRUE(status.ok());
+  sleep(2);
+
+  status = client.StopSubsystem("chat");
+  ASSERT_TRUE(status.ok());
+
+  status = client.RemoveSubsystem("chat", true);
+  ASSERT_TRUE(status.ok());
+
 }
 
 int main(int argc, char **argv) {

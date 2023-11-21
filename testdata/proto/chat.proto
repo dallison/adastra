@@ -4,10 +4,10 @@ package chat;
 
 message Question {
   string text = 1;
-  int32 serial_number = 2;
+  int32 x = 2;
+  int32 y = 3;
 }
 
 message Answer {
   string text = 1;
-  int32 serial_number = 2;
 }

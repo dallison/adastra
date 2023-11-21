@@ -142,6 +142,13 @@ absl::Status FlightDirector::Run() {
                       << status.ToString() << std::endl;
           }
         }
+        for (auto &var : global_variables_) {
+          if (absl::Status status = RegisterGlobalVariable(var, c);
+              !status.ok()) {
+            std::cerr << "Failed to register global variable " << var.name
+                      << ": " << status.ToString() << std::endl;
+          }
+        }
         for (auto & [ name, subsystem ] : interfaces_) {
           if (absl::Status status = RegisterSubsystemGraph(subsystem, c);
               !status.ok()) {
@@ -295,6 +302,15 @@ absl::Status FlightDirector::LoadSubsystemGraph(
     std::cerr << "Added compute " << c.name() << std::endl;
   }
 
+  // Global variables.
+  for (auto &v : graph->var()) {
+    std::cerr << "Adding global variable " << v.name() << std::endl;
+    Variable var = {
+        .name = v.name(), .value = v.value(), .exported = v.exported()};
+
+    AddGlobalVariable(std::move(var));
+  }
+
   for (auto &s : graph->subsystem()) {
     std::cerr << "Adding subsystem " << s.name() << std::endl;
     Subsystem *subsystem = FindSubsystem(s.name());
@@ -316,7 +332,14 @@ absl::Status FlightDirector::LoadSubsystemGraph(
       }
       subsystem->deps.push_back(dep);
     }
-
+    for (auto &arg : s.arg()) {
+      subsystem->args.push_back(arg);
+    }
+    for (auto &var : s.var()) {
+      subsystem->vars.push_back({.name = var.name(),
+                                 .value = var.value(),
+                                 .exported = var.exported()});
+    }
     // Load all the processes in the subsystem.
     // First static processes.
     for (auto &proc : s.static_process()) {
@@ -357,12 +380,29 @@ absl::Status FlightDirector::LoadSubsystemGraph(
         return absl::InternalError(absl::StrFormat(
             "Module %s already exists in subsystem %s", mod.name(), s.name()));
       }
+      Subsystem *zygote = FindSubsystem(mod.zygote());
+      if (zygote == nullptr) {
+        return absl::InternalError(
+            absl::StrFormat("Module %s refers to nonexistent zygote %s",
+                            mod.name(), mod.zygote()));
+      }
       auto module = std::make_unique<Module>();
       module->name = mod.name();
       module->zygote = mod.zygote();
       module->dso = mod.dso();
       module->compute = mod.compute();
 
+      // Automatically add a dep to the zygote unless it's already there.
+      bool present = false;
+      for (auto *dep : subsystem->deps) {
+        if (dep->name == module->zygote) {
+          present = true;
+          break;
+        }
+      }
+      if (!present) {
+        subsystem->deps.push_back(zygote);
+      }
       auto &options = mod.options();
       ParseModuleOptions(module.get(), options);
       subsystem->processes.push_back(std::move(module));
@@ -458,6 +498,12 @@ absl::Status FlightDirector::RegisterCompute(const Compute &compute,
   return capcom_client_.AddCompute(compute.name, compute.addr, c);
 }
 
+absl::Status FlightDirector::RegisterGlobalVariable(const Variable &var,
+                                                    co::Coroutine *c) {
+  std::cerr << "Registering global variable " << var.name << std::endl;
+  return capcom_client_.AddGlobalVariable(var, c);
+}
+
 absl::Status FlightDirector::RegisterSubsystemGraph(Subsystem *root,
                                                     co::Coroutine *c) {
   std::vector<Subsystem *> flattened_graph = FlattenSubsystemGraph(root);
@@ -467,7 +513,6 @@ absl::Status FlightDirector::RegisterSubsystemGraph(Subsystem *root,
       switch (proc->Type()) {
       case ProcessType::kStatic: {
         StaticProcess *src = static_cast<StaticProcess *>(proc.get());
-        capcom::client::StaticProcess dest;
         options.static_processes.push_back({
             .name = src->name,
             .description = src->description,
@@ -484,7 +529,6 @@ absl::Status FlightDirector::RegisterSubsystemGraph(Subsystem *root,
       }
       case ProcessType::kZygote: {
         Zygote *src = static_cast<Zygote *>(proc.get());
-        capcom::client::Zygote dest;
         options.zygotes.push_back({
             .name = src->name,
             .description = src->description,
@@ -500,7 +544,6 @@ absl::Status FlightDirector::RegisterSubsystemGraph(Subsystem *root,
       }
       case ProcessType::kModule: {
         Module *src = static_cast<Module *>(proc.get());
-        capcom::client::VirtualProcess dest;
         options.virtual_processes.push_back({
             .name = src->name,
             .description = src->description,
@@ -509,15 +552,35 @@ absl::Status FlightDirector::RegisterSubsystemGraph(Subsystem *root,
             .main_func = "ModuleMain",
             .compute = src->compute,
             .vars = src->vars,
-            .args = src->args,
             .startup_timeout_secs = src->startup_timeout_secs,
             .sigint_shutdown_timeout_secs = src->sigint_shutdown_timeout_secs,
             .sigterm_shutdown_timeout_secs = src->sigterm_shutdown_timeout_secs,
         });
+        // Add the args, but after the two module args: name and
+        // subspace_socket.
+        auto &vproc = options.virtual_processes.back();
+        vproc.args.push_back(src->name);
+        vproc.args.push_back("${subspace_socket}");
+        for (auto &arg : src->args) {
+          vproc.args.push_back(arg);
+        }
         break;
       }
       }
     }
+
+    // Add deps as children.
+    for (auto &dep : subsystem->deps) {
+      options.children.push_back(dep->name);
+    }
+    // Add subsytem vars and args.
+    for (auto& arg : subsystem->args) {
+      options.args.push_back(arg);
+    }
+    for (auto& var : subsystem->vars) {
+      options.vars.push_back(var);
+    }
+    
     absl::Status status =
         capcom_client_.AddSubsystem(subsystem->name, std::move(options), c);
     if (!status.ok()) {

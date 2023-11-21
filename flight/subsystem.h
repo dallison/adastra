@@ -52,6 +52,8 @@ struct Subsystem {
 
   std::vector<std::unique_ptr<Process>> processes;
   std::vector<Subsystem *> deps;
+  std::vector<Variable> vars;
+  std::vector<std::string> args;
 };
 
 

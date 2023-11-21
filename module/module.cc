@@ -3,6 +3,7 @@
 // See LICENSE file for licensing information.
 
 #include "module/module.h"
+#include "absl/strings/numbers.h"
 #include <cerrno>
 
 namespace stagezero::module {
@@ -23,13 +24,12 @@ absl::Status Module::NotifyStartup() {
   // Notify stagezero of startup.
   char *notify = getenv("STAGEZERO_NOTIFY_FD");
   if (notify != nullptr) {
-    int notify_fd = atoi(notify);
-    int64_t val = 1;
-    int e = write(notify_fd, &val, 8);
-    if (e <= 0) {
-      return absl::InternalError(absl::StrFormat(
-          "Failed to notify StageZero of startup for module %s: %s", name_,
-          strerror(errno)));
+    int notify_fd;
+    bool ok = absl::SimpleAtoi(notify, &notify_fd);
+    if (ok) {
+      printf("Notifying via fd %d\n", notify_fd);
+      int64_t val = 1;
+      (void)write(notify_fd, &val, 8);
     }
   }
   return absl::OkStatus();

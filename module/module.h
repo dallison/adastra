@@ -394,8 +394,8 @@ public:
   RegisterSerializingPublisher(const std::string &channel, int slot_size,
                                int num_slots) {
     return RegisterSerializingPublisher<MessageType, SerializedLength,
-                                        Serialize>(channel, slot_size,
-                                                   num_slots, PublisherOptions{});
+                                        Serialize>(
+        channel, slot_size, num_slots, PublisherOptions{});
   }
 
   template <typename MessageType>
