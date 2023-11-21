@@ -6,18 +6,13 @@ syntax = "proto3";
 
 package stagezero.flight.proto;
 
+import "proto/config.proto";
 import "proto/capcom.proto";
-
-message Variable {
-  string name = 1;   // Variable name
-  string value = 2;  // Expression for value (use $ for var names)
-  bool exported = 3; // Export to environment.
-}
 
 message ModuleOptions {
   string description = 1;
 
-  repeated Variable vars = 2; // Local variables and environment.
+  repeated config.Variable vars = 2; // Local variables and environment.
   repeated string args = 3;   // Use $var in expressions.
 
   // Timeouts for shutdown.  The sigint timeout is the number of
@@ -36,7 +31,7 @@ message ModuleOptions {
 message ProcessOptions {
   string description = 1;
 
-  repeated Variable vars = 2; // Local variables and environment.
+  repeated config.Variable vars = 2; // Local variables and environment.
   repeated string args = 3;   // Use $var in expressions.
 
   // Timeouts for shutdown.  The sigint timeout is the number of
@@ -76,7 +71,7 @@ message Subsystem {
   repeated StaticProcess zygote = 4;
 
   // Variables common to this subsystem.
-  repeated Variable var = 5;
+  repeated config.Variable var = 5;
 
   // Args to pass to all processes in this subsystem.
   repeated string arg = 6;
@@ -88,17 +83,11 @@ message Subsystem {
   repeated string dep = 7;
 }
 
-message Compute {
-  string name = 1;
-  bytes ip_addr = 2;  // Host byte order.
-  int32 port = 3;       // Host byte order.
-}
-
 message SubsystemGraph {
   repeated Subsystem subsystem = 1;
   repeated string interface = 2;
   repeated string autostart = 3;
-  repeated Compute compute = 4;
+  repeated config.Compute compute = 4;
 }
 
 message InitRequest { string client_name = 1; }

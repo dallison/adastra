@@ -151,10 +151,11 @@ absl::Status Client::AddCompute(const std::string &name,
                                 co::Coroutine *c) {
   stagezero::capcom::proto::Request req;
   auto add = req.mutable_add_compute();
-  add->set_name(name);
+  auto compute = add->mutable_compute();
+  compute->set_name(name);
   in_addr ip_addr = addr.IpAddress();
-  add->set_ip_addr(&ip_addr, sizeof(ip_addr));
-  add->set_port(addr.Port());
+  compute->set_ip_addr(&ip_addr, sizeof(ip_addr));
+  compute->set_port(addr.Port());
 
   stagezero::capcom::proto::Response resp;
   absl::Status status = SendRequestReceiveResponse(req, resp, c);
@@ -208,6 +209,7 @@ absl::Status Client::AddSubsystem(const std::string &name,
     opts->set_sigint_shutdown_timeout_secs(sproc.sigint_shutdown_timeout_secs);
     opts->set_sigterm_shutdown_timeout_secs(
         sproc.sigterm_shutdown_timeout_secs);
+    opts->set_notify(sproc.notify);
     auto *s = proc->mutable_static_process();
     s->set_executable(sproc.executable);
     proc->set_compute(sproc.compute);
@@ -221,6 +223,8 @@ absl::Status Client::AddSubsystem(const std::string &name,
     opts->set_description(z.description);
     opts->set_sigint_shutdown_timeout_secs(z.sigint_shutdown_timeout_secs);
     opts->set_sigterm_shutdown_timeout_secs(z.sigterm_shutdown_timeout_secs);
+    opts->set_notify(true);
+
     auto *s = proc->mutable_zygote();
     s->set_executable(z.executable);
     proc->set_compute(z.compute);
@@ -235,6 +239,7 @@ absl::Status Client::AddSubsystem(const std::string &name,
     opts->set_sigint_shutdown_timeout_secs(vproc.sigint_shutdown_timeout_secs);
     opts->set_sigterm_shutdown_timeout_secs(
         vproc.sigterm_shutdown_timeout_secs);
+    opts->set_notify(true);
     auto *s = proc->mutable_virtual_process();
     s->set_zygote(vproc.zygote);
     s->set_dso(vproc.dso);

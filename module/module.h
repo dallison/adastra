@@ -47,7 +47,7 @@ public:
   Message(std::shared_ptr<MessageType> msg) : msg_(msg) {}
   Message(subspace::shared_ptr<MessageType> msg) : msg_(msg) {}
 
-  MessageType *operator->() {
+  MessageType *operator->() const {
     switch (msg_.index()) {
     case 0:
       return std::get<0>(msg_).get();
@@ -57,7 +57,7 @@ public:
     return nullptr;
   }
 
-  MessageType &operator*() {
+  MessageType &operator*() const {
     static MessageType empty;
     switch (msg_.index()) {
     case 0:
@@ -307,9 +307,18 @@ public:
 
   absl::Status ModuleInit();
 
+  // Perform module-specific initialization.  Here is where you register
+  // your publishers, subscribers and Run... functions.  The Run()
+  // function will actually run your module.
   virtual absl::Status Init(int argc, char **argv) = 0;
 
+  // Run the module as a set of coroutines.  Incoming messages will invoke
+  // the callbacks.  You can use the Run... functions to invoke callbacks
+  // using various stimuli.
   void Run();
+
+  // Stops the module immediately.  All coroutines will be stopped in their
+  // tracks.
   void Stop();
 
   template <typename MessageType, typename Deserialize>
@@ -386,7 +395,7 @@ public:
                                int num_slots) {
     return RegisterSerializingPublisher<MessageType, SerializedLength,
                                         Serialize>(channel, slot_size,
-                                                   num_slots, {});
+                                                   num_slots, PublisherOptions{});
   }
 
   template <typename MessageType>
@@ -423,7 +432,7 @@ public:
   }
 
   // Run the callback at a frequency in Hertz.
-  // NOTE: you can use the user-defined literals for frequencey if you like.
+  // NOTE: you can use the user-defined literals for frequency if you like.
   //
   // For example: 1.5_hz or 1_khz.
   //

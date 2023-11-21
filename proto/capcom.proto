@@ -15,10 +15,9 @@ message InitResponse {
   int32 event_port = 2;
 }
 
+
 message AddComputeRequest {
-  string name = 1;
-  bytes ip_addr = 2;  // Host byte order.
-  int32 port = 3;       // Host byte order.
+  config.Compute compute = 1;
 }
 
 message AddComputeResponse {

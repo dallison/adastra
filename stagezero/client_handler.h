@@ -51,6 +51,8 @@ public:
 
   void AddCoroutine(std::unique_ptr<co::Coroutine> c) override;
 
+  const std::string& GetCompute() const;
+  
 private:
   std::shared_ptr<ClientHandler> shared_from_this() {
     return std::static_pointer_cast<ClientHandler>(

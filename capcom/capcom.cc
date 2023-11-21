@@ -79,6 +79,8 @@ void Capcom::ListenerCoroutine(toolbelt::TCPSocket &listen_socket,
 }
 
 absl::Status Capcom::Run() {
+  std::cerr << "Capcom running on address " << addr_.ToString() << std::endl;
+
   toolbelt::TCPSocket listen_socket;
 
   if (absl::Status status = listen_socket.SetReuseAddr(); !status.ok()) {

@@ -29,7 +29,7 @@ struct StaticProcess {
   std::string name;
   std::string description;
   std::string executable;
-  std::string compute;      // Where to run.  Empty is localhost.
+  std::string compute; // Where to run.  Empty is localhost.
   std::vector<Variable> vars;
   std::vector<std::string> args;
   int32_t startup_timeout_secs = kDefaultStartupTimeout;
@@ -42,13 +42,12 @@ struct Zygote {
   std::string name;
   std::string description;
   std::string executable;
-  std::string compute;      // Where to run.  Empty is localhost.
+  std::string compute; // Where to run.  Empty is localhost.
   std::vector<Variable> vars;
   std::vector<std::string> args;
   int32_t startup_timeout_secs = kDefaultStartupTimeout;
   int32_t sigint_shutdown_timeout_secs = kDefaultSigIntShutdownTimeout;
   int32_t sigterm_shutdown_timeout_secs = kDefaultSigTermShutdownTimeout;
-  bool notify = false;
 };
 
 struct VirtualProcess {
@@ -57,13 +56,12 @@ struct VirtualProcess {
   std::string zygote;
   std::string dso;
   std::string main_func;
-  std::string compute;      // Where to run.  Empty is localhost.
+  std::string compute; // Where to run.  Empty is localhost.
   std::vector<Variable> vars;
   std::vector<std::string> args;
   int32_t startup_timeout_secs = kDefaultStartupTimeout;
   int32_t sigint_shutdown_timeout_secs = kDefaultSigIntShutdownTimeout;
   int32_t sigterm_shutdown_timeout_secs = kDefaultSigTermShutdownTimeout;
-  bool notify = false;
 };
 
 struct SubsystemOptions {
@@ -104,18 +102,19 @@ struct Event {
 
 class Client {
 public:
-  Client(ClientMode mode = ClientMode::kBlocking, co::Coroutine *co = nullptr) : mode_(mode), co_(co) {}
+  Client(ClientMode mode = ClientMode::kBlocking, co::Coroutine *co = nullptr)
+      : mode_(mode), co_(co) {}
   ~Client() = default;
 
   absl::Status Init(toolbelt::InetAddress addr, const std::string &name,
                     co::Coroutine *c = nullptr);
 
   absl::Status AddCompute(const std::string &name,
-                            const toolbelt::InetAddress &addr,
-                            co::Coroutine *c = nullptr);
+                          const toolbelt::InetAddress &addr,
+                          co::Coroutine *c = nullptr);
 
   absl::Status RemoveCompute(const std::string &name,
-                               co::Coroutine *c = nullptr);
+                             co::Coroutine *c = nullptr);
 
   absl::Status AddSubsystem(const std::string &name,
                             const SubsystemOptions &options,
@@ -139,14 +138,14 @@ public:
   }
   absl::StatusOr<Event> ReadEvent(co::Coroutine *c = nullptr);
 
-  absl::Status Abort(const std::string& reason, co::Coroutine *c = nullptr);
+  absl::Status Abort(const std::string &reason, co::Coroutine *c = nullptr);
 
 private:
   static constexpr size_t kMaxMessageSize = 4096;
 
-absl::Status WaitForSubsystemState(const std::string& subsystem,
-                                           AdminState admin_state,
-                                           OperState oper_state);
+  absl::Status WaitForSubsystemState(const std::string &subsystem,
+                                     AdminState admin_state,
+                                     OperState oper_state);
   absl::Status
   SendRequestReceiveResponse(const stagezero::capcom::proto::Request &req,
                              stagezero::capcom::proto::Response &response,

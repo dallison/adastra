@@ -14,10 +14,10 @@ cc_library(
     ],
     deps = [
         ":symbols_lib",
+        "//common",
         "//proto:config_cc_proto",
         "//proto:control_cc_proto",
         "//stagezero/zygote:zygote_core",
-        "//common",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/status",
@@ -46,7 +46,13 @@ cc_binary(
     srcs = [
         "main.cc",
     ],
+    copts = [
+        # MacOS has deprecated daemon for some reason.
+        "-Wno-deprecated-declarations",
+    ],
     deps = [
         ":stagezero_lib",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
     ],
 )

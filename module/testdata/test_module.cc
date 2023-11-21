@@ -1,8 +1,8 @@
-#include "module/module.h"
+#include "module/protobuf_module.h"
 
-class TestModule : public stagezero::module::Module {
+class TestModule : public stagezero::module::ProtobufModule {
 public:
-  TestModule(const std::string& name, const std::string& subspace_server) : Module(name, subspace_server) {}
+  TestModule(const std::string& name, const std::string& subspace_server) : ProtobufModule(name, subspace_server) {}
  
   absl::Status Init(int argc, char** argv) override {
     int count = 0;

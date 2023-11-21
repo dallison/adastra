@@ -41,6 +41,7 @@ absl::Status ClientHandler::SendAlarm(const Alarm &alarm) {
 absl::Status ClientHandler::HandleMessage(const proto::Request &req,
                                           proto::Response &resp,
                                           co::Coroutine *c) {
+                                            std::cerr << "incoming capcom " << req.DebugString();
   switch (req.request_case()) {
   case proto::Request::kInit:
     HandleInit(req.init(), resp.mutable_init(), c);
@@ -99,16 +100,17 @@ void ClientHandler::HandleInit(const proto::InitRequest &req,
 void ClientHandler::HandleAddCompute(const proto::AddComputeRequest &req,
                                      proto::AddComputeResponse *response,
                                      co::Coroutine *c) {
+  const config::Compute& compute = req.compute();
   struct sockaddr_in addr = {
 #if defined(__APPLE__)
     .sin_len = sizeof(int),
 #endif
     .sin_family = AF_INET,
-    .sin_port = htons(req.port()),
+    .sin_port = htons(compute.port()),
   };
   uint32_t ip_addr;
 
-  memcpy(&ip_addr, req.ip_addr().data(), req.ip_addr().size());
+  memcpy(&ip_addr, compute.ip_addr().data(), compute.ip_addr().size());
   addr.sin_addr.s_addr = htonl(ip_addr);
 
   toolbelt::InetAddress stagezero_addr(addr);
@@ -116,19 +118,21 @@ void ClientHandler::HandleAddCompute(const proto::AddComputeRequest &req,
   // Probe a connection to the stagezero instance to make sure it's
   // there.
   stagezero::Client sclient;
-  if (absl::Status status = sclient.Init(stagezero_addr, "<capcom probe>");
+  if (absl::Status status = sclient.Init(stagezero_addr, "<capcom probe>", compute.name(), c);
       !status.ok()) {
     response->set_error(absl::StrFormat(
-        "Cannot connect to StageZero on compute %s at address %s", req.name(),
+        "Cannot connect to StageZero on compute %s at address %s", compute.name(),
         stagezero_addr.ToString()));
     return;
   }
 
-  Compute compute = {req.name(), toolbelt::InetAddress(addr)};
-  bool ok = capcom_.AddCompute(req.name(), compute);
+  std::cerr << "trying to add compute\n";
+
+  Compute c2 = {compute.name(), toolbelt::InetAddress(addr)};
+  bool ok = capcom_.AddCompute(compute.name(), c2);
   if (!ok) {
     response->set_error(
-        absl::StrFormat("Failed to add compute %s", req.name()));
+        absl::StrFormat("Failed to add compute %s", compute.name()));
   }
 }
 

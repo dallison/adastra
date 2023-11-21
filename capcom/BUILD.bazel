@@ -8,16 +8,16 @@ cc_library(
         "subsystem.cc",
     ],
     hdrs = [
+        "bitset.h",
         "capcom.h",
         "client_handler.h",
         "subsystem.h",
-        "bitset.h",
     ],
     deps = [
-        "//stagezero/client",
+        "//common",
         "//proto:capcom_cc_proto",
         "//proto:config_cc_proto",
-        "//common",
+        "//stagezero/client",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/status",
@@ -33,8 +33,14 @@ cc_binary(
     srcs = [
         "main.cc",
     ],
+    copts = [
+        # MacOS has deprecated daemon for some reason.
+        "-Wno-deprecated-declarations",
+    ],
     deps = [
         ":capcom_lib",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
     ],
 )
 
@@ -52,8 +58,8 @@ cc_test(
     ],
     deps = [
         ":capcom_lib",
-        "//stagezero:stagezero_lib",
         "//capcom/client",
+        "//stagezero:stagezero_lib",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/status",

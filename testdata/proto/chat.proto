@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package chat;
+
+message Question {
+  string text = 1;
+  int32 serial_number = 2;
+}
+
+message Answer {
+  string text = 1;
+  int32 serial_number = 2;
+}

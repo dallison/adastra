@@ -3,13 +3,16 @@ subsystem {
   module {
     name: "talker"
     zygote: "standard_zygote"
-    dso: "${runfiles_dir}/foobar/talker.so"
+    dso: "${runfiles_dir}/__main__/testdata/talker.so"
   }
   module {
     name: "listener"
     zygote: "standard_zygote"
-    dso: "${runfiles_dir}/foobar/listener.so"
+    dso: "${runfiles_dir}/__main__/testdata/listener.so"
   }
+
+  dep: "subspace"
+  dep: "standard_zygote"
 }
 
 interface: "chat"

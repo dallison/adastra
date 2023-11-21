@@ -1,0 +1,5 @@
+compute {
+  name: "localhost"
+  ip_addr: "127.0.0.1"
+  port: 6522
+}

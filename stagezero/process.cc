@@ -33,7 +33,7 @@ Process::Process(co::CoroutineScheduler &scheduler,
 
 void Process::SetProcessId() {
   process_id_ =
-      absl::StrFormat("%s/%s:%d", client_->GetClientName(), name_, pid_);
+      absl::StrFormat("%s/%s@%s:%d", client_->GetClientName(), name_, client_->GetCompute(), pid_);
 }
 
 void Process::KillNow() {

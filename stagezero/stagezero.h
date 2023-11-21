@@ -121,7 +121,8 @@ private:
   co::CoroutineScheduler &co_scheduler_;
   toolbelt::InetAddress addr_;
   toolbelt::FileDescriptor notify_fd_;
-
+  std::string compute_;
+  
   // All coroutines are owned by this set.
   absl::flat_hash_set<std::unique_ptr<co::Coroutine>> coroutines_;
 

@@ -32,7 +32,7 @@ Subsystem::ConnectToStageZero(const Compute *compute, co::Coroutine *c) {
   auto &sc = computes_[compute->name];
   if (sc == nullptr) {
     auto client = std::make_shared<stagezero::Client>();
-    if (absl::Status status = client->Init(compute->addr, name_, c);
+    if (absl::Status status = client->Init(compute->addr, name_, compute->name, c);
         !status.ok()) {
       return status;
     }

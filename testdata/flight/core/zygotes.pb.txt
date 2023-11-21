@@ -1,9 +1,9 @@
 subsystem {
-  name: "zygotes"
+  name: "standard_zygote"
   zygote {
-    name: "standard_zyote"
-    executable: "${runfiles_dir}/foobar/standard_zygote"
+    name: "standard_zygote"
+    executable: "${runfiles_dir}/__main__/stagezero/zygote/standard_zygote"
   }
 }
 
-autostart: "zygotes"
+autostart: "standard_zygote"

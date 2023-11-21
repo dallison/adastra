@@ -3,8 +3,10 @@ subsystem {
 
  static_process {
   name: "subspace_server"
-  executable: "${runfiles_dir}/foobar/subspace_server"
-  notify: false
+  executable: "${runfiles_dir}/subspace/server/subspace_server"
+  options {
+    notify: false
+  }
  }
 }
 

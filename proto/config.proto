@@ -6,6 +6,12 @@ syntax = "proto3";
 
 package stagezero.config;
 
+message Compute {
+  string name = 1;
+  bytes ip_addr = 2;  // Host byte order.
+  int32 port = 3;       // Host byte order.
+}
+
 message Variable {
   string name = 1;     // Varible name
   string value = 2;    // Expression for value (use $ for var names)

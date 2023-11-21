@@ -3,6 +3,7 @@
 // See LICENSE file for licensing information.
 
 #include "flight/flight_director.h"
+#include "toolbelt/hexdump.h"
 #include <cassert>
 #include <fcntl.h>
 #include <fstream>
@@ -132,6 +133,31 @@ absl::Status FlightDirector::Run() {
                                       },
                                       "Listener Socket"));
 
+  // Add all subsystems and computes to capcom.
+  coroutines_.insert(
+      std::make_unique<co::Coroutine>(co_scheduler_, [this](co::Coroutine *c) {
+        for (auto & [ name, compute ] : computes_) {
+          if (absl::Status status = RegisterCompute(compute, c); !status.ok()) {
+            std::cerr << "Failed to register compute " << name << ": "
+                      << status.ToString() << std::endl;
+          }
+        }
+        for (auto & [ name, subsystem ] : interfaces_) {
+          if (absl::Status status = RegisterSubsystemGraph(subsystem, c);
+              !status.ok()) {
+            std::cerr << "Failed to register interface " << name << ": "
+                      << status.ToString() << std::endl;
+          }
+        }
+        for (auto & [ name, subsystem ] : autostarts_) {
+          if (absl::Status status = AutostartSubsystem(subsystem, c);
+              !status.ok()) {
+            std::cerr << "Failed to autostart subsystem " << name << ": "
+                      << status.ToString() << std::endl;
+          }
+        }
+      }));
+
   // Run the coroutine main loop.
   co_scheduler_.Run();
 
@@ -256,7 +282,21 @@ static bool CheckProcessUniqueness(const Subsystem &subsystem,
 
 absl::Status FlightDirector::LoadSubsystemGraph(
     std::unique_ptr<proto::SubsystemGraph> graph) {
+  // Load the computes.
+  for (auto &c : graph->compute()) {
+    const Compute *c2 = FindCompute(c.name());
+    if (c2 != nullptr) {
+      return absl::InternalError(
+          absl::StrFormat("Duplicate compute %s", c.name()));
+    }
+    Compute compute = {c.name(), toolbelt::InetAddress(c.ip_addr(), c.port())};
+
+    AddCompute(c.name(), std::move(compute));
+    std::cerr << "Added compute " << c.name() << std::endl;
+  }
+
   for (auto &s : graph->subsystem()) {
+    std::cerr << "Adding subsystem " << s.name() << std::endl;
     Subsystem *subsystem = FindSubsystem(s.name());
     assert(subsystem != nullptr);
 
@@ -288,6 +328,7 @@ absl::Status FlightDirector::LoadSubsystemGraph(
       auto process = std::make_unique<StaticProcess>();
       process->name = proc.name();
       process->executable = proc.executable();
+      process->compute = proc.compute();
 
       auto &options = proc.options();
       ParseProcessOptions(process.get(), options);
@@ -303,6 +344,7 @@ absl::Status FlightDirector::LoadSubsystemGraph(
       auto zygote = std::make_unique<Zygote>();
       zygote->name = z.name();
       zygote->executable = z.executable();
+      zygote->compute = z.compute();
 
       auto &options = z.options();
       ParseProcessOptions(zygote.get(), options);
@@ -317,7 +359,9 @@ absl::Status FlightDirector::LoadSubsystemGraph(
       }
       auto module = std::make_unique<Module>();
       module->name = mod.name();
+      module->zygote = mod.zygote();
       module->dso = mod.dso();
+      module->compute = mod.compute();
 
       auto &options = mod.options();
       ParseModuleOptions(module.get(), options);
@@ -367,7 +411,7 @@ absl::Status FlightDirector::CheckForSubsystemLoopsRecurse(
   if (path.empty()) {
     path = subsystem->name;
   } else {
-    absl::StrAppend(&path, "->", path);
+    absl::StrAppend(&path, "->", subsystem->name);
   }
   for (auto *dep : subsystem->deps) {
     if (absl::Status status = CheckForSubsystemLoopsRecurse(visited, dep, path);
@@ -383,6 +427,7 @@ absl::Status FlightDirector::CheckForSubsystemLoops() {
     absl::flat_hash_set<Subsystem *> visited;
     return CheckForSubsystemLoopsRecurse(visited, subsystem.get(), "");
   }
+  return absl::OkStatus();
 }
 
 std::vector<Subsystem *>
@@ -406,44 +451,86 @@ void FlightDirector::FlattenSubsystemGraphRecurse(
   vec.push_back(subsystem);
 }
 
-static void BuildCapcom absl::Status
-FlightDirector::AddSubsystemGraph(Subsystem *root) {
+absl::Status FlightDirector::RegisterCompute(const Compute &compute,
+                                             co::Coroutine *c) {
+  std::cerr << "Registering compute " << compute.name << ": "
+            << compute.addr.ToString() << std::endl;
+  return capcom_client_.AddCompute(compute.name, compute.addr, c);
+}
+
+absl::Status FlightDirector::RegisterSubsystemGraph(Subsystem *root,
+                                                    co::Coroutine *c) {
   std::vector<Subsystem *> flattened_graph = FlattenSubsystemGraph(root);
   for (auto &subsystem : flattened_graph) {
     capcom::client::SubsystemOptions options;
     for (auto &proc : subsystem->processes) {
       switch (proc->Type()) {
       case ProcessType::kStatic: {
-        StaticProcess *sproc = static_cast<StaticProcess *>(proc.get());
-
+        StaticProcess *src = static_cast<StaticProcess *>(proc.get());
+        capcom::client::StaticProcess dest;
         options.static_processes.push_back({
-          .name = sproc->name, .executable = sproc->executable;
-
+            .name = src->name,
+            .description = src->description,
+            .executable = src->executable,
+            .compute = src->compute,
+            .vars = src->vars,
+            .args = src->args,
+            .startup_timeout_secs = src->startup_timeout_secs,
+            .sigint_shutdown_timeout_secs = src->sigint_shutdown_timeout_secs,
+            .sigterm_shutdown_timeout_secs = src->sigterm_shutdown_timeout_secs,
+            .notify = src->notify,
         });
         break;
       }
       case ProcessType::kZygote: {
+        Zygote *src = static_cast<Zygote *>(proc.get());
+        capcom::client::Zygote dest;
+        options.zygotes.push_back({
+            .name = src->name,
+            .description = src->description,
+            .executable = src->executable,
+            .compute = src->compute,
+            .vars = src->vars,
+            .args = src->args,
+            .startup_timeout_secs = src->startup_timeout_secs,
+            .sigint_shutdown_timeout_secs = src->sigint_shutdown_timeout_secs,
+            .sigterm_shutdown_timeout_secs = src->sigterm_shutdown_timeout_secs,
+        });
         break;
       }
       case ProcessType::kModule: {
+        Module *src = static_cast<Module *>(proc.get());
+        capcom::client::VirtualProcess dest;
+        options.virtual_processes.push_back({
+            .name = src->name,
+            .description = src->description,
+            .zygote = src->zygote,
+            .dso = src->dso,
+            .main_func = "ModuleMain",
+            .compute = src->compute,
+            .vars = src->vars,
+            .args = src->args,
+            .startup_timeout_secs = src->startup_timeout_secs,
+            .sigint_shutdown_timeout_secs = src->sigint_shutdown_timeout_secs,
+            .sigterm_shutdown_timeout_secs = src->sigterm_shutdown_timeout_secs,
+        });
         break;
       }
       }
     }
-    absl::Status status = capcom_client_.AddSubsystem(
-        subsystem->name,
-        {.static_processes = {
-             {
-                 .name = "loop1",
-                 .executable = "${runfiles_dir}/__main__/testdata/loop",
-                 .compute = "localhost1",
-             },
-             {
-                 .name = "loop2",
-                 .executable = "${runfiles_dir}/__main__/testdata/loop",
-                 .compute = "localhost2",
-             }}});
+    absl::Status status =
+        capcom_client_.AddSubsystem(subsystem->name, std::move(options), c);
+    if (!status.ok()) {
+      return status;
+    }
   }
+
+  return absl::OkStatus();
+}
+
+absl::Status FlightDirector::AutostartSubsystem(Subsystem *subsystem,
+                                                co::Coroutine *c) {
+  return capcom_client_.StartSubsystem(subsystem->name, c);
 }
 
 } // namespace stagezero::flight

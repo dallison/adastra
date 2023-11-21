@@ -1,38 +1,81 @@
 package(default_visibility = ["//visibility:public"])
 
 cc_binary(
-  name = "loop",
-  srcs = [
-    "loop.cc",
-  ],
+    name = "loop",
+    srcs = [
+        "loop.cc",
+    ],
 )
 
 cc_binary(
-  name = "echo",
-  srcs = [
-    "echo.cc",
-  ],
+    name = "echo",
+    srcs = [
+        "echo.cc",
+    ],
 )
 
 cc_binary(
-  name = "vars",
-  srcs = [
-    "vars.cc",
-  ],
+    name = "vars",
+    srcs = [
+        "vars.cc",
+    ],
 )
 
 cc_binary(
-  name = "module.so",
-  srcs = [
-    "module.cc",
-  ],
-  linkstatic = 0,
-  linkshared = 1,
+    name = "module.so",
+    srcs = [
+        "module.cc",
+    ],
+    linkshared = 1,
+    linkstatic = 0,
 )
 
 filegroup(
-  name = "files",
-  srcs = [
-    "input_data.txt",
-  ]
+    name = "files",
+    srcs = [
+        "input_data.txt",
+    ],
+)
+
+filegroup(
+    name = "flight",
+    srcs = glob(["flight/**"]),
+)
+
+proto_library(
+    name = "chat_proto",
+    srcs = ["proto/chat.proto"],
+)
+
+cc_proto_library(
+    name = "chat_cc_proto",
+    deps = [":chat_proto"],
+)
+
+cc_binary(
+    name = "talker.so",
+    srcs = [
+        "talker.cc",
+    ],
+    linkshared = 1,
+    linkstatic = 0,
+    deps = [
+        ":chat_cc_proto",
+        "//module:protobuf_module",
+        "@com_google_absl//absl/strings:str_format",
+    ],
+)
+
+cc_binary(
+    name = "listener.so",
+    srcs = [
+        "listener.cc",
+    ],
+    linkshared = 1,
+    linkstatic = 0,
+    deps = [
+        ":chat_cc_proto",
+        "//module:protobuf_module",
+        "@com_google_absl//absl/strings:str_format",
+    ],
 )

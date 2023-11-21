@@ -115,7 +115,11 @@ std::string GetRunfilesDir() {
         return dir;
       }
     }
-    return ".";
+    // No .runfiles at end of path, look for a .runfiles directory.
+    s = strstr(path, ".runfiles");
+    if (s == nullptr) {
+      return ".";
+    }
   }
   // Move forward to the next / or EOS.
   while (*s != '\0' && *s != '/') {
@@ -137,6 +141,7 @@ absl::Status StageZero::Run() {
   }
   global_symbols_.AddSymbol("runfiles_dir", runfiles_dir, false);
 
+  std::cerr << "StageZero running on address " << addr_.ToString() << std::endl;
   toolbelt::TCPSocket listen_socket;
 
   if (absl::Status status = listen_socket.SetCloseOnExec(); !status.ok()) {

@@ -9,6 +9,7 @@
 namespace stagezero {
 
 absl::Status Client::Init(toolbelt::InetAddress addr, const std::string &name,
+const std::string& compute,
                           co::Coroutine *co) {
   if (co == nullptr) {
     co = co_;
@@ -27,7 +28,8 @@ absl::Status Client::Init(toolbelt::InetAddress addr, const std::string &name,
   stagezero::control::Request req;
   auto init = req.mutable_init();
   init->set_client_name(name);
-
+  init->set_compute(compute);
+  
   stagezero::control::Response resp;
   status = SendRequestReceiveResponse(req, resp, co);
   if (!status.ok()) {

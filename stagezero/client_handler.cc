@@ -35,6 +35,10 @@ void ClientHandler::AddCoroutine(std::unique_ptr<co::Coroutine> c) {
   stagezero_.AddCoroutine(std::move(c));
 }
 
+const std::string& ClientHandler::GetCompute() const {
+  return stagezero_.compute_;
+}
+
 absl::Status ClientHandler::HandleMessage(const control::Request &req,
                                           control::Response &resp,
                                           co::Coroutine *c) {
@@ -105,6 +109,7 @@ void ClientHandler::HandleInit(const control::InitRequest &req,
     response->set_error(s.status().ToString());
     return;
   }
+  stagezero_.compute_ = req.compute();
   response->set_event_port(*s);
 }
 

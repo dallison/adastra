@@ -93,5 +93,14 @@ public:
                                         ProtobufSerialize<MessageType>>(
         channel, slot_size, num_slots, options);
   }
+
+   template <typename MessageType>
+  absl::StatusOr<std::shared_ptr<ProtobufPublisher<MessageType>>>
+  RegisterPublisher(const std::string &channel, int slot_size, int num_slots) {
+    return RegisterSerializingPublisher<MessageType,
+                                        ProtobufSerializedLength<MessageType>,
+                                        ProtobufSerialize<MessageType>>(
+        channel, slot_size, num_slots);
+  }
 };
 } // namespace stagezero::module

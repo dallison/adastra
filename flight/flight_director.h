@@ -25,8 +25,7 @@ class ClientHandler;
 
 struct Compute {
   std::string name;
-  std::string ip_addr;
-  int port;
+  toolbelt::InetAddress addr;
 };
 
 class FlightDirector {
@@ -68,14 +67,29 @@ private:
   std::vector<Subsystem*> FlattenSubsystemGraph(Subsystem* root);
   void FlattenSubsystemGraphRecurse(absl::flat_hash_set<Subsystem *> &visited, Subsystem* subsystem, std::vector<Subsystem*>& vec);
   
-  absl::Status AddSubsystemGraph(Subsystem* root);
+  absl::Status RegisterSubsystemGraph(Subsystem* root, co::Coroutine* c);
+    absl::Status RegisterCompute(const Compute& compute, co::Coroutine* c);
 
+  absl::Status AutostartSubsystem(Subsystem* subsystem, co::Coroutine* c);
+  
   Subsystem *FindSubsystem(const std::string &name) const {
     auto it = subsystems_.find(name);
     if (it == subsystems_.end()) {
       return nullptr;
     }
     return it->second.get();
+  }
+
+  const Compute *FindCompute(const std::string &name) const {
+    auto it = computes_.find(name);
+    if (it == computes_.end()) {
+      return nullptr;
+    }
+    return &it->second;
+  }
+
+  void AddCompute(const std::string& name, const Compute& compute) {
+    computes_.emplace(std::make_pair(name, std::move(compute)));
   }
 
   co::CoroutineScheduler &co_scheduler_;
@@ -93,7 +107,7 @@ private:
   absl::flat_hash_map<std::string, Subsystem *> autostarts_;
   absl::flat_hash_map<std::string, Subsystem *> interfaces_;
 
-  absl::flat_hash_map<std::string, std::unique_ptr<Compute>> computes_;
+  absl::flat_hash_map<std::string, Compute> computes_;
 
   std::vector<std::shared_ptr<ClientHandler>> client_handlers_;
   bool running_ = false;
