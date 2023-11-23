@@ -13,6 +13,9 @@ capcom_pid=$!
 sleep 1
 trap "kill -INT $s0_pid $capcom_pid; exit" SIGINT EXIT
 
-bazel-bin//flight/flight.runfiles/__main__/flight/flight $*
+bazel-bin//flight/flight.runfiles/__main__/flight/flight_director $*&
+
+wait
+
 
 

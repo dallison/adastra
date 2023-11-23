@@ -5,14 +5,14 @@
 #include "stagezero/client_handler.h"
 #include "absl/strings/str_format.h"
 #include "stagezero/stagezero.h"
+#include "toolbelt/clock.h"
 #include "toolbelt/hexdump.h"
 
 #include <iostream>
 
 namespace stagezero {
 
-ClientHandler::~ClientHandler() { 
-  KillAllProcesses(); }
+ClientHandler::~ClientHandler() { KillAllProcesses(); }
 
 SymbolTable *ClientHandler::GetGlobalSymbols() const {
   return &stagezero_.global_symbols_;
@@ -35,7 +35,7 @@ void ClientHandler::AddCoroutine(std::unique_ptr<co::Coroutine> c) {
   stagezero_.AddCoroutine(std::move(c));
 }
 
-const std::string& ClientHandler::GetCompute() const {
+const std::string &ClientHandler::GetCompute() const {
   return stagezero_.compute_;
 }
 
@@ -254,6 +254,42 @@ absl::Status ClientHandler::SendOutputEvent(const std::string &process_id,
   output->set_process_id(process_id);
   output->set_data(data, len);
   output->set_fd(fd);
+  return QueueEvent(std::move(event));
+}
+
+absl::Status ClientHandler::SendLogMessage(toolbelt::LogLevel level,
+                                           const std::string &process,
+                                           const std::string &text) {
+  auto event = std::make_unique<control::Event>();
+  auto log = event->mutable_log();
+  log->set_process_name(process);
+  log->set_text(text);
+
+  struct timespec now_ts;
+  clock_gettime(CLOCK_REALTIME, &now_ts);
+  uint64_t now_ns = now_ts.tv_sec * 1000000000LL + now_ts.tv_nsec;
+  log->set_timestamp(now_ns);
+
+  switch (level) {
+  case toolbelt::LogLevel::kVerboseDebug:
+    log->set_level(control::LogMessage::VERBOSE);
+    break;
+  case toolbelt::LogLevel::kDebug:
+    log->set_level(control::LogMessage::DBG);
+    break;
+  case toolbelt::LogLevel::kInfo:
+    log->set_level(control::LogMessage::INFO);
+    break;
+  case toolbelt::LogLevel::kWarning:
+    log->set_level(control::LogMessage::WARNING);
+    break;
+  case toolbelt::LogLevel::kError:
+    log->set_level(control::LogMessage::ERR);
+    break;
+  case toolbelt::LogLevel::kFatal:
+    // Fatal not supported here.
+    return absl::OkStatus();
+  }
   return QueueEvent(std::move(event));
 }
 

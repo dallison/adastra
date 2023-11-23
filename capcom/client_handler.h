@@ -26,7 +26,9 @@ class ClientHandler
                                       proto::Event> {
 public:
   ClientHandler(Capcom &capcom, toolbelt::TCPSocket socket, uint32_t id)
-      : TCPClientHandler(std::move(socket)), capcom_(capcom), id_(id) {}
+      : TCPClientHandler(std::move(socket)), capcom_(capcom), id_(id) {
+        std::cerr << "Capcom client id " << id << " connected\n";
+      }
   ~ClientHandler();
 
   absl::Status SendSubsystemStatusEvent(Subsystem *subsystem);

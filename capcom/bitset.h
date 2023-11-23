@@ -31,6 +31,15 @@ class BitSet {
 
   void ClearAll();
 
+  void Print() const {
+    for (auto v : bits_) {
+      for (int i = 0; i < 64; i++) {
+        std::cout << ((v & (1LL << i)) ? "1": "0");
+      }
+      std::cout << std::endl;
+    }
+  }
+
  private:
   // Note the use of explicit long long type here because
   // we use ffsll to look for the set bits and that is
@@ -59,8 +68,12 @@ inline uint32_t BitSet::Allocate() {
 
 inline void BitSet::Clear(uint32_t bit) {
   uint32_t word = bit / 64;
-  if (word < 0 || word >= bits_.size()) {
+  if (word < 0 || word > bits_.size()) {
     return;
+  }
+    // Add new word if it doesn't exist.
+  if (word == bits_.size()) {
+    bits_.push_back(0LL);
   }
   uint32_t b = bit % 64;
   bits_[word] &= ~(1LL << b);
@@ -68,9 +81,14 @@ inline void BitSet::Clear(uint32_t bit) {
 
 inline void BitSet::Set(uint32_t bit) {
   uint32_t word = bit / 64;
-  if (word < 0 || word >= bits_.size()) {
+  if (word < 0 || word > bits_.size()) {
     return;
   }
+  // Add new word if it doesn't exist.
+  if (word == bits_.size()) {
+    bits_.push_back(0LL);
+  }
+
   uint32_t b = bit % 64;
   bits_[word] |= (1LL << b);
 }

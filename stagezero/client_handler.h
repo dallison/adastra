@@ -35,6 +35,7 @@ public:
                                     int exit_status, int term_signal);
   absl::Status SendOutputEvent(const std::string &process_id, int fd,
                                const char *data, size_t len);
+  absl::Status SendLogMessage(toolbelt::LogLevel level, const std::string& process, const std::string& text);
 
   toolbelt::Logger &GetLogger() const override;
 
@@ -52,7 +53,7 @@ public:
   void AddCoroutine(std::unique_ptr<co::Coroutine> c) override;
 
   const std::string& GetCompute() const;
-  
+
 private:
   std::shared_ptr<ClientHandler> shared_from_this() {
     return std::static_pointer_cast<ClientHandler>(

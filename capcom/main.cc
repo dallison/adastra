@@ -28,6 +28,7 @@ static void Signal(int sig) {
 }
 
 ABSL_FLAG(int, port, 6523, "TCP listening port");
+ABSL_FLAG(std::string, log_file, "/tmp/capcom.pb", "Capcom log file");
 
 int main(int argc, char **argv) {
   absl::ParseCommandLine(argc, argv);
@@ -42,7 +43,7 @@ int main(int argc, char **argv) {
 
   toolbelt::InetAddress capcom_addr("localhost", absl::GetFlag(FLAGS_port));
 
-  stagezero::capcom::Capcom capcom(scheduler, capcom_addr, -1);
+  stagezero::capcom::Capcom capcom(scheduler, capcom_addr, absl::GetFlag(FLAGS_log_file), -1);
   g_capcom = &capcom;
 
   if (absl::Status status = capcom.Run(); !status.ok()) {

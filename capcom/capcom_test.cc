@@ -78,7 +78,7 @@ public:
 
     capcom_addr_ = toolbelt::InetAddress("localhost", 6523);
     capcom_ = std::make_unique<stagezero::capcom::Capcom>(
-        capcom_scheduler_, capcom_addr_, capcom_pipe_[1]);
+        capcom_scheduler_, capcom_addr_, "", capcom_pipe_[1]);
 
     // Start capcom running in a thread.
     capcom_thread_ = std::thread([]() {

@@ -22,6 +22,7 @@ struct Stream {
     kFile,
     kFd,
     kClose,
+    kLog,
   };
   enum class Direction {
     kInput,

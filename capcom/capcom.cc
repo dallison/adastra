@@ -7,11 +7,32 @@
 namespace stagezero::capcom {
 
 Capcom::Capcom(co::CoroutineScheduler &scheduler, toolbelt::InetAddress addr,
-               int notify_fd)
+               const std::string &log_file_name, int notify_fd)
     : co_scheduler_(scheduler), addr_(std::move(addr)), notify_fd_(notify_fd) {
   // TODO: how to get the port for stagezero.
   local_compute_ = {.name = "<localhost>",
                     .addr = toolbelt::InetAddress("localhost", 6522)};
+
+  // Create the log message pipe.
+  int pipes[2];
+  int e = ::pipe(pipes);
+  if (e == -1) {
+    std::cerr << "Failed to create logging pipe: " << strerror(errno)
+              << std::endl;
+    abort();
+  }
+  incoming_log_message_.SetFd(pipes[0]);
+  log_message_.SetFd(pipes[1]);
+
+  if (!log_file_name.empty()) {
+    log_file_.SetFd(
+        open(log_file_name.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0777));
+    if (!log_file_.Valid()) {
+      std::cerr << "Failed to open log file: " << log_file_name << ": "
+                << strerror(errno) << std::endl;
+      abort();
+    }
+  }
 }
 
 Capcom::~Capcom() {
@@ -78,6 +99,98 @@ void Capcom::ListenerCoroutine(toolbelt::TCPSocket &listen_socket,
   }
 }
 
+void Capcom::Log(const stagezero::control::LogMessage &msg) {
+  uint64_t size = msg.ByteSizeLong();
+  // Write length prefix.
+  ssize_t n = ::write(log_message_.Fd(), &size, sizeof(size));
+  if (n <= 0) {
+    logger_.Log(toolbelt::LogLevel::kError,
+                "Failed to write to logger pipe: %s", strerror(errno));
+    return;
+  }
+  if (!msg.SerializeToFileDescriptor(log_message_.Fd())) {
+    logger_.Log(toolbelt::LogLevel::kError,
+                "Failed to serialize to logger pipe: %s", strerror(errno));
+  }
+}
+
+void Capcom::LoggerCoroutine(co::Coroutine *c) {
+  for (;;) {
+    c->Wait(incoming_log_message_.Fd());
+    uint64_t size;
+    ssize_t n = ::read(incoming_log_message_.Fd(), &size, sizeof(uint64_t));
+    if (n <= 0) {
+      std::cerr << "Failed to read log message: " << strerror(errno)
+                << std::endl;
+      return;
+    }
+    auto msg = std::make_unique<control::LogMessage>();
+    std::vector<char> buffer(size);
+    n = ::read(incoming_log_message_.Fd(), buffer.data(), buffer.size());
+    if (n <= 0) {
+      std::cerr << "Failed to parse log message: " << strerror(errno)
+                << std::endl;
+      return;
+    }
+    if (!msg->ParseFromArray(buffer.data(), buffer.size())) {
+      std::cerr << "Failed to deserialize log message: " << strerror(errno)
+                << std::endl;
+      return;
+    }
+
+    // Add log message to the log message buffer in timestamp order.
+    log_buffer_.insert(std::make_pair(msg->timestamp(), std::move(msg)));
+  }
+}
+
+void Capcom::LoggerFlushCoroutine(co::Coroutine *c) {
+  for (;;) {
+    c->Millisleep(500); // Flush the log buffer every 500ms.
+    for (auto & [ timestamp, msg ] : log_buffer_) {
+      toolbelt::LogLevel level;
+      switch (msg->level()) {
+      case control::LogMessage::VERBOSE:
+        level = toolbelt::LogLevel::kVerboseDebug;
+        break;
+      case control::LogMessage::DBG:
+        level = toolbelt::LogLevel::kDebug;
+        break;
+      case control::LogMessage::INFO:
+        level = toolbelt::LogLevel::kInfo;
+        break;
+      case control::LogMessage::WARNING:
+        level = toolbelt::LogLevel::kWarning;
+        break;
+      case control::LogMessage::ERR:
+        level = toolbelt::LogLevel::kError;
+        break;
+      default:
+        continue;
+      }
+      logger_.Log(level, timestamp, msg->process_name(), msg->text());
+
+      if (log_file_.Valid()) {
+        // Serialize into the log file.
+        // TODO: I don't think the multiple serializations will affect anything
+        // because this is a low volume channel and there is a much longer path
+        // from the process running to this point.
+        uint64_t size = msg->ByteSizeLong();
+        ssize_t n = ::write(log_file_.Fd(), &size, sizeof(size));
+        if (n <= 0) {
+          logger_.Log(toolbelt::LogLevel::kError,
+                      "Failed to write to log file: %s", strerror(errno));
+        } else {
+          if (!msg->SerializeToFileDescriptor(log_file_.Fd())) {
+            logger_.Log(toolbelt::LogLevel::kError,
+                        "Failed to serialize to log file: %s", strerror(errno));
+          }
+        }
+      }
+    }
+    log_buffer_.clear();
+  }
+}
+
 absl::Status Capcom::Run() {
   std::cerr << "Capcom running on address " << addr_.ToString() << std::endl;
 
@@ -106,6 +219,15 @@ absl::Status Capcom::Run() {
   // This deletes them when they are done.
   co_scheduler_.SetCompletionCallback(
       [this](co::Coroutine *c) { coroutines_.erase(c); });
+
+  // Start the logger coroutines.
+  coroutines_.insert(std::make_unique<co::Coroutine>(
+      co_scheduler_, [this](co::Coroutine *c) { LoggerCoroutine(c); },
+      "Logger"));
+
+  coroutines_.insert(std::make_unique<co::Coroutine>(
+      co_scheduler_, [this](co::Coroutine *c) { LoggerFlushCoroutine(c); },
+      "Log Flusher"));
 
   // Start the listener coroutine.
   coroutines_.insert(
@@ -229,8 +351,8 @@ absl::Status Capcom::Abort(const std::string &reason, co::Coroutine *c) {
   return result;
 }
 
-  absl::Status Capcom::AddGlobalVariable(const Variable& var, co::Coroutine* c) {
-      std::vector<Compute *> computes;
+absl::Status Capcom::AddGlobalVariable(const Variable &var, co::Coroutine *c) {
+  std::vector<Compute *> computes;
   absl::Status result = absl::OkStatus();
 
   for (auto & [ name, compute ] : computes_) {
@@ -242,23 +364,27 @@ absl::Status Capcom::Abort(const std::string &reason, co::Coroutine *c) {
     computes.push_back(&local_compute_);
   }
 
-    for (auto &compute : computes) {
+  for (auto &compute : computes) {
     stagezero::Client client;
-    std::cerr << "sending set global variable to " << compute->name << std::endl;
-    if (absl::Status status = client.Init(compute->addr, "<set global variable>");
+    std::cerr << "sending set global variable to " << compute->name
+              << std::endl;
+    if (absl::Status status =
+            client.Init(compute->addr, "<set global variable>");
         !status.ok()) {
       result = absl::InternalError(
           absl::StrFormat("Failed to connect compute for abort%s: %s",
                           compute->name, status.ToString()));
       continue;
     }
-    absl::Status status = client.SetGlobalVariable(var.name, var.value, var.exported, c);
+    absl::Status status =
+        client.SetGlobalVariable(var.name, var.value, var.exported, c);
     if (!status.ok()) {
-      result = absl::InternalError(absl::StrFormat(
-          "Failed to set global variable %s on compute %s: %s", var.name, compute->name, status.ToString()));
+      result = absl::InternalError(
+          absl::StrFormat("Failed to set global variable %s on compute %s: %s",
+                          var.name, compute->name, status.ToString()));
     }
   }
   return result;
-  }
+}
 
 } // namespace stagezero::capcom

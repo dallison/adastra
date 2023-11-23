@@ -14,6 +14,7 @@
 #include "toolbelt/sockets.h"
 #include "common/vars.h"
 
+#include <map>
 #include <memory>
 #include <string>
 
@@ -32,7 +33,8 @@ struct Compute {
 class Capcom {
 public:
   Capcom(co::CoroutineScheduler &scheduler, toolbelt::InetAddress addr,
-         int notify_fd);
+         const std::string& log_file_name = "/tmp/capcom.pb",
+         int notify_fd = -1);
   ~Capcom();
 
   absl::Status Run();
@@ -50,8 +52,12 @@ private:
     coroutines_.insert(std::move(c));
   }
 
+  void Log(const stagezero::control::LogMessage& msg);
+
   void CloseHandler(std::shared_ptr<ClientHandler> handler);
   void ListenerCoroutine(toolbelt::TCPSocket &listen_socket, co::Coroutine *c);
+  void LoggerCoroutine(co::Coroutine* c);
+  void LoggerFlushCoroutine(co::Coroutine* c);
 
   bool AddCompute(std::string name, const Compute &compute) {
     std::cerr << "adding compute " << name << std::endl;
@@ -164,5 +170,11 @@ private:
   std::unique_ptr<stagezero::Client> main_client_;
 
   BitSet client_ids_;
+
+  // Pipe for the logger messages.  Carries serialized log message messages.
+  toolbelt::FileDescriptor log_message_;
+  toolbelt::FileDescriptor incoming_log_message_;
+  std::map<uint64_t, std::unique_ptr<control::LogMessage>> log_buffer_;
+  toolbelt::FileDescriptor log_file_;
 };
 } // namespace stagezero::capcom

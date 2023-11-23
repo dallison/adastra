@@ -4,16 +4,23 @@ subsystem {
     name: "talker"
     zygote: "standard_zygote"
     dso: "${runfiles_dir}/__main__/testdata/talker.so"
+    options {
+      sigint_shutdown_timeout_secs: 2
+      sigterm_shutdown_timeout_secs: 10
+    }
   }
   module {
     name: "listener"
     zygote: "standard_zygote"
     dso: "${runfiles_dir}/__main__/testdata/listener.so"
+    options {
+      sigint_shutdown_timeout_secs: 2
+      sigterm_shutdown_timeout_secs: 10
+    }
   }
 
   dep: "subspace"
 }
 
 interface: "chat"
-autostart: "chat"
 

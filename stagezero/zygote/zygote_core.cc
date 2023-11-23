@@ -136,7 +136,7 @@ absl::Status
 ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
                         control::SpawnResponse *resp,
                         std::vector<toolbelt::FileDescriptor> &&fds) {
-  std::cerr << "Zygote handling spawn" << std::endl;
+  std::cerr << "Zygote handling spawn" << req.DebugString() << std::endl;
 
   // Update all global symbols.
   for (auto &var : req.global_vars()) {

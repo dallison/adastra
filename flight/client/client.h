@@ -10,9 +10,9 @@
 #include "common/states.h"
 #include "common/vars.h"
 #include "coroutine.h"
-#include "proto/flight.pb.h"
 #include "proto/capcom.pb.h"
 #include "proto/config.pb.h"
+#include "proto/flight.pb.h"
 #include "toolbelt/sockets.h"
 #include <variant>
 
@@ -39,7 +39,7 @@ struct SubsystemStatusEvent {
   std::string subsystem;
   capcom::AdminState admin_state;
   capcom::OperState oper_state;
-  std::vector<capcom::ProcessStatus> processes;
+  // std::vector<capcom::ProcessStatus> processes;
 };
 
 // Alarm is defined in common/alarm.h
@@ -51,14 +51,15 @@ struct Event {
 
 class Client {
 public:
-  Client(ClientMode mode = ClientMode::kBlocking, co::Coroutine *co = nullptr) : mode_(mode), co_(co) {}
+  Client(ClientMode mode = ClientMode::kBlocking, co::Coroutine *co = nullptr)
+      : mode_(mode), co_(co) {}
   ~Client() = default;
 
   absl::Status Init(toolbelt::InetAddress addr, const std::string &name,
                     co::Coroutine *c = nullptr);
 
-   absl::Status LoadGraph(const std::string &filename,
-                              co::Coroutine *c = nullptr);
+  absl::Status LoadGraph(const std::string &filename,
+                         co::Coroutine *c = nullptr);
 
   absl::Status StartSubsystem(const std::string &name,
                               co::Coroutine *c = nullptr);
@@ -68,24 +69,28 @@ public:
   toolbelt::FileDescriptor GetEventFd() const {
     return event_socket_.GetFileDescriptor();
   }
-
+#if 0
   // Wait for an incoming event.
   absl::StatusOr<Event> WaitForEvent(co::Coroutine *c = nullptr) {
     return ReadEvent(c);
   }
   absl::StatusOr<Event> ReadEvent(co::Coroutine *c = nullptr);
+#endif
 
-  absl::Status Abort(const std::string& reason, co::Coroutine *c = nullptr);
-  
+  absl::Status Abort(const std::string &reason, co::Coroutine *c = nullptr);
+
 private:
   static constexpr size_t kMaxMessageSize = 4096;
 
+#if 0
 absl::Status WaitForSubsystemState(const std::string& subsystem,
-                                           AdminState admin_state,
-                                           OperState oper_state);
+                                           capcom::AdminState admin_state,
+                                           capcom::OperState oper_state);
+#endif
+
   absl::Status
-  SendRequestReceiveResponse(const stagezero::capcom::proto::Request &req,
-                             stagezero::capcom::proto::Response &response,
+  SendRequestReceiveResponse(const stagezero::flight::proto::Request &req,
+                             stagezero::flight::proto::Response &response,
                              co::Coroutine *c);
 
   std::string name_ = "";

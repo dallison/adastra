@@ -9,8 +9,7 @@
 namespace stagezero {
 
 absl::Status Client::Init(toolbelt::InetAddress addr, const std::string &name,
-const std::string& compute,
-                          co::Coroutine *co) {
+                          const std::string &compute, co::Coroutine *co) {
   if (co == nullptr) {
     co = co_;
   }
@@ -109,7 +108,6 @@ absl::StatusOr<std::pair<std::string, int>> Client::LaunchVirtualProcess(
     auto *s = launch->add_streams();
     BuildStream(s, stream);
   }
-
   stagezero::control::Response resp;
   absl::Status status = SendRequestReceiveResponse(req, resp, co);
   if (!status.ok()) {
@@ -149,6 +147,7 @@ void Client::BuildStream(stagezero::control::StreamControl *out,
                          const Stream &in) const {
   out->set_stream_fd(in.stream_fd);
   out->set_tty(in.tty);
+  bool direction_set = false;
   switch (in.disposition) {
   case Stream::Disposition::kClient:
     out->set_disposition(stagezero::control::StreamControl::CLIENT);
@@ -164,15 +163,22 @@ void Client::BuildStream(stagezero::control::StreamControl *out,
   case Stream::Disposition::kClose:
     out->set_disposition(stagezero::control::StreamControl::CLOSE);
     break;
+  case Stream::Disposition::kLog:
+    out->set_disposition(stagezero::control::StreamControl::LOGGER);
+    out->set_direction(stagezero::control::StreamControl::OUTPUT);
+    direction_set = true;
+    break;
   }
 
-  switch (in.direction) {
-  case Stream::Direction::kInput:
-    out->set_direction(stagezero::control::StreamControl::INPUT);
-    break;
-  case Stream::Direction::kOutput:
-    out->set_direction(stagezero::control::StreamControl::OUTPUT);
-    break;
+  if (!direction_set) {
+    switch (in.direction) {
+    case Stream::Direction::kInput:
+      out->set_direction(stagezero::control::StreamControl::INPUT);
+      break;
+    case Stream::Direction::kOutput:
+      out->set_direction(stagezero::control::StreamControl::OUTPUT);
+      break;
+    }
   }
 }
 

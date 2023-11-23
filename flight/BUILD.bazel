@@ -29,23 +29,40 @@ cc_library(
 )
 
 cc_binary(
-    name = "flight",
+    name = "flight_director",
     srcs = [
         "main.cc",
-    ],
-    data = [
-        "//capcom",
-        "//stagezero",
-        "//testdata:flight",
-        "//testdata:listener.so",
-        "//testdata:talker.so",
-        "@subspace//server:subspace_server",
-        "//stagezero/zygote:standard_zygote",
     ],
     deps = [
         ":flight_lib",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
+    ],
+)
+
+cc_binary(
+    name = "flight",
+    srcs = [
+        "command/flight.cc",
+        "command/flight.h",
+    ],
+    data = [
+        ":flight_director",
+        "//capcom",
+        "//stagezero",
+        "//stagezero/zygote:standard_zygote",
+        "//testdata:flight",
+        "//testdata:listener.so",
+        "//testdata:talker.so",
+        "@subspace//server:subspace_server",
+    ],
+    deps = [
+        "//flight/client",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
+        "@com_google_absl//absl/status",
+        "@toolbelt//toolbelt",
     ],
 )
 

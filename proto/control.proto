@@ -25,6 +25,7 @@ message StreamControl {
     FD = 2;       // To/from file descriptor
     CLOSE = 3;    // Close
     NOTIFY = 4;   // Special stream for startup notification
+    LOGGER = 5;   // Send to client as log message.
   };
 
   // Direction is as seen from the point of view of the process.
@@ -187,11 +188,27 @@ message OutputEvent {
   int32 fd = 3; // What fd sent it
 }
 
+message LogMessage {
+  enum LogLevel {
+    UNKNOWN = 0;
+    VERBOSE = 1;
+    DBG = 2;
+    INFO = 3;
+    WARNING = 4;
+    ERR = 5;
+  }
+  string process_name = 1;
+  LogLevel level = 2;
+  string text = 3;
+  int64 timestamp = 4;
+}
+
 message Event {
   oneof event {
     StartEvent start = 51;
     StopEvent stop = 52;
     OutputEvent output = 53;
+    LogMessage log = 54;
   }
 }
 

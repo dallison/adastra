@@ -98,10 +98,19 @@ absl::Status FlightDirector::Run() {
   }
 
   // Connect to capcom.
+  // We have two capcom clients, one for autostart subsystems that need to continue
+  // running, and the other for regular subsystems.
+   if (absl::Status status = autostart_capcom_client_.Init(capcom_addr_, "FlightDirector");
+      !status.ok()) {
+    return status;
+  }
+
   if (absl::Status status = capcom_client_.Init(capcom_addr_, "FlightDirector");
       !status.ok()) {
     return status;
   }
+
+
 
   if (absl::Status status =
           LoadAllSubsystemGraphs(std::filesystem::path(root_dir_));
@@ -580,7 +589,7 @@ absl::Status FlightDirector::RegisterSubsystemGraph(Subsystem *root,
     for (auto& var : subsystem->vars) {
       options.vars.push_back(var);
     }
-    
+
     absl::Status status =
         capcom_client_.AddSubsystem(subsystem->name, std::move(options), c);
     if (!status.ok()) {
@@ -593,7 +602,7 @@ absl::Status FlightDirector::RegisterSubsystemGraph(Subsystem *root,
 
 absl::Status FlightDirector::AutostartSubsystem(Subsystem *subsystem,
                                                 co::Coroutine *c) {
-  return capcom_client_.StartSubsystem(subsystem->name, c);
+  return autostart_capcom_client_.StartSubsystem(subsystem->name, c);
 }
 
 } // namespace stagezero::flight

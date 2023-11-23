@@ -32,8 +32,8 @@ Process::Process(co::CoroutineScheduler &scheduler,
       local_symbols_(client_->GetGlobalSymbols()) {}
 
 void Process::SetProcessId() {
-  process_id_ =
-      absl::StrFormat("%s/%s@%s:%d", client_->GetClientName(), name_, client_->GetCompute(), pid_);
+  process_id_ = absl::StrFormat("%s/%s@%s:%d", client_->GetClientName(), name_,
+                                client_->GetCompute(), pid_);
 }
 
 void Process::KillNow() {
@@ -76,7 +76,8 @@ const std::shared_ptr<StreamInfo> Process::FindNotifyStream() const {
 StaticProcess::StaticProcess(
     co::CoroutineScheduler &scheduler, std::shared_ptr<ClientHandler> client,
     const stagezero::control::LaunchStaticProcessRequest &&req)
-    : Process(scheduler, std::move(client), req.opts().name()), req_(std::move(req)) {
+    : Process(scheduler, std::move(client), req.opts().name()),
+      req_(std::move(req)) {
   for (auto &var : req.opts().vars()) {
     local_symbols_.AddSymbol(var.name(), var.value(), var.exported());
   }
@@ -108,7 +109,6 @@ StaticProcess::StartInternal(const std::vector<std::string> extra_env_vars,
           std::shared_ptr<StreamInfo> s = proc->FindNotifyStream();
           if (s != nullptr) {
             int notify_fd = s->read_fd.Fd();
-            std::cerr << "waiting for notify on fd " << notify_fd << std::endl;
             uint64_t timeout_ns = proc->StartupTimeoutSecs() * 1000000000LL;
             int wait_fd = c->Wait(notify_fd, POLLIN, timeout_ns);
             if (wait_fd == -1) {
@@ -173,7 +173,6 @@ StaticProcess::StartInternal(const std::vector<std::string> extra_env_vars,
 // and the second is the process end.
 static absl::StatusOr<std::pair<int, int>> MakeFileDescriptors(bool istty) {
   if (istty) {
-    std::cerr << "opening pty for process" << std::endl;
     int this_end, proc_end;
     // TODO: terminal parameters.
     int e = openpty(&this_end, &proc_end, nullptr, nullptr, nullptr);
@@ -191,7 +190,6 @@ static absl::StatusOr<std::pair<int, int>> MakeFileDescriptors(bool istty) {
     return absl::InternalError(
         absl::StrFormat("Failed to open pipe for stream: %s", strerror(errno)));
   }
-  std::cerr << "fds: read: " << pipes[0] << " write: " << pipes[1] << std::endl;
   return std::make_pair(pipes[0], pipes[1]);
 }
 
@@ -200,13 +198,11 @@ absl::Status StreamFromFileDescriptor(
     co::Coroutine *c) {
   char buffer[256];
   for (;;) {
-    std::cerr << "waiting for fd " << fd << std::endl;
     int wait_fd = c->Wait(fd, POLLIN);
     if (wait_fd != fd) {
       std::cerr << "wait returned " << wait_fd << std::endl;
       return absl::InternalError("Interrupted");
     }
-    std::cerr << "reading from " << fd << std::endl;
     ssize_t n = ::read(fd, buffer, sizeof(buffer));
     if (n <= 0) {
       if (n == -1) {
@@ -224,16 +220,12 @@ absl::Status StreamFromFileDescriptor(
 absl::Status WriteToProcess(int fd, const char *buf, size_t len,
                             co::Coroutine *c) {
   size_t remaining = len;
-  std::cerr << "Writing to fd " << fd << std::endl;
   while (remaining > 0) {
-    std::cerr << "waiting" << std::endl;
     int wait_fd = c->Wait(fd, POLLOUT);
     if (wait_fd != fd) {
       return absl::InternalError("Interrupted");
     }
-    std::cerr << "writing" << std::endl;
     ssize_t n = ::write(fd, buf, remaining);
-    std::cerr << "result " << n << std::endl;
     if (n <= 0) {
       if (n == -1) {
         return absl::InternalError(
@@ -263,8 +255,6 @@ absl::Status Process::BuildStreams(
     stream->read_fd.SetFd(fds->first);
     stream->write_fd.SetFd(fds->second);
     streams_.push_back(stream);
-    std::cerr << "notify fds are " << fds->first << "/" << fds->second
-              << std::endl;
   }
 
   for (const control::StreamControl &s : streams) {
@@ -312,6 +302,34 @@ absl::Status Process::BuildStreams(
       break;
     }
 
+    case control::StreamControl::LOGGER: {
+      absl::StatusOr<std::pair<int, int>> fds = MakeFileDescriptors(s.tty());
+      if (!fds.ok()) {
+        return fds.status();
+      }
+      stream->read_fd.SetFd(fds->first);
+      stream->write_fd.SetFd(fds->second);
+
+      client_->AddCoroutine(std::make_unique<co::Coroutine>(
+          scheduler_, [ proc = shared_from_this(), stream,
+                        client = client_ ](co::Coroutine * c) {
+            std::cout << "logger coroutine running" << std::endl;
+            absl::Status status = StreamFromFileDescriptor(
+                stream->read_fd.Fd(),
+                [proc, stream, client](const char *buf,
+                                       size_t len) -> absl::Status {
+                  // Write a log message to the client using an event.
+                  return client->SendLogMessage(
+                      stream->fd == 1 ? toolbelt::LogLevel::kInfo
+                                      : toolbelt::LogLevel::kError,
+                      proc->Name(), std::string(buf, len));
+                },
+                c);
+            std::cout << "relay to client coroutine done" << std::endl;
+          }));
+
+      break;
+    }
     case control::StreamControl::FILENAME: {
       int oflag = stream->direction == control::StreamControl::INPUT
                       ? O_RDONLY
@@ -378,8 +396,6 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
               stream->direction == control::StreamControl::OUTPUT
                   ? stream->write_fd
                   : stream->read_fd;
-          std::cerr << "redirecting fd " << fd.Fd() << " to " << stream->fd
-                    << std::endl;
           (void)close(stream->fd);
           int e = dup2(fd.Fd(), stream->fd);
           if (e == -1) {
@@ -537,14 +553,11 @@ absl::Status Process::SendInput(int fd, const std::string &data,
 }
 
 absl::Status Process::CloseFileDescriptor(int fd) {
-  std::cerr << "closing " << fd << std::endl;
   for (auto &stream : streams_) {
     if (stream->fd == fd) {
-      std::cerr << "found, close" << std::endl;
       int stream_fd = stream->direction == control::StreamControl::INPUT
                           ? stream->write_fd.Fd()
                           : stream->read_fd.Fd();
-      std::cerr << "close " << stream_fd << std::endl;
       int e = close(stream_fd);
       if (e == -1) {
         return absl::InternalError(
@@ -573,8 +586,6 @@ absl::Status Zygote::Start(co::Coroutine *c) {
   std::vector<std::string> zygoteEnv = {
       absl::StrFormat("STAGEZERO_ZYGOTE_SOCKET_NAME=%s", socket_name)};
 
-  std::cerr << "Starting zygote static process " << socket_name << std::endl;
-
   if (absl::Status status =
           StartInternal(zygoteEnv, /*send_start_event=*/false);
       !status.ok()) {
@@ -586,7 +597,6 @@ absl::Status Zygote::Start(co::Coroutine *c) {
     proc = shared_from_this(), listen_socket = std::move(listen_socket),
     client = client_
   ](co::Coroutine * c) mutable {
-    std::cerr << "zygote acceptor running " << std::endl;
     absl::StatusOr<toolbelt::UnixSocket> s = listen_socket.Accept(c);
     if (!s.ok()) {
       client->GetLogger().Log(toolbelt::LogLevel::kError,
@@ -621,7 +631,6 @@ absl::StatusOr<int>
 Zygote::Spawn(const stagezero::control::LaunchVirtualProcessRequest &req,
               const std::vector<std::shared_ptr<StreamInfo>> &streams,
               co::Coroutine *c) {
-  std::cerr << "Zygote spawning" << std::endl;
   control::SpawnRequest spawn;
   spawn.set_dso(req.proc().dso());
   spawn.set_main_func(req.proc().main_func());
@@ -703,7 +712,8 @@ Zygote::Spawn(const stagezero::control::LaunchVirtualProcessRequest &req,
 VirtualProcess::VirtualProcess(
     co::CoroutineScheduler &scheduler, std::shared_ptr<ClientHandler> client,
     const stagezero::control::LaunchVirtualProcessRequest &&req)
-    : Process(scheduler, std::move(client), req.opts().name()), req_(std::move(req)) {
+    : Process(scheduler, std::move(client), req.opts().name()),
+      req_(std::move(req)) {
   for (auto &var : req.opts().vars()) {
     local_symbols_.AddSymbol(var.name(), var.value(), var.exported());
   }
@@ -745,7 +755,6 @@ absl::Status VirtualProcess::Start(co::Coroutine *c) {
         printf("virtual process waiting\n");
 
         int status = proc->WaitLoop(c2, -1);
-        std::cerr << "virtual process status " << status << std::endl;
         if (proc->IsStopping()) {
           // Intentionally stopped.
           eventStatus = client->SendProcessStopEvent(proc->GetId(), true, 0, 0);

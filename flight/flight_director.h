@@ -53,6 +53,7 @@ private:
   void ListenerCoroutine(toolbelt::TCPSocket &listen_socket, co::Coroutine *c);
 
 private:
+  friend class ClientHandler;
   absl::Status LoadAllSubsystemGraphs(const std::filesystem::path &dir);
   absl::Status LoadAllSubsystemGraphsFromDir(
       const std::filesystem::path &dir,
@@ -108,6 +109,7 @@ private:
   toolbelt::FileDescriptor notify_fd_;
 
   capcom::client::Client capcom_client_;
+  capcom::client::Client autostart_capcom_client_;
 
   // All coroutines are owned by this set.
   absl::flat_hash_set<std::unique_ptr<co::Coroutine>> coroutines_;

@@ -68,15 +68,27 @@ void ClientHandler::HandleInit(const flight::proto::InitRequest &req,
 
 void ClientHandler::HandleStartSubsystem(
     const flight::proto::StartSubsystemRequest &req,
-    flight::proto::StartSubsystemResponse *response, co::Coroutine *c) {}
+    flight::proto::StartSubsystemResponse *response, co::Coroutine *c) {
+  if (absl::Status status =
+          flight_.capcom_client_.StartSubsystem(req.subsystem(), c);
+      !status.ok()) {
+    response->set_error(status.ToString());
+  }
+}
 
-void ClientHandler::HandleStopSubsystem(const flight::proto::StopSubsystemRequest &req,
-                                        flight::proto::StopSubsystemResponse *response,
-                                        co::Coroutine *c) {}
+void ClientHandler::HandleStopSubsystem(
+    const flight::proto::StopSubsystemRequest &req,
+    flight::proto::StopSubsystemResponse *response, co::Coroutine *c) {
+  if (absl::Status status =
+          flight_.capcom_client_.StopSubsystem(req.subsystem(), c);
+      !status.ok()) {
+    response->set_error(status.ToString());
+  }
+}
 
-void ClientHandler::HandleGetSubsystems(const flight::proto::GetSubsystemsRequest &req,
-                                        flight::proto::GetSubsystemsResponse *response,
-                                        co::Coroutine *c) {}
+void ClientHandler::HandleGetSubsystems(
+    const flight::proto::GetSubsystemsRequest &req,
+    flight::proto::GetSubsystemsResponse *response, co::Coroutine *c) {}
 
 void ClientHandler::HandleGetAlarms(const flight::proto::GetAlarmsRequest &req,
                                     flight::proto::GetAlarmsResponse *response,

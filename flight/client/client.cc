@@ -2,7 +2,7 @@
 // All Rights Reserved
 // See LICENSE file for licensing information.
 
-#include "fight/client/client.h"
+#include "flight/client/client.h"
 #include "toolbelt/hexdump.h"
 
 namespace stagezero::flight::client {
@@ -56,11 +56,12 @@ absl::Status Client::Init(toolbelt::InetAddress addr, const std::string &name,
   return absl::OkStatus();
 }
 
+#if 0
 absl::StatusOr<Event> Client::ReadEvent(co::Coroutine *c) {
   if (c == nullptr) {
     c = co_;
   }
-  proto::Event event;
+  Event event;
 
   absl::StatusOr<ssize_t> n =
       event_socket_.ReceiveMessage(event_buffer_, sizeof(event_buffer_), c);
@@ -147,6 +148,7 @@ absl::StatusOr<Event> Client::ReadEvent(co::Coroutine *c) {
   return result;
 }
 
+#endif
 
 absl::Status Client::StartSubsystem(const std::string &name, co::Coroutine *c) {
   if (c == nullptr) {
@@ -168,9 +170,12 @@ absl::Status Client::StartSubsystem(const std::string &name, co::Coroutine *c) {
         absl::StrFormat("Failed to start subsystem: %s", start_resp.error()));
   }
 
+#if 0
   if (mode_ == ClientMode::kBlocking) {
     return WaitForSubsystemState(name, capcom::AdminState::kOnline, capcom::OperState::kOnline);
   }
+#endif
+
   return absl::OkStatus();
 }
 
@@ -194,13 +199,18 @@ absl::Status Client::StopSubsystem(const std::string &name, co::Coroutine *c) {
         absl::StrFormat("Failed to start subsystem: %s", stop_resp.error()));
   }
 
+#if 0
+
   if (mode_ == ClientMode::kBlocking) {
     return WaitForSubsystemState(name, capcom::AdminState::kOffline,
                                  capcom::OperState::kOffline);
   }
+#endif
+
   return absl::OkStatus();
 }
 
+#if 0
 absl::Status Client::WaitForSubsystemState(const std::string &subsystem,
                                            capcom::AdminState admin_state,
                                            capcom::OperState oper_state) {
@@ -226,6 +236,7 @@ absl::Status Client::WaitForSubsystemState(const std::string &subsystem,
     }
   }
 }
+#endif
 
 absl::Status Client::Abort(const std::string &reason, co::Coroutine *c) {
   if (c == nullptr) {
