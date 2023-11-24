@@ -10,52 +10,23 @@ namespace stagezero {
 
 absl::Status Client::Init(toolbelt::InetAddress addr, const std::string &name,
                           const std::string &compute, co::Coroutine *co) {
-  if (co == nullptr) {
-    co = co_;
-  }
-  absl::Status status = command_socket_.Connect(addr);
-  if (!status.ok()) {
-    return status;
-  }
 
-  if (absl::Status status = command_socket_.SetCloseOnExec(); !status.ok()) {
-    return status;
-  }
+  auto fill_init = [name, compute](control::Request &req) {
+    auto init = req.mutable_init();
+    init->set_client_name(name);
+    init->set_compute(compute);
+  };
 
-  name_ = name;
+  auto parse_init = [](const control::Response &resp) -> absl::StatusOr<int> {
+    auto init_resp = resp.init();
+    if (!init_resp.error().empty()) {
+      return absl::InternalError(absl::StrFormat(
+          "Failed to initialize client connection: %s", init_resp.error()));
+    }
+    return init_resp.event_port();
+  };
 
-  stagezero::control::Request req;
-  auto init = req.mutable_init();
-  init->set_client_name(name);
-  init->set_compute(compute);
-
-  stagezero::control::Response resp;
-  status = SendRequestReceiveResponse(req, resp, co);
-  if (!status.ok()) {
-    return status;
-  }
-
-  auto init_resp = resp.init();
-  if (!init_resp.error().empty()) {
-    return absl::InternalError(absl::StrFormat(
-        "Failed to initialize client connection: %s", init_resp.error()));
-  }
-
-  toolbelt::InetAddress event_addr = addr;
-  event_addr.SetPort(init_resp.event_port());
-
-  std::cout << "connecting to event port " << event_addr.ToString()
-            << std::endl;
-
-  if (absl::Status status = event_socket_.Connect(event_addr); !status.ok()) {
-    return status;
-  }
-
-  if (absl::Status status = event_socket_.SetCloseOnExec(); !status.ok()) {
-    return status;
-  }
-
-  return absl::OkStatus();
+  return TCPClient::Init(addr, name, fill_init, parse_init, co);
 }
 
 absl::StatusOr<std::pair<std::string, int>> Client::LaunchStaticProcessInternal(
@@ -193,25 +164,6 @@ absl::Status Client::StopProcess(const std::string &process_id,
   return SendRequestReceiveResponse(req, resp, co);
 }
 
-absl::StatusOr<stagezero::control::Event> Client::ReadEvent(co::Coroutine *co) {
-  if (co == nullptr) {
-    co = co_;
-  }
-  stagezero::control::Event event;
-
-  absl::StatusOr<ssize_t> n =
-      event_socket_.ReceiveMessage(event_buffer_, sizeof(event_buffer_), co);
-  if (!n.ok()) {
-    event_socket_.Close();
-    return n.status();
-  }
-  if (!event.ParseFromArray(event_buffer_, *n)) {
-    event_socket_.Close();
-    return absl::InternalError("Failed to parse event");
-  }
-  return event;
-}
-
 absl::Status Client::SendInput(const std::string &process_id, int fd,
                                const std::string &data, co::Coroutine *co) {
   if (co == nullptr) {
@@ -323,43 +275,6 @@ absl::Status Client::Abort(const std::string &reason, co::Coroutine *co) {
     return absl::InternalError(
         absl::StrFormat("Failed to abort: %s", abort_resp.error()));
   }
-  return absl::OkStatus();
-}
-
-absl::Status
-Client::SendRequestReceiveResponse(const stagezero::control::Request &req,
-                                   stagezero::control::Response &response,
-                                   co::Coroutine *co) {
-  // SendMessage needs 4 bytes before the buffer passed to
-  // use for the length.
-  char *sendbuf = command_buffer_ + sizeof(int32_t);
-  constexpr size_t kSendBufLen = sizeof(command_buffer_) - sizeof(int32_t);
-
-  if (!req.SerializeToArray(sendbuf, kSendBufLen)) {
-    return absl::InternalError("Failed to serialize request");
-  }
-
-  size_t length = req.ByteSizeLong();
-
-  absl::StatusOr<ssize_t> n = command_socket_.SendMessage(sendbuf, length, co);
-  if (!n.ok()) {
-    command_socket_.Close();
-    return n.status();
-  }
-
-  // Wait for response and put it in the same buffer we used for send.
-  n = command_socket_.ReceiveMessage(command_buffer_, sizeof(command_buffer_),
-                                     co);
-  if (!n.ok()) {
-    command_socket_.Close();
-    return n.status();
-  }
-
-  if (!response.ParseFromArray(command_buffer_, *n)) {
-    command_socket_.Close();
-    return absl::InternalError("Failed to parse response");
-  }
-
   return absl::OkStatus();
 }
 } // namespace stagezero

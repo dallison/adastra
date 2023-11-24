@@ -43,6 +43,10 @@ public:
     event_socket_ = std::move(socket);
   }
 
+  // Queue an event to be sent at the next available opportunity.  The
+  // event will be sent asychrnonously by a coroutine.
+  absl::Status QueueEvent(std::shared_ptr<Event> event);
+
 protected:
   static constexpr size_t kMaxMessageSize = 4096;
 
@@ -52,9 +56,7 @@ protected:
   // Init the client and return the port number for the event channel.
   absl::StatusOr<int> Init(const std::string &client_name, co::Coroutine *c);
 
-  // Queue an event to be sent at the next available opportunity.  The
-  // event will be sent asychrnonously by a coroutine.
-  absl::Status QueueEvent(std::unique_ptr<Event> event);
+
 
   // Coroutine spawned by Init to send events in the order queued by
   // QueueEvent.
@@ -67,7 +69,7 @@ protected:
   char event_buffer_[kMaxMessageSize];
   toolbelt::TCPSocket event_socket_;
 
-  std::list<std::unique_ptr<Event>> events_;
+  std::list<std::shared_ptr<Event>> events_;
   toolbelt::TriggerFd event_trigger_;
 };
 
@@ -175,12 +177,12 @@ TCPClientHandler<Request, Response, Event>::Init(const std::string &client_name,
 
 template <typename Request, typename Response, typename Event>
 inline absl::Status TCPClientHandler<Request, Response, Event>::QueueEvent(
-    std::unique_ptr<Event> event) {
+    std::shared_ptr<Event> event) {
   if (!event_socket_.Connected()) {
     return absl::InternalError(
         "Unable to send event: event socket is not connected");
   }
-  events_.push_back(std::move(event));
+  events_.push_back(event);
   event_trigger_.Trigger();
   return absl::OkStatus();
 }
@@ -205,7 +207,7 @@ inline void TCPClientHandler<Request, Response, Event>::EventSenderCoroutine(
     // cleared.
     while (!client->events_.empty()) {
       // Remove event from the queue and send it.
-      std::unique_ptr<Event> event = std::move(client->events_.front());
+      std::shared_ptr<Event> event = std::move(client->events_.front());
       client->events_.pop_front();
 
       char *sendbuf = client->event_buffer_ + sizeof(int32_t);

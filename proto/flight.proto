@@ -8,6 +8,7 @@ package stagezero.flight.proto;
 
 import "proto/config.proto";
 import "proto/capcom.proto";
+import "proto/event.proto";
 
 message ModuleOptions {
   string description = 1;
@@ -111,14 +112,14 @@ message GetSubsystemsRequest {}
 
 message GetSubsystemsResponse {
   string error = 1;
-  repeated stagezero.capcom.proto.SubsystemStatus subsystems = 2;
+  repeated stagezero.proto.SubsystemStatus subsystems = 2;
 }
 
 message GetAlarmsRequest {}
 
 message GetAlarmsResponse {
   string error = 1;
-  repeated stagezero.capcom.proto.Alarm alarms = 2;
+  repeated stagezero.proto.Alarm alarms = 2;
 }
 
 message AbortRequest {

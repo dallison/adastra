@@ -25,14 +25,14 @@ class FlightDirector;
 
 class ClientHandler
     : public common::TCPClientHandler<flight::proto::Request, flight::proto::Response,
-                                      capcom::proto::Event> {
+                                      stagezero::proto::Event> {
 public:
   ClientHandler(FlightDirector &flight, toolbelt::TCPSocket socket)
       : TCPClientHandler(std::move(socket)), flight_(flight) {}
   ~ClientHandler();
 
   absl::Status SendSubsystemStatusEvent(Subsystem *subsystem);
-  absl::Status SendAlarm(const capcom::Alarm &alarm);
+  absl::Status SendAlarm(const Alarm &alarm);
 
   co::CoroutineScheduler &GetScheduler() const override;
 
@@ -44,7 +44,7 @@ private:
   std::shared_ptr<ClientHandler> shared_from_this() {
     return std::static_pointer_cast<ClientHandler>(
         TCPClientHandler<flight::proto::Request, flight::proto::Response,
-                         capcom::proto::Event>::shared_from_this());
+                         stagezero::proto::Event>::shared_from_this());
   }
 
   absl::Status HandleMessage(const flight::proto::Request &req, flight::proto::Response &resp,

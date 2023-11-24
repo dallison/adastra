@@ -3,8 +3,9 @@
 // See LICENSE file for licensing information.
 
 #include "common/alarm.h"
+#include "proto/event.pb.h"
 
-namespace stagezero::capcom {
+namespace stagezero {
 
 void Alarm::ToProto(proto::Alarm *dest) const {
   dest->set_id(id);

@@ -755,6 +755,8 @@ absl::Status VirtualProcess::Start(co::Coroutine *c) {
         printf("virtual process waiting\n");
 
         int status = proc->WaitLoop(c2, -1);
+        std::cerr << "virtual process " << proc->Name()
+                  << " exited with status " << status << std::endl;
         if (proc->IsStopping()) {
           // Intentionally stopped.
           eventStatus = client->SendProcessStopEvent(proc->GetId(), true, 0, 0);

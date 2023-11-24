@@ -4,10 +4,10 @@
 
 #pragma once
 
-#include "proto/capcom.pb.h"
+#include "proto/event.pb.h"
 #include <string>
 
-namespace stagezero::capcom {
+namespace stagezero {
 
 struct Alarm {
   enum class Type {

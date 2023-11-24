@@ -7,7 +7,7 @@
 
 #include <iostream>
 
-namespace stagezero::capcom {
+namespace stagezero {
 
 class Capcom;
 class Subsystem;

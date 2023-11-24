@@ -24,14 +24,14 @@ void ClientHandler::AddCoroutine(std::unique_ptr<co::Coroutine> c) {
 }
 
 absl::Status ClientHandler::SendSubsystemStatusEvent(Subsystem *subsystem) {
-  auto event = std::make_unique<capcom::proto::Event>();
+  auto event = std::make_shared<stagezero::proto::Event>();
   auto s = event->mutable_subsystem_status();
   subsystem->BuildStatus(s);
   return QueueEvent(std::move(event));
 }
 
 absl::Status ClientHandler::SendAlarm(const Alarm &alarm) {
-  auto event = std::make_unique<capcom::proto::Event>();
+  auto event = std::make_shared<stagezero::proto::Event>();
   auto a = event->mutable_alarm();
   alarm.ToProto(a);
   std::cerr << "SENDING ALARM " << a->DebugString() << std::endl;

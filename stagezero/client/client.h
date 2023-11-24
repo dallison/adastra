@@ -6,6 +6,7 @@
 
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
+#include "common/tcp_client.h"
 #include "common/vars.h"
 #include "coroutine.h"
 #include "proto/config.pb.h"
@@ -51,14 +52,29 @@ struct ProcessOptions {
   bool notify = false;
 };
 
-class Client {
+class Client
+    : public TCPClient<control::Request, control::Response, control::Event> {
 public:
-  Client(co::Coroutine *co = nullptr) : co_(co) {}
+  Client(co::Coroutine *co = nullptr)
+      : TCPClient<control::Request, control::Response, control::Event>(co) {}
   ~Client() = default;
 
   absl::Status Init(toolbelt::InetAddress addr, const std::string &name,
                     const std::string &compute = "localhost",
                     co::Coroutine *co = nullptr);
+
+  // Wait for an incoming event.
+  absl::StatusOr<std::shared_ptr<control::Event>> WaitForEvent(co::Coroutine *c = nullptr) {
+    return ReadEvent(c);
+  }
+
+  absl::StatusOr<std::shared_ptr<control::Event>> ReadEvent(co::Coroutine *c = nullptr) {
+    absl::StatusOr<std::shared_ptr<control::Event>> event = ReadProtoEvent(c);
+    if (!event.ok()) {
+      return event.status();
+    }
+    return *event;
+  }
 
   absl::StatusOr<std::pair<std::string, int>>
   LaunchStaticProcess(const std::string &name, const std::string &executable,
@@ -93,18 +109,6 @@ public:
   absl::Status StopProcess(const std::string &process_id,
                            co::Coroutine *co = nullptr);
 
-  toolbelt::FileDescriptor GetEventFd() const {
-    return event_socket_.GetFileDescriptor();
-  }
-
-  // Wait for an incoming event.
-  absl::StatusOr<stagezero::control::Event>
-  WaitForEvent(co::Coroutine *co = nullptr) {
-    return ReadEvent(co);
-  }
-  absl::StatusOr<stagezero::control::Event>
-  ReadEvent(co::Coroutine *co = nullptr);
-
   absl::Status SendInput(const std::string &process_id, int fd,
                          const std::string &data, co::Coroutine *co = nullptr);
 
@@ -119,28 +123,14 @@ public:
   absl::Status Abort(const std::string &reason, co::Coroutine *co = nullptr);
 
 private:
-  static constexpr size_t kMaxMessageSize = 4096;
-
   absl::StatusOr<std::pair<std::string, int>> LaunchStaticProcessInternal(
       const std::string &name, const std::string &executable,
       ProcessOptions opts, bool zygote, co::Coroutine *co);
-  absl::Status
-  SendRequestReceiveResponse(const stagezero::control::Request &req,
-                             stagezero::control::Response &response,
-                             co::Coroutine *co);
 
   void BuildProcessOptions(const std::string &name,
                            stagezero::config::ProcessOptions *options,
                            ProcessOptions opts) const;
   void BuildStream(stagezero::control::StreamControl *out,
                    const Stream &in) const;
-
-  std::string name_ = "";
-  co::Coroutine *co_;
-  toolbelt::TCPSocket command_socket_;
-  char command_buffer_[kMaxMessageSize];
-
-  toolbelt::TCPSocket event_socket_;
-  char event_buffer_[kMaxMessageSize];
 };
 } // namespace stagezero

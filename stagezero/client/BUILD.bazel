@@ -31,8 +31,8 @@ cc_test(
         "//testdata:echo",
         "//testdata:files",
         "//testdata:vars",
-        "//testdata:zygote",
         "//testdata:module.so",
+        "//stagezero/zygote:standard_zygote",
     ],
     deps = [
         ":client",

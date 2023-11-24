@@ -1,0 +1,81 @@
+// Copyright 2023 David Allison
+// All Rights Reserved
+// See LICENSE file for licensing information.
+
+syntax = "proto3";
+
+package stagezero.proto;
+
+enum AdminState {
+  NO_ADMIN_STATE = 0;
+  ADMIN_OFFLINE = 1;
+  ADMIN_ONLINE = 2;
+}
+
+enum OperState {
+  NO_OPER_STATE = 0;
+  OPER_OFFLINE = 1;
+  OPER_STARTING_CHILDREN = 2;
+  OPER_STARTING_PROCESSES = 3;
+  OPER_ONLINE = 4;
+  OPER_STOPPING_PROCESSES = 5;
+  OPER_STOPPING_CHILDREN = 6;
+  OPER_RESTARTING = 7;
+  OPER_BROKEN = 8;
+}
+
+message SubsystemStatus {
+  message Process {
+    string name = 1;
+    string process_id = 2;
+    int32 pid = 3;
+    bool running = 4;
+  }
+
+  string name = 1;
+  AdminState admin_state = 2;
+  OperState oper_state = 3;
+  repeated Process processes = 4;
+}
+
+message Alarm {
+  enum Type {
+    UNKNOWN_TYPE = 0;
+    SUBSYSTEM = 1;
+    PROCESS = 2;
+  }
+
+  enum Severity {
+    UNKNOWN_SEVERITY = 0;
+    WARNING = 2;
+    ERROR = 3;
+    CRITICAL = 4;
+  }
+
+  enum Reason {
+    UNKNOWN_REASON = 0;
+    CRASHED = 1;
+    BROKEN = 2;
+  }
+
+  enum Status {
+    UNKNOWN_STATUS = 0;
+    RAISED = 1;
+    CLEARED = 2;
+  }
+
+  string id = 1;
+  Type type = 2;
+  string name = 3;
+  Severity severity = 4;
+  Reason reason = 5;
+  Status status = 6;
+  string details = 7;
+}
+
+message Event {
+  oneof event {
+    SubsystemStatus subsystem_status = 1;
+    Alarm alarm = 2;
+  }
+}

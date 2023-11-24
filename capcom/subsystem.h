@@ -16,6 +16,7 @@
 #include "common/states.h"
 #include "common/vars.h"
 #include "proto/capcom.pb.h"
+#include "proto/event.pb.h"
 #include "stagezero/client/client.h"
 #include "toolbelt/fd.h"
 #include "toolbelt/logging.h"
@@ -156,7 +157,7 @@ public:
 
   bool CheckRemove(bool recursive);
 
-  void BuildStatus(capcom::proto::SubsystemStatus *status);
+  void BuildStatus(stagezero::proto::SubsystemStatus *status);
 
   void AddChild(std::shared_ptr<Subsystem> child) {
     std::cerr << "ADDING CHILD " << child->Name() << " to " << Name()

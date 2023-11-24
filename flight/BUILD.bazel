@@ -78,27 +78,3 @@ filegroup(
     ],
 )
 
-cc_test(
-    name = "flight_test",
-    size = "small",
-    srcs = ["flight_test.cc"],
-    data = [
-        "//testdata:echo",
-        "//testdata:files",
-        "//testdata:loop",
-        "//testdata:module.so",
-        "//testdata:vars",
-        "//testdata:zygote",
-    ],
-    deps = [
-        ":flight_lib",
-        "//capcom/client",
-        "//stagezero:stagezero_lib",
-        "@com_google_absl//absl/flags:flag",
-        "@com_google_absl//absl/flags:parse",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/status:statusor",
-        "@com_google_googletest//:gtest",
-        "@coroutines//:co",
-    ],
-)

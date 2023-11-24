@@ -20,11 +20,11 @@
 
 ABSL_FLAG(bool, start_capcom, true, "Start capcom");
 
-using AdminState = stagezero::capcom::AdminState;
-using OperState = stagezero::capcom::OperState;
-using SubsystemStatusEvent = stagezero::capcom::client::SubsystemStatusEvent;
-using Event = stagezero::capcom::client::Event;
-using EventType = stagezero::capcom::client::EventType;
+using AdminState = stagezero::AdminState;
+using OperState = stagezero::OperState;
+using SubsystemStatusEvent = stagezero::SubsystemStatusEvent;
+using Event = stagezero::Event;
+using EventType = stagezero::EventType;
 using ClientMode = stagezero::capcom::client::ClientMode;
 
 void SignalHandler(int sig);
@@ -146,12 +146,13 @@ public:
     std::cout << "waiting for subsystem state change " << subsystem << " "
               << admin_state << " " << oper_state << std::endl;
     for (int retry = 0; retry < 10; retry++) {
-      absl::StatusOr<Event> event = client.WaitForEvent();
-      EXPECT_TRUE(event.ok());
-      if (!event.ok()) {
-        std::cerr << event.status().ToString() << std::endl;
+      absl::StatusOr<std::shared_ptr<Event>> e = client.WaitForEvent();
+      EXPECT_TRUE(e.ok());
+      if (!e.ok()) {
+        std::cerr << e.status().ToString() << std::endl;
         return {};
       }
+      std::shared_ptr<Event> event = *e;
       if (event->type == EventType::kSubsystemStatus) {
         SubsystemStatusEvent &s = std::get<0>(event->event);
         std::cerr << s.subsystem << " " << s.admin_state << " " << s.oper_state

@@ -23,7 +23,7 @@ class Capcom;
 
 class ClientHandler
     : public common::TCPClientHandler<proto::Request, proto::Response,
-                                      proto::Event> {
+                                      stagezero::proto::Event> {
 public:
   ClientHandler(Capcom &capcom, toolbelt::TCPSocket socket, uint32_t id)
       : TCPClientHandler(std::move(socket)), capcom_(capcom), id_(id) {
@@ -44,7 +44,7 @@ private:
   std::shared_ptr<ClientHandler> shared_from_this() {
     return std::static_pointer_cast<ClientHandler>(
         TCPClientHandler<proto::Request, proto::Response,
-                         proto::Event>::shared_from_this());
+                         stagezero::proto::Event>::shared_from_this());
   }
 
   absl::Status HandleMessage(const proto::Request &req, proto::Response &resp,

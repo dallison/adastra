@@ -51,9 +51,8 @@ private:
 
   void CloseHandler(std::shared_ptr<ClientHandler> handler);
   void ListenerCoroutine(toolbelt::TCPSocket &listen_socket, co::Coroutine *c);
+  void EventMonitorCoroutine(co::Coroutine* c);
 
-private:
-  friend class ClientHandler;
   absl::Status LoadAllSubsystemGraphs(const std::filesystem::path &dir);
   absl::Status LoadAllSubsystemGraphsFromDir(
       const std::filesystem::path &dir,
@@ -77,6 +76,7 @@ private:
                                      co::Coroutine *c);
 
   absl::Status AutostartSubsystem(Subsystem *subsystem, co::Coroutine *c);
+
 
   Subsystem *FindSubsystem(const std::string &name) const {
     auto it = subsystems_.find(name);

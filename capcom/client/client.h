@@ -7,7 +7,9 @@
 #include "absl/status/statusor.h"
 #include "common/alarm.h"
 #include "common/states.h"
+#include "common/event.h"
 #include "common/vars.h"
+#include "common/tcp_client.h"
 #include "coroutine.h"
 #include "proto/capcom.pb.h"
 #include "proto/config.pb.h"
@@ -74,36 +76,9 @@ struct SubsystemOptions {
   std::vector<std::string> children;
 };
 
-enum class EventType {
-  kSubsystemStatus,
-  kAlarm,
-};
-
-struct ProcessStatus {
-  std::string name;
-  std::string process_id;
-  int pid;
-  bool running;
-};
-
-struct SubsystemStatusEvent {
-  std::string subsystem;
-  AdminState admin_state;
-  OperState oper_state;
-  std::vector<ProcessStatus> processes;
-};
-
-// Alarm is defined in common/alarm.h
-
-struct Event {
-  EventType type;
-  std::variant<SubsystemStatusEvent, Alarm> event;
-};
-
-class Client {
+class Client : public TCPClient<capcom::proto::Request, capcom::proto::Response, stagezero::proto::Event> {
 public:
-  Client(ClientMode mode = ClientMode::kBlocking, co::Coroutine *co = nullptr)
-      : mode_(mode), co_(co) {}
+  Client(ClientMode mode = ClientMode::kBlocking, co::Coroutine *co = nullptr) : TCPClient<capcom::proto::Request, capcom::proto::Response, stagezero::proto::Event>(co), mode_(mode) {}
   ~Client() = default;
 
   absl::Status Init(toolbelt::InetAddress addr, const std::string &name,
@@ -131,37 +106,20 @@ public:
 
   absl::Status AddGlobalVariable(const Variable& var,
                           co::Coroutine *c = nullptr);
-  toolbelt::FileDescriptor GetEventFd() const {
-    return event_socket_.GetFileDescriptor();
-  }
 
   // Wait for an incoming event.
-  absl::StatusOr<Event> WaitForEvent(co::Coroutine *c = nullptr) {
+  absl::StatusOr<std::shared_ptr<Event>> WaitForEvent(co::Coroutine *c = nullptr) {
     return ReadEvent(c);
   }
-  absl::StatusOr<Event> ReadEvent(co::Coroutine *c = nullptr);
+  absl::StatusOr<std::shared_ptr<Event>> ReadEvent(co::Coroutine *c = nullptr);
 
   absl::Status Abort(const std::string &reason, co::Coroutine *c = nullptr);
 
 private:
-  static constexpr size_t kMaxMessageSize = 4096;
-
   absl::Status WaitForSubsystemState(const std::string &subsystem,
                                      AdminState admin_state,
                                      OperState oper_state);
-  absl::Status
-  SendRequestReceiveResponse(const stagezero::capcom::proto::Request &req,
-                             stagezero::capcom::proto::Response &response,
-                             co::Coroutine *c);
-
-  std::string name_ = "";
   ClientMode mode_;
-  co::Coroutine *co_;
-  toolbelt::TCPSocket command_socket_;
-  char command_buffer_[kMaxMessageSize];
-
-  toolbelt::TCPSocket event_socket_;
-  char event_buffer_[kMaxMessageSize];
 };
 
 } // namespace stagezero::capcom::client

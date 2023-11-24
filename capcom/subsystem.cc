@@ -276,13 +276,14 @@ void Subsystem::Offline(uint32_t client_id, co::Coroutine *c) {
                switch (event_source) {
                case EventSource::kStageZero: {
                  // Event from stagezero.
-                 absl::StatusOr<stagezero::control::Event> event =
+                 absl::StatusOr<std::shared_ptr<stagezero::control::Event>> e =
                      stagezero_client->ReadEvent(c);
-                 if (!event.ok()) {
+                 if (!e.ok()) {
                    subsystem->capcom_.logger_.Log(
                        toolbelt::LogLevel::kError, "Failed to read event %s",
-                       event.status().ToString().c_str());
+                       e.status().ToString().c_str());
                  }
+                 std::shared_ptr<stagezero::control::Event> event = *e;
                  switch (event->event_case()) {
                  case stagezero::control::Event::kStart: {
                    break;
@@ -379,13 +380,15 @@ void Subsystem::StartingChildren(uint32_t client_id, co::Coroutine *c) {
             switch (event_source) {
             case EventSource::kStageZero: {
               // Event from stagezero.
-              absl::StatusOr<stagezero::control::Event> event =
+              absl::StatusOr<std::shared_ptr<stagezero::control::Event>> e =
                   stagezero_client->ReadEvent(c);
-              if (!event.ok()) {
-                subsystem->capcom_.logger_.Log(
-                    toolbelt::LogLevel::kError, "Failed to read event %s",
-                    event.status().ToString().c_str());
+              if (!e.ok()) {
+                subsystem->capcom_.logger_.Log(toolbelt::LogLevel::kError,
+                                               "Failed to read event %s",
+                                               e.status().ToString().c_str());
               }
+              std::shared_ptr<stagezero::control::Event> event = *e;
+
               switch (event->event_case()) {
               case stagezero::control::Event::kStart: {
                 break;
@@ -496,13 +499,14 @@ void Subsystem::StartingProcesses(uint32_t client_id, co::Coroutine *c) {
             switch (event_source) {
             case EventSource::kStageZero: {
               // Event from stagezero.
-              absl::StatusOr<stagezero::control::Event> event =
+              absl::StatusOr<std::shared_ptr<stagezero::control::Event>> e =
                   stagezero_client->ReadEvent(c);
-              if (!event.ok()) {
-                subsystem->capcom_.logger_.Log(
-                    toolbelt::LogLevel::kError, "Failed to read event %s",
-                    event.status().ToString().c_str());
+              if (!e.ok()) {
+                subsystem->capcom_.logger_.Log(toolbelt::LogLevel::kError,
+                                               "Failed to read event %s",
+                                               e.status().ToString().c_str());
               }
+              std::shared_ptr<stagezero::control::Event> event = *e;
               switch (event->event_case()) {
               case stagezero::control::Event::kStart: {
                 Process *proc =
@@ -599,13 +603,14 @@ void Subsystem::Online(uint32_t client_id, co::Coroutine *c) {
             switch (event_source) {
             case EventSource::kStageZero: {
               // Event from stagezero.
-              absl::StatusOr<stagezero::control::Event> event =
+              absl::StatusOr<std::shared_ptr<stagezero::control::Event>> e =
                   stagezero_client->ReadEvent(c);
-              if (!event.ok()) {
-                subsystem->capcom_.logger_.Log(
-                    toolbelt::LogLevel::kError, "Failed to read event %s",
-                    event.status().ToString().c_str());
+              if (!e.ok()) {
+                subsystem->capcom_.logger_.Log(toolbelt::LogLevel::kError,
+                                               "Failed to read event %s",
+                                               e.status().ToString().c_str());
               }
+              std::shared_ptr<stagezero::control::Event> event = *e;
               switch (event->event_case()) {
               case stagezero::control::Event::kStart: {
                 // We aren't going to get these as all processes are running.
@@ -711,13 +716,14 @@ void Subsystem::StoppingProcesses(uint32_t client_id, co::Coroutine *c) {
                switch (event_source) {
                case EventSource::kStageZero: {
                  // Event from stagezero.
-                 absl::StatusOr<stagezero::control::Event> event =
+                 absl::StatusOr<std::shared_ptr<stagezero::control::Event>> e =
                      stagezero_client->ReadEvent(c);
-                 if (!event.ok()) {
+                 if (!e.ok()) {
                    subsystem->capcom_.logger_.Log(
                        toolbelt::LogLevel::kError, "Failed to read event %s",
-                       event.status().ToString().c_str());
+                       e.status().ToString().c_str());
                  }
+                 std::shared_ptr<stagezero::control::Event> event = *e;
                  switch (event->event_case()) {
                  case stagezero::control::Event::kStart: {
                    // We aren't going to get these as all processes are
@@ -820,13 +826,14 @@ void Subsystem::StoppingChildren(uint32_t client_id, co::Coroutine *c) {
                switch (event_source) {
                case EventSource::kStageZero: {
                  // Event from stagezero.
-                 absl::StatusOr<stagezero::control::Event> event =
+                 absl::StatusOr<std::shared_ptr<stagezero::control::Event>> e =
                      stagezero_client->ReadEvent(c);
-                 if (!event.ok()) {
+                 if (!e.ok()) {
                    subsystem->capcom_.logger_.Log(
                        toolbelt::LogLevel::kError, "Failed to read event %s",
-                       event.status().ToString().c_str());
+                       e.status().ToString().c_str());
                  }
+                 std::shared_ptr<stagezero::control::Event> event = *e;
                  switch (event->event_case()) {
                  case stagezero::control::Event::kStart: {
                    // We shouldn't get this because all our processes are
@@ -987,13 +994,14 @@ void Subsystem::Restarting(uint32_t client_id, co::Coroutine *c) {
                switch (event_source) {
                case EventSource::kStageZero: {
                  // Event from stagezero.
-                 absl::StatusOr<stagezero::control::Event> event =
+                 absl::StatusOr<std::shared_ptr<stagezero::control::Event>> e =
                      stagezero_client->ReadEvent(c);
-                 if (!event.ok()) {
+                 if (!e.ok()) {
                    subsystem->capcom_.logger_.Log(
                        toolbelt::LogLevel::kError, "Failed to read event %s",
-                       event.status().ToString().c_str());
+                       e.status().ToString().c_str());
                  }
+                 std::shared_ptr<stagezero::control::Event> event = *e;
                  switch (event->event_case()) {
                  case stagezero::control::Event::kStart: {
                    // This might happen if a process crashed while others are
@@ -1226,42 +1234,42 @@ Subsystem::AddVirtualProcess(const stagezero::config::VirtualProcess &proc,
   return absl::OkStatus();
 }
 
-void Subsystem::BuildStatus(capcom::proto::SubsystemStatus *status) {
+void Subsystem::BuildStatus(stagezero::proto::SubsystemStatus *status) {
   status->set_name(name_);
 
   switch (admin_state_) {
   case AdminState::kOffline:
-    status->set_admin_state(capcom::proto::ADMIN_OFFLINE);
+    status->set_admin_state(stagezero::proto::ADMIN_OFFLINE);
     break;
   case AdminState::kOnline:
-    status->set_admin_state(capcom::proto::ADMIN_ONLINE);
+    status->set_admin_state(stagezero::proto::ADMIN_ONLINE);
     break;
   }
 
   switch (oper_state_) {
   case OperState::kOffline:
-    status->set_oper_state(capcom::proto::OPER_OFFLINE);
+    status->set_oper_state(stagezero::proto::OPER_OFFLINE);
     break;
   case OperState::kStartingChildren:
-    status->set_oper_state(capcom::proto::OPER_STARTING_CHILDREN);
+    status->set_oper_state(stagezero::proto::OPER_STARTING_CHILDREN);
     break;
   case OperState::kStartingProcesses:
-    status->set_oper_state(capcom::proto::OPER_STARTING_PROCESSES);
+    status->set_oper_state(stagezero::proto::OPER_STARTING_PROCESSES);
     break;
   case OperState::kOnline:
-    status->set_oper_state(capcom::proto::OPER_ONLINE);
+    status->set_oper_state(stagezero::proto::OPER_ONLINE);
     break;
   case OperState::kStoppingChildren:
-    status->set_oper_state(capcom::proto::OPER_STOPPING_CHILDREN);
+    status->set_oper_state(stagezero::proto::OPER_STOPPING_CHILDREN);
     break;
   case OperState::kStoppingProcesses:
-    status->set_oper_state(capcom::proto::OPER_STOPPING_PROCESSES);
+    status->set_oper_state(stagezero::proto::OPER_STOPPING_PROCESSES);
     break;
   case OperState::kRestarting:
-    status->set_oper_state(capcom::proto::OPER_RESTARTING);
+    status->set_oper_state(stagezero::proto::OPER_RESTARTING);
     break;
   case OperState::kBroken:
-    status->set_oper_state(capcom::proto::OPER_BROKEN);
+    status->set_oper_state(stagezero::proto::OPER_BROKEN);
     break;
   }
 

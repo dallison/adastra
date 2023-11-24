@@ -4,12 +4,15 @@ cc_library(
     name = "common",
     srcs = [
         "alarm.cc",
+        "event.cc",
     ],
     hdrs = [
-        "tcp_client_handler.h",
-        "states.h",
-        "vars.h",
         "alarm.h",
+        "event.h",
+        "states.h",
+        "tcp_client.h",
+        "tcp_client_handler.h",
+        "vars.h",
     ],
     deps = [
         "//proto:capcom_cc_proto",

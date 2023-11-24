@@ -29,6 +29,7 @@ proto_library(
     srcs = ["capcom.proto"],
     deps = [
         ":config_proto",
+        ":event_proto",
     ],
 )
 
@@ -44,10 +45,21 @@ proto_library(
     deps = [
         ":capcom_proto",
         ":config_proto",
-    ],
+         ":event_proto",
+   ],
 )
 
 cc_proto_library(
     name = "flight_cc_proto",
     deps = [":flight_proto"],
+)
+
+proto_library(
+    name = "event_proto",
+    srcs = ["event.proto"],
+)
+
+cc_proto_library(
+    name = "event_cc_proto",
+    deps = [":event_proto"],
 )

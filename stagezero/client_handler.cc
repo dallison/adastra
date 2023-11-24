@@ -228,7 +228,7 @@ void ClientHandler::HandleCloseProcessFileDescriptor(
 
 absl::Status
 ClientHandler::SendProcessStartEvent(const std::string &process_id) {
-  auto event = std::make_unique<control::Event>();
+  auto event = std::make_shared<control::Event>();
   auto start = event->mutable_start();
   start->set_process_id(process_id);
   return QueueEvent(std::move(event));
@@ -237,7 +237,7 @@ ClientHandler::SendProcessStartEvent(const std::string &process_id) {
 absl::Status ClientHandler::SendProcessStopEvent(const std::string &process_id,
                                                  bool exited, int exit_status,
                                                  int term_signal) {
-  auto event = std::make_unique<control::Event>();
+  auto event = std::make_shared<control::Event>();
   auto stop = event->mutable_stop();
   stop->set_process_id(process_id);
   stop->set_exited(exited);
@@ -249,7 +249,7 @@ absl::Status ClientHandler::SendProcessStopEvent(const std::string &process_id,
 absl::Status ClientHandler::SendOutputEvent(const std::string &process_id,
                                             int fd, const char *data,
                                             size_t len) {
-  auto event = std::make_unique<control::Event>();
+  auto event = std::make_shared<control::Event>();
   auto output = event->mutable_output();
   output->set_process_id(process_id);
   output->set_data(data, len);
@@ -260,7 +260,7 @@ absl::Status ClientHandler::SendOutputEvent(const std::string &process_id,
 absl::Status ClientHandler::SendLogMessage(toolbelt::LogLevel level,
                                            const std::string &process,
                                            const std::string &text) {
-  auto event = std::make_unique<control::Event>();
+  auto event = std::make_shared<control::Event>();
   auto log = event->mutable_log();
   log->set_process_name(process);
   log->set_text(text);

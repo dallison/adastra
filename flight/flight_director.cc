@@ -98,9 +98,10 @@ absl::Status FlightDirector::Run() {
   }
 
   // Connect to capcom.
-  // We have two capcom clients, one for autostart subsystems that need to continue
-  // running, and the other for regular subsystems.
-   if (absl::Status status = autostart_capcom_client_.Init(capcom_addr_, "FlightDirector");
+  // We have two capcom clients, one for autostart subsystems that need to
+  // continue running, and the other for regular subsystems.
+  if (absl::Status status =
+          autostart_capcom_client_.Init(capcom_addr_, "FlightDirector");
       !status.ok()) {
     return status;
   }
@@ -109,8 +110,6 @@ absl::Status FlightDirector::Run() {
       !status.ok()) {
     return status;
   }
-
-
 
   if (absl::Status status =
           LoadAllSubsystemGraphs(std::filesystem::path(root_dir_));
@@ -141,6 +140,12 @@ absl::Status FlightDirector::Run() {
                                         ListenerCoroutine(listen_socket, c);
                                       },
                                       "Listener Socket"));
+
+  // The Event Monitor coroutine takes incoming events from Capcom and forwards
+  // them to all clients.
+  coroutines_.insert(std::make_unique<co::Coroutine>(
+      co_scheduler_, [this](co::Coroutine *c) { EventMonitorCoroutine(c); },
+      "Event Monitor"));
 
   // Add all subsystems and computes to capcom.
   coroutines_.insert(
@@ -583,10 +588,10 @@ absl::Status FlightDirector::RegisterSubsystemGraph(Subsystem *root,
       options.children.push_back(dep->name);
     }
     // Add subsytem vars and args.
-    for (auto& arg : subsystem->args) {
+    for (auto &arg : subsystem->args) {
       options.args.push_back(arg);
     }
-    for (auto& var : subsystem->vars) {
+    for (auto &var : subsystem->vars) {
       options.vars.push_back(var);
     }
 
@@ -605,4 +610,24 @@ absl::Status FlightDirector::AutostartSubsystem(Subsystem *subsystem,
   return autostart_capcom_client_.StartSubsystem(subsystem->name, c);
 }
 
+void FlightDirector::EventMonitorCoroutine(co::Coroutine *c) {
+  for (;;) {
+    absl::StatusOr<std::shared_ptr<stagezero::Event>> event =
+        capcom_client_.WaitForEvent(c);
+    if (!event.ok()) {
+      logger_.Log(toolbelt::LogLevel::kError, "Failed to read capcom event: %s",
+                  event.status().ToString().c_str());
+      continue;
+    }
+    std::shared_ptr<stagezero::proto::Event> proto_event;
+    (*event)->ToProto(proto_event.get());
+    for (auto &handler : client_handlers_) {
+      if (absl::Status status = handler->QueueEvent(proto_event);
+          !status.ok()) {
+        logger_.Log(toolbelt::LogLevel::kError, "Failed to send event: %s",
+                    status.ToString().c_str());
+      }
+    }
+  }
+}
 } // namespace stagezero::flight
