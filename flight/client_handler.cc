@@ -88,7 +88,19 @@ void ClientHandler::HandleStopSubsystem(
 
 void ClientHandler::HandleGetSubsystems(
     const flight::proto::GetSubsystemsRequest &req,
-    flight::proto::GetSubsystemsResponse *response, co::Coroutine *c) {}
+    flight::proto::GetSubsystemsResponse *response, co::Coroutine *c) {
+  absl::StatusOr<std::vector<SubsystemStatus>> status =
+      flight_.capcom_client_.GetSubsystems(c);
+  if (!status.ok()) {
+    response->set_error(status.status().ToString());
+    return;
+  }
+
+  for (auto &st : *status) {
+    auto *s = response->add_subsystems();
+    st.ToProto(s);
+  }
+} 
 
 void ClientHandler::HandleGetAlarms(const flight::proto::GetAlarmsRequest &req,
                                     flight::proto::GetAlarmsResponse *response,

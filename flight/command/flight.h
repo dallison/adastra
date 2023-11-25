@@ -34,6 +34,12 @@ public:
   absl::Status Execute(int argc, char **argv) const override;
 };
 
+class StatusCommand : public Command {
+public:
+  StatusCommand(flight::client::Client &client) : Command(client, "status") {}
+  absl::Status Execute(int argc, char **argv) const override;
+};
+
 class FlightCommand {
 public:
   FlightCommand(toolbelt::InetAddress flight_addr);

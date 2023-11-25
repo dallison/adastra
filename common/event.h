@@ -5,9 +5,11 @@
 #include <string>
 #include <variant>
 
+#include "common/subsystem_status.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "proto/event.pb.h"
+#include "proto/subsystem_status.pb.h"
 
 namespace stagezero {
 
@@ -16,25 +18,11 @@ enum class EventType {
   kAlarm,
 };
 
-struct ProcessStatus {
-  std::string name;
-  std::string process_id;
-  int pid;
-  bool running;
-};
-
-struct SubsystemStatusEvent {
-  std::string subsystem;
-  AdminState admin_state;
-  OperState oper_state;
-  std::vector<ProcessStatus> processes;
-};
-
 // Alarm is defined in common/alarm.h
 
 struct Event {
   EventType type;
-  std::variant<SubsystemStatusEvent, Alarm> event;
+  std::variant<SubsystemStatus, Alarm> event;
 
   void ToProto(proto::Event *dest) const;
   absl::Status FromProto(const proto::Event &src);

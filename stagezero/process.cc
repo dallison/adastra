@@ -23,6 +23,8 @@
 #else
 #error "Unknown OS"
 #endif
+#include <pwd.h>
+#include <grp.h>
 
 namespace stagezero {
 
@@ -83,6 +85,7 @@ StaticProcess::StaticProcess(
   }
   SetSignalTimeouts(req.opts().sigint_shutdown_timeout_secs(),
                     req.opts().sigterm_shutdown_timeout_secs());
+  SetUserAndGroup(req.opts().user(), req.opts().group());
 }
 
 absl::Status StaticProcess::Start(co::Coroutine *c) {
@@ -375,6 +378,26 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
       !status.ok()) {
     return status;
   }
+  uid_t uid = geteuid();
+  gid_t gid = getegid();
+
+  if (!user_.empty()) {
+    struct passwd* p = getpwnam(user_.c_str());
+    if (p == nullptr) {
+      return absl::InternalError(absl::StrFormat("Unknown user %s", user_));
+    }
+    uid = p->pw_uid;
+    gid = p->pw_gid;
+  }
+
+  if (!group_.empty()) {
+    struct group* g = getgrnam(group_.c_str());
+    if (g == nullptr) {
+      return absl::InternalError(absl::StrFormat("Unknown group %s", group_));
+    }
+    gid = g->gr_gid;
+  }
+
   pid_ = fork();
   if (pid_ == -1) {
     return absl::InternalError(
@@ -468,6 +491,12 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
 
     setpgrp();
 
+    if (geteuid() == 0) {
+      // We can only set the user and group if we are running as root.
+      seteuid(uid);
+      setegid(gid);
+    }
+    
     execve(exe.c_str(),
            reinterpret_cast<char *const *>(const_cast<char **>(argv.data())),
            reinterpret_cast<char *const *>(const_cast<char **>(env.data())));
@@ -678,6 +707,9 @@ Zygote::Spawn(const stagezero::control::LaunchVirtualProcessRequest &req,
     *a = arg;
   }
 
+  spawn.set_user(user_);
+  spawn.set_group(group_);
+
   std::vector<char> buffer(spawn.ByteSizeLong() + sizeof(int32_t));
   char *buf = buffer.data() + sizeof(int32_t);
   size_t buflen = buffer.size() - sizeof(int32_t);
@@ -724,6 +756,7 @@ VirtualProcess::VirtualProcess(
   }
   SetSignalTimeouts(req.opts().sigint_shutdown_timeout_secs(),
                     req.opts().sigterm_shutdown_timeout_secs());
+  SetUserAndGroup(req.opts().user(), req.opts().group());
 }
 
 absl::Status VirtualProcess::Start(co::Coroutine *c) {

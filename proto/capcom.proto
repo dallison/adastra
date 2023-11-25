@@ -9,6 +9,7 @@ package stagezero.capcom.proto;
 import "proto/config.proto";
 import "proto/event.proto";
 import "proto/stream.proto";
+import "proto/subsystem_status.proto";
 
 message InitRequest { string client_name = 1; }
 

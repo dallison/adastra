@@ -104,6 +104,8 @@ absl::Status Client::AddSubsystem(const std::string &name,
     opts->set_sigterm_shutdown_timeout_secs(
         sproc.sigterm_shutdown_timeout_secs);
     opts->set_notify(sproc.notify);
+    opts->set_user(sproc.user);
+    opts->set_group(sproc.group);
     auto *s = proc->mutable_static_process();
     s->set_executable(sproc.executable);
     proc->set_compute(sproc.compute);
@@ -126,6 +128,8 @@ absl::Status Client::AddSubsystem(const std::string &name,
     opts->set_sigint_shutdown_timeout_secs(z.sigint_shutdown_timeout_secs);
     opts->set_sigterm_shutdown_timeout_secs(z.sigterm_shutdown_timeout_secs);
     opts->set_notify(true);
+    opts->set_user(z.user);
+    opts->set_group(z.group);
 
     auto *s = proc->mutable_zygote();
     s->set_executable(z.executable);
@@ -150,6 +154,9 @@ absl::Status Client::AddSubsystem(const std::string &name,
     opts->set_sigterm_shutdown_timeout_secs(
         vproc.sigterm_shutdown_timeout_secs);
     opts->set_notify(true);
+    opts->set_user(vproc.user);
+    opts->set_group(vproc.group);
+
     auto *s = proc->mutable_virtual_process();
     s->set_zygote(vproc.zygote);
     s->set_dso(vproc.dso);
@@ -235,7 +242,8 @@ absl::Status Client::StartSubsystem(const std::string &name, co::Coroutine *c) {
   }
 
   if (mode_ == ClientMode::kBlocking) {
-    return WaitForSubsystemState(name, AdminState::kOnline, OperState::kOnline, c);
+    return WaitForSubsystemState(name, AdminState::kOnline, OperState::kOnline,
+                                 c);
   }
   return absl::OkStatus();
 }
@@ -262,14 +270,15 @@ absl::Status Client::StopSubsystem(const std::string &name, co::Coroutine *c) {
 
   if (mode_ == ClientMode::kBlocking) {
     return WaitForSubsystemState(name, AdminState::kOffline,
-                                 OperState::kOffline,c);
+                                 OperState::kOffline, c);
   }
   return absl::OkStatus();
 }
 
 absl::Status Client::WaitForSubsystemState(const std::string &subsystem,
                                            AdminState admin_state,
-                                           OperState oper_state, co::Coroutine* c) {
+                                           OperState oper_state,
+                                           co::Coroutine *c) {
   for (;;) {
     absl::StatusOr<std::shared_ptr<Event>> e = WaitForEvent(c);
     if (!e.ok()) {
@@ -277,7 +286,7 @@ absl::Status Client::WaitForSubsystemState(const std::string &subsystem,
     }
     std::shared_ptr<Event> event = *e;
     if (event->type == EventType::kSubsystemStatus) {
-      SubsystemStatusEvent &s = std::get<0>(event->event);
+      SubsystemStatus &s = std::get<0>(event->event);
       if (s.subsystem == subsystem) {
         if (admin_state == s.admin_state) {
           if (s.admin_state == AdminState::kOnline &&
@@ -332,8 +341,38 @@ absl::Status Client::AddGlobalVariable(const Variable &var, co::Coroutine *c) {
   auto &var_resp = resp.add_global_variable();
   if (!var_resp.error().empty()) {
     return absl::InternalError(
-        absl::StrFormat("Failed to abort: %s", var_resp.error()));
+        absl::StrFormat("Failed to add global variable: %s", var_resp.error()));
   }
   return absl::OkStatus();
+}
+
+absl::StatusOr<std::vector<SubsystemStatus>>
+Client::GetSubsystems(co::Coroutine *c) {
+  if (c == nullptr) {
+    c = co_;
+  }
+  stagezero::capcom::proto::Request req;
+  (void)req.mutable_get_subsystems();
+
+  stagezero::capcom::proto::Response resp;
+  if (absl::Status status = SendRequestReceiveResponse(req, resp, c);
+      !status.ok()) {
+    return status;
+  }
+  auto &get_resp = resp.get_subsystems();
+  if (!get_resp.error().empty()) {
+    return absl::InternalError(
+        absl::StrFormat("Failed to get subsystems: %s", get_resp.error()));
+  }
+
+  std::vector<SubsystemStatus> result(get_resp.subsystems_size());
+  int index = 0;
+  for (auto &status : get_resp.subsystems()) {
+    if (absl::Status s = result[index].FromProto(status); !s.ok()) {
+      return s;
+    }
+    index++;
+  }
+  return result;
 }
 } // namespace stagezero::capcom::client

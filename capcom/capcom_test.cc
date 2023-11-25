@@ -22,7 +22,7 @@ ABSL_FLAG(bool, start_capcom, true, "Start capcom");
 
 using AdminState = stagezero::AdminState;
 using OperState = stagezero::OperState;
-using SubsystemStatusEvent = stagezero::SubsystemStatusEvent;
+using SubsystemStatus = stagezero::SubsystemStatus;
 using Event = stagezero::Event;
 using EventType = stagezero::EventType;
 using ClientMode = stagezero::capcom::client::ClientMode;
@@ -154,7 +154,7 @@ public:
       }
       std::shared_ptr<Event> event = *e;
       if (event->type == EventType::kSubsystemStatus) {
-        SubsystemStatusEvent &s = std::get<0>(event->event);
+        SubsystemStatus &s = std::get<0>(event->event);
         std::cerr << s.subsystem << " " << s.admin_state << " " << s.oper_state
                   << std::endl;
         std::cerr << "waiting for subsystem state change " << subsystem << " "
@@ -462,7 +462,7 @@ TEST_F(CapcomTest, RestartSimpleSubsystem) {
   sleep(1);
 
   // Kill the process.
-  SubsystemStatusEvent s = std::get<0>(e.event);
+  SubsystemStatus s = std::get<0>(e.event);
   ASSERT_EQ(1, s.processes.size());
   int pid = s.processes[0].pid;
   kill(pid, SIGTERM);
@@ -605,7 +605,7 @@ TEST_F(CapcomTest, RestartSimpleSubsystemTree) {
   WaitForState(client, "parent", AdminState::kOnline, OperState::kOnline);
 
   // Kill the child process.
-  SubsystemStatusEvent s = std::get<0>(e.event);
+  SubsystemStatus s = std::get<0>(e.event);
   ASSERT_EQ(1, s.processes.size());
   int pid = s.processes[0].pid;
   kill(pid, SIGTERM);

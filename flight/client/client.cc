@@ -62,7 +62,8 @@ absl::Status Client::StartSubsystem(const std::string &name, co::Coroutine *c) {
   }
 
   if (mode_ == ClientMode::kBlocking) {
-    return WaitForSubsystemState(name, AdminState::kOnline, OperState::kOnline, c);
+    return WaitForSubsystemState(name, AdminState::kOnline, OperState::kOnline,
+                                 c);
   }
 
   return absl::OkStatus();
@@ -98,7 +99,8 @@ absl::Status Client::StopSubsystem(const std::string &name, co::Coroutine *c) {
 
 absl::Status Client::WaitForSubsystemState(const std::string &subsystem,
                                            AdminState admin_state,
-                                           OperState oper_state, co::Coroutine* c) {
+                                           OperState oper_state,
+                                           co::Coroutine *c) {
   for (;;) {
     absl::StatusOr<std::shared_ptr<Event>> e = WaitForEvent(c);
     if (!e.ok()) {
@@ -106,7 +108,7 @@ absl::Status Client::WaitForSubsystemState(const std::string &subsystem,
     }
     std::shared_ptr<Event> event = *e;
     if (event->type == EventType::kSubsystemStatus) {
-      SubsystemStatusEvent &s = std::get<0>(event->event);
+      SubsystemStatus &s = std::get<0>(event->event);
       if (s.subsystem == subsystem) {
         if (admin_state == s.admin_state) {
           if (s.admin_state == AdminState::kOnline &&
@@ -142,4 +144,35 @@ absl::Status Client::Abort(const std::string &reason, co::Coroutine *c) {
   }
   return absl::OkStatus();
 }
+
+absl::StatusOr<std::vector<SubsystemStatus>>
+Client::GetSubsystems(co::Coroutine *c) {
+  if (c == nullptr) {
+    c = co_;
+  }
+  stagezero::flight::proto::Request req;
+  (void)req.mutable_get_subsystems();
+
+  stagezero::flight::proto::Response resp;
+  if (absl::Status status = SendRequestReceiveResponse(req, resp, c);
+      !status.ok()) {
+    return status;
+  }
+  auto &get_resp = resp.get_subsystems();
+  if (!get_resp.error().empty()) {
+    return absl::InternalError(
+        absl::StrFormat("Failed to get subsystems: %s", get_resp.error()));
+  }
+
+  std::vector<SubsystemStatus> result(get_resp.subsystems_size());
+  int index = 0;
+  for (auto &status : get_resp.subsystems()) {
+    if (absl::Status s = result[index].FromProto(status); !s.ok()) {
+      return s;
+    }
+    index++;
+  }
+  return result;
+}
+
 } // namespace stagezero::flight::client

@@ -29,7 +29,9 @@ struct Process {
   bool notify;
   std::string compute;
   std::vector<Stream> streams;
-
+  std::string user;
+  std::string group;
+  
   virtual ~Process() = default;
   virtual ProcessType Type() const = 0;
 };

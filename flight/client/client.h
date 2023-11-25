@@ -8,6 +8,7 @@
 #include "absl/status/statusor.h"
 #include "common/alarm.h"
 #include "common/event.h"
+#include "common/subsystem_status.h"
 #include "common/states.h"
 #include "common/tcp_client.h"
 #include "common/vars.h"
@@ -53,6 +54,7 @@ public:
                              co::Coroutine *c = nullptr);
 
   absl::Status Abort(const std::string &reason, co::Coroutine *c = nullptr);
+  absl::StatusOr<std::vector<SubsystemStatus>> GetSubsystems(co::Coroutine *c = nullptr);
 
 private:
   absl::Status WaitForSubsystemState(const std::string &subsystem,

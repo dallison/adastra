@@ -9,13 +9,14 @@ package stagezero.flight.proto;
 import "proto/config.proto";
 import "proto/capcom.proto";
 import "proto/event.proto";
+import "proto/subsystem_status.proto";
 
 message Stream {
   enum Disposition {
-    LOGGER = 0;         // Sent to Capcom logger.
-    STAGEZERO = 1;      // Same as stagezero process.
-    FILE = 2;           // Read/write a file (filename must be specified)
-    CLOSE = 3;          // Close the stream.
+    LOGGER = 0;    // Sent to Capcom logger.
+    STAGEZERO = 1; // Same as stagezero process.
+    FILE = 2;      // Read/write a file (filename must be specified)
+    CLOSE = 3;     // Close the stream.
   }
   Disposition where = 1;
   oneof opts { string filename = 2; }
@@ -38,6 +39,8 @@ message ModuleOptions {
   // If the process will notify us, we wait this long for it
   // to do so.
   optional int32 startup_timeout_secs = 6;
+  string user = 7;
+  string group = 8;
 }
 
 message ProcessOptions {
@@ -59,6 +62,9 @@ message ProcessOptions {
   // If the process will notify us, we wait this long for it
   // to do so.
   optional int32 startup_timeout_secs = 7;
+
+  string user = 8;
+  string group = 9;
 }
 
 message Module {

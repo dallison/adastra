@@ -205,6 +205,8 @@ message SpawnRequest {
   repeated config.Variable global_vars = 4; // Global variables and environment.
   repeated config.Variable vars = 5;        // Local variables and environment.
   repeated string args = 6;                 // Use $var in expressions.
+  string user = 7;
+  string group = 8;
 }
 
 message SpawnResponse {

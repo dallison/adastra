@@ -74,6 +74,11 @@ public:
   int SigIntTimeoutSecs() const { return sigint_timeout_secs_; }
   int SigTermTimeoutSecs() const { return sigterm_timeout_secs_; }
 
+  void SetUserAndGroup(const std::string& user, const std::string& group) {
+    user_ = user;
+    group_ = group;
+  }
+  
 protected:
   virtual int Wait() = 0;
   absl::Status BuildStreams(
@@ -91,6 +96,8 @@ protected:
   SymbolTable local_symbols_;
   int sigint_timeout_secs_ = 0;
   int sigterm_timeout_secs_ = 0;
+  std::string user_;
+  std::string group_;
 };
 
 class StaticProcess : public Process {

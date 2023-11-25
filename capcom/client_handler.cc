@@ -327,5 +327,4 @@ void ClientHandler::HandleAddGlobalVariable(
     response->set_error(status.ToString());
   }
 }
-
 } // namespace stagezero::capcom

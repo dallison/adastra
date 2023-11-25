@@ -38,6 +38,10 @@ message ProcessOptions {
   // If the process will notify us, we wait this long for it
   // to do so.
   int32 startup_timeout_secs = 8;
+
+  // User and group for owner of the process.
+  string user = 9;
+  string group = 10;
 }
 
 message StaticProcess {
@@ -46,6 +50,6 @@ message StaticProcess {
 
 message VirtualProcess {
   string zygote = 1; // Zygote to use.
-  string dso = 2;    // Dynamic shared object to load
+  string dso = 2;    // Dynamic shared object to load (empty for none)
   string main_func = 3; // Main function to call.
 }

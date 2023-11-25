@@ -284,6 +284,8 @@ static void ParseProcessOptions(Process *process,
           ? options.sigterm_shutdown_timeout_secs()
           : kDefaultSigTermTimeout;
   process->notify = options.has_notify() ? options.notify() : true;
+  process->user = options.user();
+  process->group = options.group();
 }
 
 static void ParseModuleOptions(Process *process,
@@ -306,6 +308,8 @@ static void ParseModuleOptions(Process *process,
       options.has_sigterm_shutdown_timeout_secs()
           ? options.sigterm_shutdown_timeout_secs()
           : kDefaultSigTermTimeout;
+  process->user = options.user();
+  process->group = options.group();
 }
 
 static bool CheckProcessUniqueness(const Subsystem &subsystem,
@@ -318,7 +322,8 @@ static bool CheckProcessUniqueness(const Subsystem &subsystem,
   return true;
 }
 
-static void ParseStream(const std::string& process_name, const stagezero::flight::proto::Stream &stream, int fd,
+static void ParseStream(const std::string &process_name,
+                        const stagezero::flight::proto::Stream &stream, int fd,
                         std::vector<Stream> *vec) {
   Stream s;
 
@@ -336,9 +341,8 @@ static void ParseStream(const std::string& process_name, const stagezero::flight
     if (filename.empty()) {
       filename = absl::StrFormat("/tmp/%s.%d.log", process_name, fd);
     }
-        s.data = filename;
-  }
-    break;
+    s.data = filename;
+  } break;
   case flight::proto::Stream::CLOSE:
     s.disposition = Stream::Disposition::kClose;
     break;
@@ -429,8 +433,10 @@ absl::Status FlightDirector::LoadSubsystemGraph(
       auto &options = proc.options();
       ParseProcessOptions(process.get(), options);
       ParseStream(process->name, proc.stdin(), STDIN_FILENO, &process->streams);
-      ParseStream(process->name,proc.stdout(), STDOUT_FILENO, &process->streams);
-      ParseStream(process->name,proc.stderr(), STDERR_FILENO, &process->streams);
+      ParseStream(process->name, proc.stdout(), STDOUT_FILENO,
+                  &process->streams);
+      ParseStream(process->name, proc.stderr(), STDERR_FILENO,
+                  &process->streams);
       subsystem->processes.push_back(std::move(process));
     }
 
@@ -448,8 +454,8 @@ absl::Status FlightDirector::LoadSubsystemGraph(
       auto &options = z.options();
       ParseProcessOptions(zygote.get(), options);
       ParseStream(zygote->name, z.stdin(), STDIN_FILENO, &zygote->streams);
-      ParseStream(zygote->name,z.stdout(), STDOUT_FILENO, &zygote->streams);
-      ParseStream(zygote->name,z.stderr(), STDERR_FILENO, &zygote->streams);
+      ParseStream(zygote->name, z.stdout(), STDOUT_FILENO, &zygote->streams);
+      ParseStream(zygote->name, z.stderr(), STDERR_FILENO, &zygote->streams);
       subsystem->processes.push_back(std::move(zygote));
     }
 
@@ -607,6 +613,8 @@ absl::Status FlightDirector::RegisterSubsystemGraph(Subsystem *root,
             .sigterm_shutdown_timeout_secs = src->sigterm_shutdown_timeout_secs,
             .notify = src->notify,
             .streams = src->streams,
+            .user = src->user,
+            .group = src->group,
         });
         break;
       }
@@ -623,6 +631,8 @@ absl::Status FlightDirector::RegisterSubsystemGraph(Subsystem *root,
             .sigint_shutdown_timeout_secs = src->sigint_shutdown_timeout_secs,
             .sigterm_shutdown_timeout_secs = src->sigterm_shutdown_timeout_secs,
             .streams = src->streams,
+            .user = src->user,
+            .group = src->group,
         });
         break;
       }
@@ -640,6 +650,8 @@ absl::Status FlightDirector::RegisterSubsystemGraph(Subsystem *root,
             .sigint_shutdown_timeout_secs = src->sigint_shutdown_timeout_secs,
             .sigterm_shutdown_timeout_secs = src->sigterm_shutdown_timeout_secs,
             .streams = src->streams,
+            .user = src->user,
+            .group = src->group,
         });
         // Add the args, but after the two module args: name and
         // subspace_socket.

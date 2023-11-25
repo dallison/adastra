@@ -27,8 +27,8 @@ class ClientHandler
 public:
   ClientHandler(Capcom &capcom, toolbelt::TCPSocket socket, uint32_t id)
       : TCPClientHandler(std::move(socket)), capcom_(capcom), id_(id) {
-        std::cerr << "Capcom client id " << id << " connected\n";
-      }
+    std::cerr << "Capcom client id " << id << " connected\n";
+  }
   ~ClientHandler();
 
   absl::Status SendSubsystemStatusEvent(Subsystem *subsystem);
@@ -81,11 +81,13 @@ private:
   void HandleGetAlarms(const proto::GetAlarmsRequest &req,
                        proto::GetAlarmsResponse *response, co::Coroutine *c);
 
- void HandleAbort(const proto::AbortRequest &req, proto::AbortResponse* response,
-                  co::Coroutine *c);
+  void HandleAbort(const proto::AbortRequest &req,
+                   proto::AbortResponse *response, co::Coroutine *c);
 
-                    void HandleAddGlobalVariable(const proto::AddGlobalVariableRequest &req,
-                        proto::AddGlobalVariableResponse *response, co::Coroutine *c);
+  void HandleAddGlobalVariable(const proto::AddGlobalVariableRequest &req,
+                               proto::AddGlobalVariableResponse *response,
+                               co::Coroutine *c);
+
   Capcom &capcom_;
   uint32_t id_;
 };

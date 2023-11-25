@@ -6,37 +6,7 @@ syntax = "proto3";
 
 package stagezero.proto;
 
-enum AdminState {
-  NO_ADMIN_STATE = 0;
-  ADMIN_OFFLINE = 1;
-  ADMIN_ONLINE = 2;
-}
-
-enum OperState {
-  NO_OPER_STATE = 0;
-  OPER_OFFLINE = 1;
-  OPER_STARTING_CHILDREN = 2;
-  OPER_STARTING_PROCESSES = 3;
-  OPER_ONLINE = 4;
-  OPER_STOPPING_PROCESSES = 5;
-  OPER_STOPPING_CHILDREN = 6;
-  OPER_RESTARTING = 7;
-  OPER_BROKEN = 8;
-}
-
-message SubsystemStatus {
-  message Process {
-    string name = 1;
-    string process_id = 2;
-    int32 pid = 3;
-    bool running = 4;
-  }
-
-  string name = 1;
-  AdminState admin_state = 2;
-  OperState oper_state = 3;
-  repeated Process processes = 4;
-}
+import "proto/subsystem_status.proto";
 
 message Alarm {
   enum Type {

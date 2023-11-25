@@ -26,6 +26,7 @@ FlightCommand::FlightCommand(toolbelt::InetAddress flight_addr)
 void FlightCommand::InitCommands() {
   AddCommand(std::make_unique<StartCommand>(client_));
   AddCommand(std::make_unique<StopCommand>(client_));
+  AddCommand(std::make_unique<StatusCommand>(client_));
 }
 
 void FlightCommand::AddCommand(std::unique_ptr<Command>cmd) {
@@ -65,6 +66,18 @@ absl::Status StopCommand::Execute(int argc, char **argv) const {
   }
   std::string subsystem = argv[2];
   return client_.StopSubsystem(subsystem);
+}
+
+absl::Status StatusCommand::Execute(int argc, char **argv) const {
+  absl::StatusOr<std::vector<SubsystemStatus>> subsystems = client_.GetSubsystems();
+  if (!subsystems.ok()) {
+    return subsystems.status();
+  }
+  for (auto& subsystem : *subsystems) {
+    std::cout << "Subsystem " << subsystem.subsystem << " Admin: " << AdminStateName(subsystem.admin_state) << 
+    " Oper: " << OperStateName(subsystem.oper_state) << std::endl;
+  }
+  return absl::OkStatus();
 }
 
 } // namespace stagezero::flight

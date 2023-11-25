@@ -5,12 +5,13 @@
 
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
+#include "common/subsystem_status.h"
 #include "common/alarm.h"
-#include "common/states.h"
 #include "common/event.h"
+#include "common/states.h"
 #include "common/stream.h"
-#include "common/vars.h"
 #include "common/tcp_client.h"
+#include "common/vars.h"
 #include "coroutine.h"
 #include "proto/capcom.pb.h"
 #include "proto/config.pb.h"
@@ -40,6 +41,8 @@ struct StaticProcess {
   int32_t sigterm_shutdown_timeout_secs = kDefaultSigTermShutdownTimeout;
   bool notify = false;
   std::vector<Stream> streams;
+  std::string user;
+  std::string group;
 };
 
 struct Zygote {
@@ -53,6 +56,8 @@ struct Zygote {
   int32_t sigint_shutdown_timeout_secs = kDefaultSigIntShutdownTimeout;
   int32_t sigterm_shutdown_timeout_secs = kDefaultSigTermShutdownTimeout;
   std::vector<Stream> streams;
+  std::string user;
+  std::string group;
 };
 
 struct VirtualProcess {
@@ -68,6 +73,8 @@ struct VirtualProcess {
   int32_t sigint_shutdown_timeout_secs = kDefaultSigIntShutdownTimeout;
   int32_t sigterm_shutdown_timeout_secs = kDefaultSigTermShutdownTimeout;
   std::vector<Stream> streams;
+  std::string user;
+  std::string group;
 };
 
 struct SubsystemOptions {
@@ -80,9 +87,13 @@ struct SubsystemOptions {
   std::vector<std::string> children;
 };
 
-class Client : public TCPClient<capcom::proto::Request, capcom::proto::Response, stagezero::proto::Event> {
+class Client : public TCPClient<capcom::proto::Request, capcom::proto::Response,
+                                stagezero::proto::Event> {
 public:
-  Client(ClientMode mode = ClientMode::kBlocking, co::Coroutine *co = nullptr) : TCPClient<capcom::proto::Request, capcom::proto::Response, stagezero::proto::Event>(co), mode_(mode) {}
+  Client(ClientMode mode = ClientMode::kBlocking, co::Coroutine *co = nullptr)
+      : TCPClient<capcom::proto::Request, capcom::proto::Response,
+                  stagezero::proto::Event>(co),
+        mode_(mode) {}
   ~Client() = default;
 
   absl::Status Init(toolbelt::InetAddress addr, const std::string &name,
@@ -107,12 +118,14 @@ public:
   absl::Status StopSubsystem(const std::string &name,
                              co::Coroutine *c = nullptr);
 
+  absl::Status AddGlobalVariable(const Variable &var,
+                                 co::Coroutine *c = nullptr);
 
-  absl::Status AddGlobalVariable(const Variable& var,
-                          co::Coroutine *c = nullptr);
+  absl::StatusOr<std::vector<SubsystemStatus>> GetSubsystems(co::Coroutine* c = nullptr);
 
   // Wait for an incoming event.
-  absl::StatusOr<std::shared_ptr<Event>> WaitForEvent(co::Coroutine *c = nullptr) {
+  absl::StatusOr<std::shared_ptr<Event>>
+  WaitForEvent(co::Coroutine *c = nullptr) {
     return ReadEvent(c);
   }
   absl::StatusOr<std::shared_ptr<Event>> ReadEvent(co::Coroutine *c = nullptr);
@@ -122,7 +135,8 @@ public:
 private:
   absl::Status WaitForSubsystemState(const std::string &subsystem,
                                      AdminState admin_state,
-                                     OperState oper_state, co::Coroutine* c = nullptr);
+                                     OperState oper_state,
+                                     co::Coroutine *c = nullptr);
   ClientMode mode_;
 };
 
