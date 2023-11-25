@@ -22,6 +22,10 @@ namespace stagezero::flight {
 constexpr int64_t kReady = 1;
 constexpr int64_t kStopped = 2;
 
+constexpr int kDefaultStartupTimeout = 10;
+constexpr int kDefaultSigIntTimeout = 2;
+constexpr int kDefaultSigTermTimeout = 15;
+
 class ClientHandler;
 
 struct Compute {
@@ -51,7 +55,7 @@ private:
 
   void CloseHandler(std::shared_ptr<ClientHandler> handler);
   void ListenerCoroutine(toolbelt::TCPSocket &listen_socket, co::Coroutine *c);
-  void EventMonitorCoroutine(co::Coroutine* c);
+  void EventMonitorCoroutine(co::Coroutine *c);
 
   absl::Status LoadAllSubsystemGraphs(const std::filesystem::path &dir);
   absl::Status LoadAllSubsystemGraphsFromDir(
@@ -73,10 +77,10 @@ private:
   absl::Status RegisterSubsystemGraph(Subsystem *root, co::Coroutine *c);
   absl::Status RegisterCompute(const Compute &compute, co::Coroutine *c);
   absl::Status RegisterGlobalVariable(const Variable &compute,
-                                     co::Coroutine *c);
+                                      co::Coroutine *c);
 
   absl::Status AutostartSubsystem(Subsystem *subsystem, co::Coroutine *c);
-  
+
   Subsystem *FindSubsystem(const std::string &name) const {
     auto it = subsystems_.find(name);
     if (it == subsystems_.end()) {

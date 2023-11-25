@@ -3,7 +3,18 @@ subsystem {
   zygote {
     name: "standard_zygote"
     executable: "${runfiles_dir}/__main__/stagezero/zygote/standard_zygote"
+    stdin {
+      where: STAGEZERO
+    }
+    stdout {
+      where: STAGEZERO
+    }
+    stderr {
+      where: STAGEZERO
+    }
   }
+ 
+
 }
 
 autostart: "standard_zygote"

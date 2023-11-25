@@ -9,6 +9,7 @@ namespace stagezero {
 
 struct Stream {
   enum class Disposition {
+    kStageZero,
     kClient,
     kFile,
     kFd,

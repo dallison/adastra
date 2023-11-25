@@ -19,7 +19,6 @@ int main(int argc, char **argv) {
   char* notify = getenv("STAGEZERO_NOTIFY_FD");
   if (notify != nullptr) {
     int notify_fd = atoi(notify);
-    printf("Notifying via fd %d\n", notify_fd);
     int64_t val = 1;
     (void)write(notify_fd, &val, 8);
   }

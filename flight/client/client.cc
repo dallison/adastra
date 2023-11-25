@@ -62,7 +62,7 @@ absl::Status Client::StartSubsystem(const std::string &name, co::Coroutine *c) {
   }
 
   if (mode_ == ClientMode::kBlocking) {
-    return WaitForSubsystemState(name, AdminState::kOnline, OperState::kOnline);
+    return WaitForSubsystemState(name, AdminState::kOnline, OperState::kOnline, c);
   }
 
   return absl::OkStatus();
@@ -90,7 +90,7 @@ absl::Status Client::StopSubsystem(const std::string &name, co::Coroutine *c) {
 
   if (mode_ == ClientMode::kBlocking) {
     return WaitForSubsystemState(name, AdminState::kOffline,
-                                 OperState::kOffline);
+                                 OperState::kOffline, c);
   }
 
   return absl::OkStatus();
@@ -98,9 +98,9 @@ absl::Status Client::StopSubsystem(const std::string &name, co::Coroutine *c) {
 
 absl::Status Client::WaitForSubsystemState(const std::string &subsystem,
                                            AdminState admin_state,
-                                           OperState oper_state) {
+                                           OperState oper_state, co::Coroutine* c) {
   for (;;) {
-    absl::StatusOr<std::shared_ptr<Event>> e = WaitForEvent();
+    absl::StatusOr<std::shared_ptr<Event>> e = WaitForEvent(c);
     if (!e.ok()) {
       return e.status();
     }

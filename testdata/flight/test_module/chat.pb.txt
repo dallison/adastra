@@ -9,14 +9,10 @@ subsystem {
       sigterm_shutdown_timeout_secs: 10
     }
     stdout {
-      where: LOGGER
+      where: FILE
     }
     stderr {
-      where: FILE
-      filename: "/tmp/talker.log"
-    }
-    stdin {
-      where: CLOSE
+      where: STAGEZERO
     }
   }
   module {
@@ -28,14 +24,10 @@ subsystem {
       sigterm_shutdown_timeout_secs: 10
     }
     stdout {
-      where: LOGGER
+      where: STAGEZERO
     }
     stderr {
-      where: FILE
-      filename: "/tmp/talker.log"
-    }
-    stdin {
-      where: CLOSE
+      where: STAGEZERO
     }
   }
 

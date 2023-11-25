@@ -909,8 +909,12 @@ void Subsystem::StoppingChildren(uint32_t client_id, co::Coroutine *c) {
                  }
                }
 
+               // We are going offline, but our children might stay online
+               // if they are needed by other subsystems.  We can't check
+               // for their oper state, but we can check if they still contain
+               // our client id.
                for (auto &child : subsystem->children_) {
-                 if (child->oper_state_ != OperState::kOffline) {
+                 if (child->active_clients_.Contains(client_id)) {
                    return StateTransition::kStay;
                  }
                }
@@ -1332,6 +1336,7 @@ void Process::ParseStreams(
     const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
         &streams) {
   for (auto &s : streams) {
+    std::cerr << "Capcom parsing stream "<< s.DebugString();
     Stream stream;
     if (absl::Status status = stream.FromProto(s); !status.ok()) {
       capcom_.logger_.Log(toolbelt::LogLevel::kError,

@@ -4,12 +4,14 @@ package stagezero.proto;
 
 message StreamControl {
   enum Disposition {
-    CLIENT = 0;   // Stdout/err as event, stdin as request.
-    FILENAME = 1; // To/from file
-    FD = 2;       // To/from file descriptor
-    CLOSE = 3;    // Close
-    NOTIFY = 4;   // Special stream for startup notification
-    LOGGER = 5;   // Send to client as log message.
+    DEFAULT = 0;
+    STAGEZERO = 1;
+    CLIENT = 2;   // Stdout/err as event, stdin as request.
+    FILENAME = 3; // To/from file
+    FD = 4;       // To/from file descriptor
+    CLOSE = 5;    // Close
+    NOTIFY = 6;   // Special stream for startup notification
+    LOGGER = 7;   // Send to client as log message.
   };
 
   // Direction is as seen from the point of view of the process.

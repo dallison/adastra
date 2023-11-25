@@ -27,7 +27,6 @@ absl::Status Module::NotifyStartup() {
     int notify_fd;
     bool ok = absl::SimpleAtoi(notify, &notify_fd);
     if (ok) {
-      printf("Notifying via fd %d\n", notify_fd);
       int64_t val = 1;
       (void)write(notify_fd, &val, 8);
     }

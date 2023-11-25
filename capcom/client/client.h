@@ -122,7 +122,7 @@ public:
 private:
   absl::Status WaitForSubsystemState(const std::string &subsystem,
                                      AdminState admin_state,
-                                     OperState oper_state);
+                                     OperState oper_state, co::Coroutine* c = nullptr);
   ClientMode mode_;
 };
 

@@ -100,6 +100,7 @@ void Capcom::ListenerCoroutine(toolbelt::TCPSocket &listen_socket,
 }
 
 void Capcom::Log(const stagezero::control::LogMessage &msg) {
+  std::cerr << "Logging " << msg.DebugString();
   uint64_t size = msg.ByteSizeLong();
   // Write length prefix.
   ssize_t n = ::write(log_message_.Fd(), &size, sizeof(size));

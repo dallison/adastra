@@ -18,7 +18,10 @@ FlightDirector::FlightDirector(co::CoroutineScheduler &scheduler,
                                toolbelt::InetAddress capcom_addr,
                                const std::string &root_dir, int notify_fd)
     : co_scheduler_(scheduler), addr_(std::move(addr)),
-      capcom_addr_(capcom_addr), root_dir_(root_dir), notify_fd_(notify_fd) {}
+      capcom_addr_(capcom_addr), root_dir_(root_dir), notify_fd_(notify_fd),
+      capcom_client_(stagezero::capcom::client::ClientMode::kNonBlocking),
+      autostart_capcom_client_(
+          stagezero::capcom::client::ClientMode::kNonBlocking) {}
 
 FlightDirector::~FlightDirector() {
   // Clear this before other data members get destroyed.
@@ -232,6 +235,7 @@ absl::Status FlightDirector::LoadAllSubsystemGraphsFromDir(
 
 absl::StatusOr<std::unique_ptr<proto::SubsystemGraph>>
 FlightDirector::PreloadSubsystemGraph(const std::filesystem::path &file) {
+  std::cerr << "preloading subsystem " << file << std::endl;
   toolbelt::FileDescriptor fd(open(file.c_str(), O_RDONLY));
   if (!fd.Valid()) {
     return absl::InternalError(
@@ -260,6 +264,7 @@ FlightDirector::PreloadSubsystemGraph(const std::filesystem::path &file) {
 
 static void ParseProcessOptions(Process *process,
                                 const proto::ProcessOptions &options) {
+
   for (auto &var : options.vars()) {
     process->vars.push_back(
         {.name = var.name(), .value = var.value(), .exported = var.exported()});
@@ -267,12 +272,18 @@ static void ParseProcessOptions(Process *process,
   for (auto &arg : options.args()) {
     process->args.push_back(arg);
   }
-  process->startup_timeout_secs = options.startup_timeout_secs();
+  process->startup_timeout_secs = options.has_startup_timeout_secs()
+                                      ? options.startup_timeout_secs()
+                                      : kDefaultStartupTimeout;
   process->sigint_shutdown_timeout_secs =
-      options.sigint_shutdown_timeout_secs();
+      options.has_sigint_shutdown_timeout_secs()
+          ? options.sigint_shutdown_timeout_secs()
+          : kDefaultSigIntTimeout;
   process->sigterm_shutdown_timeout_secs =
-      options.sigterm_shutdown_timeout_secs();
-  process->notify = options.notify();
+      options.has_sigterm_shutdown_timeout_secs()
+          ? options.sigterm_shutdown_timeout_secs()
+          : kDefaultSigTermTimeout;
+  process->notify = options.has_notify() ? options.notify() : true;
 }
 
 static void ParseModuleOptions(Process *process,
@@ -284,11 +295,17 @@ static void ParseModuleOptions(Process *process,
   for (auto &arg : options.args()) {
     process->args.push_back(arg);
   }
-  process->startup_timeout_secs = options.startup_timeout_secs();
+  process->startup_timeout_secs = options.has_startup_timeout_secs()
+                                      ? options.startup_timeout_secs()
+                                      : kDefaultStartupTimeout;
   process->sigint_shutdown_timeout_secs =
-      options.sigint_shutdown_timeout_secs();
+      options.has_sigint_shutdown_timeout_secs()
+          ? options.sigint_shutdown_timeout_secs()
+          : kDefaultSigIntTimeout;
   process->sigterm_shutdown_timeout_secs =
-      options.sigterm_shutdown_timeout_secs();
+      options.has_sigterm_shutdown_timeout_secs()
+          ? options.sigterm_shutdown_timeout_secs()
+          : kDefaultSigTermTimeout;
 }
 
 static bool CheckProcessUniqueness(const Subsystem &subsystem,
@@ -301,18 +318,26 @@ static bool CheckProcessUniqueness(const Subsystem &subsystem,
   return true;
 }
 
-static void ParseStream(const stagezero::flight::proto::Stream &stream,
-                          int fd, std::vector<Stream> &vec) {
+static void ParseStream(const std::string& process_name, const stagezero::flight::proto::Stream &stream, int fd,
+                        std::vector<Stream> *vec) {
   Stream s;
 
+  std::cerr << "parsing stream " << stream.DebugString();
   switch (stream.where()) {
+  case flight::proto::Stream::STAGEZERO:
+    s.disposition = Stream::Disposition::kStageZero;
+    break;
   case flight::proto::Stream::LOGGER:
-    // This is also the default for stdout and stderr.
     s.disposition = Stream::Disposition::kLog;
     break;
-  case flight::proto::Stream::FILE:
+  case flight::proto::Stream::FILE: {
+    std::string filename = stream.filename();
     s.disposition = Stream::Disposition::kFile;
-    s.data = stream.filename();
+    if (filename.empty()) {
+      filename = absl::StrFormat("/tmp/%s.%d.log", process_name, fd);
+    }
+        s.data = filename;
+  }
     break;
   case flight::proto::Stream::CLOSE:
     s.disposition = Stream::Disposition::kClose;
@@ -320,7 +345,9 @@ static void ParseStream(const stagezero::flight::proto::Stream &stream,
   default:
     return;
   }
-  // If the stdin is missing, just omit it from the output vector.
+  // If the stdin is missing, omit it from the output vector.  There's
+  // no meaning to redirecting stdin from the logger, but omitting it
+  // will select the default value, which is kLog.
   if (fd == STDIN_FILENO && s.disposition == Stream::Disposition::kLog) {
     return;
   }
@@ -330,7 +357,7 @@ static void ParseStream(const stagezero::flight::proto::Stream &stream,
     s.direction = Stream::Direction::kOutput;
   }
   s.stream_fd = fd;
-  vec.push_back(s);
+  vec->push_back(s);
 }
 
 absl::Status FlightDirector::LoadSubsystemGraph(
@@ -401,10 +428,10 @@ absl::Status FlightDirector::LoadSubsystemGraph(
 
       auto &options = proc.options();
       ParseProcessOptions(process.get(), options);
+      ParseStream(process->name, proc.stdin(), STDIN_FILENO, &process->streams);
+      ParseStream(process->name,proc.stdout(), STDOUT_FILENO, &process->streams);
+      ParseStream(process->name,proc.stderr(), STDERR_FILENO, &process->streams);
       subsystem->processes.push_back(std::move(process));
-      ParseStream(proc.stdin(), STDIN_FILENO, process->streams);
-      ParseStream(proc.stdout(), STDOUT_FILENO, process->streams);
-      ParseStream(proc.stderr(), STDERR_FILENO, process->streams);
     }
 
     // Now zygotes.
@@ -420,10 +447,10 @@ absl::Status FlightDirector::LoadSubsystemGraph(
 
       auto &options = z.options();
       ParseProcessOptions(zygote.get(), options);
+      ParseStream(zygote->name, z.stdin(), STDIN_FILENO, &zygote->streams);
+      ParseStream(zygote->name,z.stdout(), STDOUT_FILENO, &zygote->streams);
+      ParseStream(zygote->name,z.stderr(), STDERR_FILENO, &zygote->streams);
       subsystem->processes.push_back(std::move(zygote));
-      ParseStream(z.stdin(), STDIN_FILENO, zygote->streams);
-      ParseStream(z.stdout(), STDOUT_FILENO, zygote->streams);
-      ParseStream(z.stderr(), STDERR_FILENO, zygote->streams);
     }
 
     // And modules.
@@ -443,9 +470,9 @@ absl::Status FlightDirector::LoadSubsystemGraph(
       module->zygote = mod.zygote();
       module->dso = mod.dso();
       module->compute = mod.compute();
-      ParseStream(mod.stdin(), STDIN_FILENO, module->streams);
-      ParseStream(mod.stdout(), STDOUT_FILENO, module->streams);
-      ParseStream(mod.stderr(), STDERR_FILENO, module->streams);
+      ParseStream(module->name, mod.stdin(), STDIN_FILENO, &module->streams);
+      ParseStream(module->name, mod.stdout(), STDOUT_FILENO, &module->streams);
+      ParseStream(module->name, mod.stderr(), STDERR_FILENO, &module->streams);
 
       // Automatically add a dep to the zygote unless it's already there.
       bool present = false;
@@ -579,6 +606,7 @@ absl::Status FlightDirector::RegisterSubsystemGraph(Subsystem *root,
             .sigint_shutdown_timeout_secs = src->sigint_shutdown_timeout_secs,
             .sigterm_shutdown_timeout_secs = src->sigterm_shutdown_timeout_secs,
             .notify = src->notify,
+            .streams = src->streams,
         });
         break;
       }
@@ -594,6 +622,7 @@ absl::Status FlightDirector::RegisterSubsystemGraph(Subsystem *root,
             .startup_timeout_secs = src->startup_timeout_secs,
             .sigint_shutdown_timeout_secs = src->sigint_shutdown_timeout_secs,
             .sigterm_shutdown_timeout_secs = src->sigterm_shutdown_timeout_secs,
+            .streams = src->streams,
         });
         break;
       }
@@ -610,6 +639,7 @@ absl::Status FlightDirector::RegisterSubsystemGraph(Subsystem *root,
             .startup_timeout_secs = src->startup_timeout_secs,
             .sigint_shutdown_timeout_secs = src->sigint_shutdown_timeout_secs,
             .sigterm_shutdown_timeout_secs = src->sigterm_shutdown_timeout_secs,
+            .streams = src->streams,
         });
         // Add the args, but after the two module args: name and
         // subspace_socket.
@@ -658,14 +688,15 @@ void FlightDirector::EventMonitorCoroutine(co::Coroutine *c) {
     if (!event.ok()) {
       logger_.Log(toolbelt::LogLevel::kError, "Failed to read capcom event: %s",
                   event.status().ToString().c_str());
-      continue;
+      // TODO: what do we do here?
+      return;
     }
-    std::shared_ptr<stagezero::proto::Event> proto_event;
+    auto proto_event = std::make_shared<stagezero::proto::Event>();
     (*event)->ToProto(proto_event.get());
     for (auto &handler : client_handlers_) {
       if (absl::Status status = handler->QueueEvent(proto_event);
           !status.ok()) {
-        logger_.Log(toolbelt::LogLevel::kError, "Failed to send event: %s",
+        logger_.Log(toolbelt::LogLevel::kError, "Failed to queue event: %s",
                     status.ToString().c_str());
       }
     }

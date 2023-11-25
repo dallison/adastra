@@ -12,10 +12,10 @@ import "proto/event.proto";
 
 message Stream {
   enum Disposition {
-    LOGGER = 0;
-    FILE = 1;
-    CLOSE = 2;
-    // TODO: interactive.
+    LOGGER = 0;         // Sent to Capcom logger.
+    STAGEZERO = 1;      // Same as stagezero process.
+    FILE = 2;           // Read/write a file (filename must be specified)
+    CLOSE = 3;          // Close the stream.
   }
   Disposition where = 1;
   oneof opts { string filename = 2; }
@@ -32,12 +32,12 @@ message ModuleOptions {
   // SIGINT is sent.  Likewise, sigterm timeout is the number of
   // seconds between SIGTERM and SIGKILL.  A value of 0 means
   // use reasonable defaults.©57
-  int32 sigint_shutdown_timeout_secs = 4;
-  int32 sigterm_shutdown_timeout_secs = 5;
+  optional int32 sigint_shutdown_timeout_secs = 4;
+  optional int32 sigterm_shutdown_timeout_secs = 5;
 
   // If the process will notify us, we wait this long for it
   // to do so.
-  int32 startup_timeout_secs = 6;
+  optional int32 startup_timeout_secs = 6;
 }
 
 message ProcessOptions {
@@ -51,14 +51,14 @@ message ProcessOptions {
   // SIGINT is sent.  Likewise, sigterm timeout is the number of
   // seconds between SIGTERM and SIGKILL.  A value of 0 means
   // use reasonable defaults.©57
-  int32 sigint_shutdown_timeout_secs = 4;
-  int32 sigterm_shutdown_timeout_secs = 5;
+  optional int32 sigint_shutdown_timeout_secs = 4;
+  optional int32 sigterm_shutdown_timeout_secs = 5;
 
-  bool notify = 6; // Notify of startup via pipe.
+  optional bool notify = 6; // Notify of startup via pipe.
 
   // If the process will notify us, we wait this long for it
   // to do so.
-  int32 startup_timeout_secs = 7;
+  optional int32 startup_timeout_secs = 7;
 }
 
 message Module {

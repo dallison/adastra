@@ -258,6 +258,7 @@ absl::Status Process::BuildStreams(
   }
 
   for (const proto::StreamControl &s : streams) {
+    std::cerr << "****** STREAM " << s.DebugString() << std::endl;
     auto stream = std::make_shared<StreamInfo>();
     proto::StreamControl::Direction direction = s.direction();
     stream->direction = direction;
@@ -268,6 +269,7 @@ absl::Status Process::BuildStreams(
 
     switch (stream->disposition) {
     case proto::StreamControl::CLOSE:
+    case proto::StreamControl::STAGEZERO:
       break;
     case proto::StreamControl::CLIENT: {
       absl::StatusOr<std::pair<int, int>> fds = MakeFileDescriptors(s.tty());
@@ -386,7 +388,8 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
 
     // Redirect the streams.
     for (auto &stream : streams_) {
-      if (stream->disposition != proto::StreamControl::CLOSE) {
+      if (stream->disposition != proto::StreamControl::CLOSE &&
+          stream->disposition != proto::StreamControl::STAGEZERO) {
         // For a notify we don't redirect an fd, but instead tell
         // the process what it is via an environment variable.
         // For other streams, we redirect to the given file descriptor
@@ -475,10 +478,11 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
 
   // Close redirected stream fds in parent.
   for (auto &stream : streams_) {
-    if (stream->disposition != proto::StreamControl::CLOSE) {
+    if (stream->disposition != proto::StreamControl::CLOSE &&
+        stream->disposition != proto::StreamControl::STAGEZERO) {
       toolbelt::FileDescriptor &fd =
           stream->direction == proto::StreamControl::OUTPUT ? stream->write_fd
-                                                              : stream->read_fd;
+                                                            : stream->read_fd;
       printf("ForkAndExec: closing %d\n", fd.Fd());
       fd.Reset();
     }
@@ -640,10 +644,11 @@ Zygote::Spawn(const stagezero::control::LaunchVirtualProcessRequest &req,
   int index = 0;
   for (auto &stream : streams) {
     auto *s = spawn.add_streams();
-    if (stream->disposition != proto::StreamControl::CLOSE) {
+    if (stream->disposition != proto::StreamControl::CLOSE &&
+        stream->disposition != proto::StreamControl::STAGEZERO) {
       const toolbelt::FileDescriptor &fd =
           stream->direction == proto::StreamControl::OUTPUT ? stream->write_fd
-                                                              : stream->read_fd;
+                                                            : stream->read_fd;
       s->set_fd(stream->fd);
       fds.push_back(fd);
       s->set_index(index++);
