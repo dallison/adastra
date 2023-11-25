@@ -27,6 +27,16 @@ subsystem {
       sigint_shutdown_timeout_secs: 2
       sigterm_shutdown_timeout_secs: 10
     }
+    stdout {
+      where: LOGGER
+    }
+    stderr {
+      where: FILE
+      filename: "/tmp/talker.log"
+    }
+    stdin {
+      where: CLOSE
+    }
   }
 
   dep: "subspace"

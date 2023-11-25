@@ -301,8 +301,8 @@ static bool CheckProcessUniqueness(const Subsystem &subsystem,
   return true;
 }
 
-static Stream ParseStream(const stagezero::flight::proto::Stream &stream,
-                          int fd) {
+static void ParseStream(const stagezero::flight::proto::Stream &stream,
+                          int fd, std::vector<Stream> &vec) {
   Stream s;
 
   switch (stream.where()) {
@@ -318,9 +318,11 @@ static Stream ParseStream(const stagezero::flight::proto::Stream &stream,
     s.disposition = Stream::Disposition::kClose;
     break;
   default:
-    return {.stream_fd = fd,
-            .disposition = Stream::Disposition::kLog,
-            .direction = Stream::Direction::kOutput};
+    return;
+  }
+  // If the stdin is missing, just omit it from the output vector.
+  if (fd == STDIN_FILENO && s.disposition == Stream::Disposition::kLog) {
+    return;
   }
   if (fd == STDIN_FILENO) {
     s.direction = Stream::Direction::kInput;
@@ -328,8 +330,7 @@ static Stream ParseStream(const stagezero::flight::proto::Stream &stream,
     s.direction = Stream::Direction::kOutput;
   }
   s.stream_fd = fd;
-
-  return s;
+  vec.push_back(s);
 }
 
 absl::Status FlightDirector::LoadSubsystemGraph(
@@ -401,9 +402,9 @@ absl::Status FlightDirector::LoadSubsystemGraph(
       auto &options = proc.options();
       ParseProcessOptions(process.get(), options);
       subsystem->processes.push_back(std::move(process));
-      process->streams.push_back(ParseStream(proc.stdin(), STDIN_FILENO));
-      process->streams.push_back(ParseStream(proc.stdout(), STDOUT_FILENO));
-      process->streams.push_back(ParseStream(proc.stderr(), STDERR_FILENO));
+      ParseStream(proc.stdin(), STDIN_FILENO, process->streams);
+      ParseStream(proc.stdout(), STDOUT_FILENO, process->streams);
+      ParseStream(proc.stderr(), STDERR_FILENO, process->streams);
     }
 
     // Now zygotes.
@@ -420,9 +421,9 @@ absl::Status FlightDirector::LoadSubsystemGraph(
       auto &options = z.options();
       ParseProcessOptions(zygote.get(), options);
       subsystem->processes.push_back(std::move(zygote));
-      zygote->streams.push_back(ParseStream(z.stdin(), STDIN_FILENO));
-      zygote->streams.push_back(ParseStream(z.stdout(), STDOUT_FILENO));
-      zygote->streams.push_back(ParseStream(z.stderr(), STDERR_FILENO));
+      ParseStream(z.stdin(), STDIN_FILENO, zygote->streams);
+      ParseStream(z.stdout(), STDOUT_FILENO, zygote->streams);
+      ParseStream(z.stderr(), STDERR_FILENO, zygote->streams);
     }
 
     // And modules.
@@ -442,9 +443,9 @@ absl::Status FlightDirector::LoadSubsystemGraph(
       module->zygote = mod.zygote();
       module->dso = mod.dso();
       module->compute = mod.compute();
-      module->streams.push_back(ParseStream(mod.stdin(), STDIN_FILENO));
-      module->streams.push_back(ParseStream(mod.stdout(), STDOUT_FILENO));
-      module->streams.push_back(ParseStream(mod.stderr(), STDERR_FILENO));
+      ParseStream(mod.stdin(), STDIN_FILENO, module->streams);
+      ParseStream(mod.stdout(), STDOUT_FILENO, module->streams);
+      ParseStream(mod.stderr(), STDERR_FILENO, module->streams);
 
       // Automatically add a dep to the zygote unless it's already there.
       bool present = false;
