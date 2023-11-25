@@ -5,6 +5,7 @@
 #pragma once
 
 #include "common/vars.h"
+#include "common/stream.h"
 #include <string>
 #include <vector>
 #include "proto/flight.pb.h"
@@ -27,6 +28,7 @@ struct Process {
   int32_t sigterm_shutdown_timeout_secs;
   bool notify;
   std::string compute;
+  std::vector<Stream> streams;
 
   virtual ~Process() = default;
   virtual ProcessType Type() const = 0;

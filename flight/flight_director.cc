@@ -301,6 +301,37 @@ static bool CheckProcessUniqueness(const Subsystem &subsystem,
   return true;
 }
 
+static Stream ParseStream(const stagezero::flight::proto::Stream &stream,
+                          int fd) {
+  Stream s;
+
+  switch (stream.where()) {
+  case flight::proto::Stream::LOGGER:
+    // This is also the default for stdout and stderr.
+    s.disposition = Stream::Disposition::kLog;
+    break;
+  case flight::proto::Stream::FILE:
+    s.disposition = Stream::Disposition::kFile;
+    s.data = stream.filename();
+    break;
+  case flight::proto::Stream::CLOSE:
+    s.disposition = Stream::Disposition::kClose;
+    break;
+  default:
+    return {.stream_fd = fd,
+            .disposition = Stream::Disposition::kLog,
+            .direction = Stream::Direction::kOutput};
+  }
+  if (fd == STDIN_FILENO) {
+    s.direction = Stream::Direction::kInput;
+  } else {
+    s.direction = Stream::Direction::kOutput;
+  }
+  s.stream_fd = fd;
+
+  return s;
+}
+
 absl::Status FlightDirector::LoadSubsystemGraph(
     std::unique_ptr<proto::SubsystemGraph> graph) {
   // Load the computes.
@@ -370,6 +401,9 @@ absl::Status FlightDirector::LoadSubsystemGraph(
       auto &options = proc.options();
       ParseProcessOptions(process.get(), options);
       subsystem->processes.push_back(std::move(process));
+      process->streams.push_back(ParseStream(proc.stdin(), STDIN_FILENO));
+      process->streams.push_back(ParseStream(proc.stdout(), STDOUT_FILENO));
+      process->streams.push_back(ParseStream(proc.stderr(), STDERR_FILENO));
     }
 
     // Now zygotes.
@@ -386,6 +420,9 @@ absl::Status FlightDirector::LoadSubsystemGraph(
       auto &options = z.options();
       ParseProcessOptions(zygote.get(), options);
       subsystem->processes.push_back(std::move(zygote));
+      zygote->streams.push_back(ParseStream(z.stdin(), STDIN_FILENO));
+      zygote->streams.push_back(ParseStream(z.stdout(), STDOUT_FILENO));
+      zygote->streams.push_back(ParseStream(z.stderr(), STDERR_FILENO));
     }
 
     // And modules.
@@ -405,6 +442,9 @@ absl::Status FlightDirector::LoadSubsystemGraph(
       module->zygote = mod.zygote();
       module->dso = mod.dso();
       module->compute = mod.compute();
+      module->streams.push_back(ParseStream(mod.stdin(), STDIN_FILENO));
+      module->streams.push_back(ParseStream(mod.stdout(), STDOUT_FILENO));
+      module->streams.push_back(ParseStream(mod.stderr(), STDERR_FILENO));
 
       // Automatically add a dep to the zygote unless it's already there.
       bool present = false;

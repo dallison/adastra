@@ -76,8 +76,7 @@ private:
                                      co::Coroutine *c);
 
   absl::Status AutostartSubsystem(Subsystem *subsystem, co::Coroutine *c);
-
-
+  
   Subsystem *FindSubsystem(const std::string &name) const {
     auto it = subsystems_.find(name);
     if (it == subsystems_.end()) {

@@ -10,12 +10,12 @@ cc_proto_library(
     deps = [":config_proto"],
 )
 
-
 proto_library(
     name = "control_proto",
     srcs = ["control.proto"],
     deps = [
         ":config_proto",
+        ":stream_proto",
     ],
 )
 
@@ -30,6 +30,7 @@ proto_library(
     deps = [
         ":config_proto",
         ":event_proto",
+        ":stream_proto",
     ],
 )
 
@@ -38,15 +39,14 @@ cc_proto_library(
     deps = [":capcom_proto"],
 )
 
-
 proto_library(
     name = "flight_proto",
     srcs = ["flight.proto"],
     deps = [
         ":capcom_proto",
         ":config_proto",
-         ":event_proto",
-   ],
+        ":event_proto",
+    ],
 )
 
 cc_proto_library(
@@ -62,4 +62,14 @@ proto_library(
 cc_proto_library(
     name = "event_cc_proto",
     deps = [":event_proto"],
+)
+
+proto_library(
+    name = "stream_proto",
+    srcs = ["stream.proto"],
+)
+
+cc_proto_library(
+    name = "stream_cc_proto",
+    deps = [":stream_proto"],
 )

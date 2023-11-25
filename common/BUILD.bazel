@@ -5,10 +5,12 @@ cc_library(
     srcs = [
         "alarm.cc",
         "event.cc",
+        "stream.cc",
     ],
     hdrs = [
         "alarm.h",
         "event.h",
+        "stream.h",
         "states.h",
         "tcp_client.h",
         "tcp_client_handler.h",

@@ -80,17 +80,31 @@ absl::Status Subsystem::Remove(bool recursive) {
       }
     }
   }
-  if (absl::Status status = capcom_.RemoveSubsystem(Name()); !status.ok()) {
+
+  // Remove processes.
+  subsys->process_map_.clear();
+  for (auto &proc : subsys->processes_) {
+    std::cerr << "Removing subsystem process " << proc->Name() << " IsZygote "
+              << proc->IsZygote() << std::endl;
+    if (proc->IsZygote()) {
+      if (absl::Status status = subsys->capcom_.RemoveZygote(proc->Name());
+          !status.ok()) {
+        return status;
+      }
+    }
+  }
+  if (absl::Status status = subsys->capcom_.RemoveSubsystem(subsys->Name());
+      !status.ok()) {
     return status;
   }
 
   // Remove the parent/child linkages.
-  for (auto &child : children_) {
-    if (absl::Status status = child->RemoveParent(this); !status.ok()) {
+  for (auto &child : subsys->children_) {
+    if (absl::Status status = child->RemoveParent(subsys.get()); !status.ok()) {
       return status;
     }
   }
-  children_.clear();
+  subsys->children_.clear();
   subsys->Stop(); // Stop the state coroutine running.
   return absl::OkStatus();
 }
@@ -895,6 +909,11 @@ void Subsystem::StoppingChildren(uint32_t client_id, co::Coroutine *c) {
                  }
                }
 
+               for (auto &child : subsystem->children_) {
+                 if (child->oper_state_ != OperState::kOffline) {
+                   return StateTransition::kStay;
+                 }
+               }
                subsystem->EnterState(OperState::kOffline, client_id);
                return StateTransition::kLeave;
              });
@@ -1147,10 +1166,12 @@ void Subsystem::ClearAlarm() {
   alarm_raised_ = false;
 }
 
-absl::Status
-Subsystem::AddStaticProcess(const stagezero::config::StaticProcess &proc,
-                            const stagezero::config::ProcessOptions &options,
-                            const Compute *compute, co::Coroutine *c) {
+absl::Status Subsystem::AddStaticProcess(
+    const stagezero::config::StaticProcess &proc,
+    const stagezero::config::ProcessOptions &options,
+    const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
+        &streams,
+    const Compute *compute, co::Coroutine *c) {
   if (proc.executable().empty()) {
     return absl::InternalError(absl::StrFormat(
         "Missing executable for static process %s", options.name()));
@@ -1162,17 +1183,19 @@ Subsystem::AddStaticProcess(const stagezero::config::StaticProcess &proc,
     return client.status();
   }
 
-  auto p = std::make_unique<StaticProcess>(options.name(), proc.executable(),
-                                           options, *client);
+  auto p = std::make_unique<StaticProcess>(
+      capcom_, options.name(), proc.executable(), options, streams, *client);
   processes_.push_back(std::move(p));
 
   return absl::OkStatus();
 }
 
-absl::Status
-Subsystem::AddZygote(const stagezero::config::StaticProcess &proc,
-                     const stagezero::config::ProcessOptions &options,
-                     const Compute *compute, co::Coroutine *c) {
+absl::Status Subsystem::AddZygote(
+    const stagezero::config::StaticProcess &proc,
+    const stagezero::config::ProcessOptions &options,
+    const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
+        &streams,
+    const Compute *compute, co::Coroutine *c) {
   if (proc.executable().empty()) {
     return absl::InternalError(
         absl::StrFormat("Missing executable for zygote %s", options.name()));
@@ -1190,8 +1213,8 @@ Subsystem::AddZygote(const stagezero::config::StaticProcess &proc,
         absl::StrFormat("Zygote %s already exists", options.name()));
   }
 
-  auto p = std::make_unique<Zygote>(options.name(), proc.executable(), options,
-                                    *client);
+  auto p = std::make_unique<Zygote>(capcom_, options.name(), proc.executable(),
+                                    options, streams, *client);
   capcom_.AddZygote(options.name(), p.get());
 
   processes_.push_back(std::move(p));
@@ -1201,10 +1224,13 @@ Subsystem::AddZygote(const stagezero::config::StaticProcess &proc,
 Zygote *Subsystem::FindZygote(const std::string &name) {
   return capcom_.FindZygote(name);
 }
-absl::Status
-Subsystem::AddVirtualProcess(const stagezero::config::VirtualProcess &proc,
-                             const stagezero::config::ProcessOptions &options,
-                             const Compute *compute, co::Coroutine *c) {
+
+absl::Status Subsystem::AddVirtualProcess(
+    const stagezero::config::VirtualProcess &proc,
+    const stagezero::config::ProcessOptions &options,
+    const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
+        &streams,
+    const Compute *compute, co::Coroutine *c) {
   if (proc.zygote().empty()) {
     return absl::InternalError(absl::StrFormat(
         "Missing zygote for virtual process %s", options.name()));
@@ -1226,9 +1252,9 @@ Subsystem::AddVirtualProcess(const stagezero::config::VirtualProcess &proc,
     return client.status();
   }
 
-  auto p = std::make_unique<VirtualProcess>(options.name(), proc.zygote(),
-                                            proc.dso(), proc.main_func(),
-                                            options, *client);
+  auto p = std::make_unique<VirtualProcess>(
+      capcom_, options.name(), proc.zygote(), proc.dso(), proc.main_func(),
+      options, streams, *client);
   processes_.push_back(std::move(p));
 
   return absl::OkStatus();
@@ -1302,6 +1328,21 @@ void Process::ParseOptions(const stagezero::config::ProcessOptions &options) {
   notify_ = options.notify();
 }
 
+void Process::ParseStreams(
+    const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
+        &streams) {
+  for (auto &s : streams) {
+    Stream stream;
+    if (absl::Status status = stream.FromProto(s); !status.ok()) {
+      capcom_.logger_.Log(toolbelt::LogLevel::kError,
+                          "Failed to parse stream control: %s",
+                          status.ToString().c_str());
+      continue;
+    }
+    streams_.push_back(stream);
+  }
+}
+
 absl::Status Process::Stop(co::Coroutine *c) {
   return client_->StopProcess(process_id_, c);
 }
@@ -1321,12 +1362,16 @@ void Process::ClearAlarm(Capcom &capcom) {
   alarm_raised_ = false;
 }
 
-StaticProcess::StaticProcess(std::string name, std::string executable,
-                             const stagezero::config::ProcessOptions &options,
-                             std::shared_ptr<stagezero::Client> client)
-    : Process(std::move(name), std::move(client)),
+StaticProcess::StaticProcess(
+    Capcom &capcom, std::string name, std::string executable,
+    const stagezero::config::ProcessOptions &options,
+    const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
+        &streams,
+    std::shared_ptr<stagezero::Client> client)
+    : Process(capcom, std::move(name), std::move(client)),
       executable_(std::move(executable)) {
   ParseOptions(options);
+  ParseStreams(streams);
 }
 
 absl::Status StaticProcess::Launch(co::Coroutine *c) {
@@ -1342,17 +1387,7 @@ absl::Status StaticProcess::Launch(co::Coroutine *c) {
     options.vars.push_back({var.name, var.value, var.exported});
   }
 
-  // Set the stdout/stderr to log to here.
-  options.streams.push_back({
-      .stream_fd = STDOUT_FILENO,
-      .tty = true,
-      .disposition = stagezero::Stream::Disposition::kLog,
-  });
-  options.streams.push_back({
-      .stream_fd = STDERR_FILENO,
-      .tty = true,
-      .disposition = stagezero::Stream::Disposition::kLog,
-  });
+  options.streams = streams_;
 
   std::cerr << "trying to launch " << Name() << std::endl;
   absl::StatusOr<std::pair<std::string, int>> s =
@@ -1379,17 +1414,7 @@ absl::Status Zygote::Launch(co::Coroutine *c) {
     options.vars.push_back({var.name, var.value, var.exported});
   }
 
-  // Set the stdout/stderr to log to here.
-  options.streams.push_back({
-      .stream_fd = STDOUT_FILENO,
-      .tty = true,
-      .disposition = stagezero::Stream::Disposition::kLog,
-  });
-  options.streams.push_back({
-      .stream_fd = STDERR_FILENO,
-      .tty = true,
-      .disposition = stagezero::Stream::Disposition::kLog,
-  });
+  options.streams = streams_;
 
   absl::StatusOr<std::pair<std::string, int>> s =
       client_->LaunchZygote(Name(), executable_, options, c);
@@ -1401,13 +1426,16 @@ absl::Status Zygote::Launch(co::Coroutine *c) {
   return absl::OkStatus();
 }
 
-VirtualProcess::VirtualProcess(std::string name, std::string zygote_name,
-                               std::string dso, std::string main_func,
-                               const stagezero::config::ProcessOptions &options,
-                               std::shared_ptr<stagezero::Client> client)
-    : Process(name, std::move(client)), zygote_name_(zygote_name), dso_(dso),
-      main_func_(main_func) {
+VirtualProcess::VirtualProcess(
+    Capcom &capcom, std::string name, std::string zygote_name, std::string dso,
+    std::string main_func, const stagezero::config::ProcessOptions &options,
+    const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
+        &streams,
+    std::shared_ptr<stagezero::Client> client)
+    : Process(capcom, name, std::move(client)), zygote_name_(zygote_name),
+      dso_(dso), main_func_(main_func) {
   ParseOptions(options);
+  ParseStreams(streams);
 }
 
 absl::Status VirtualProcess::Launch(co::Coroutine *c) {
@@ -1423,17 +1451,7 @@ absl::Status VirtualProcess::Launch(co::Coroutine *c) {
     options.vars.push_back({var.name, var.value, var.exported});
   }
 
-  // Set the stdout/stderr to log to here.
-  options.streams.push_back({
-      .stream_fd = STDOUT_FILENO,
-      .tty = true,
-      .disposition = stagezero::Stream::Disposition::kLog,
-  });
-  options.streams.push_back({
-      .stream_fd = STDERR_FILENO,
-      .tty = true,
-      .disposition = stagezero::Stream::Disposition::kLog,
-  });
+  options.streams = streams_;
 
   absl::StatusOr<std::pair<std::string, int>> s = client_->LaunchVirtualProcess(
       Name(), zygote_name_, dso_, main_func_, options, c);

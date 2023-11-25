@@ -10,11 +10,22 @@ import "proto/config.proto";
 import "proto/capcom.proto";
 import "proto/event.proto";
 
+message Stream {
+  enum Disposition {
+    LOGGER = 0;
+    FILE = 1;
+    CLOSE = 2;
+    // TODO: interactive.
+  }
+  Disposition where = 1;
+  oneof opts { string filename = 2; }
+}
+
 message ModuleOptions {
   string description = 1;
 
   repeated config.Variable vars = 2; // Local variables and environment.
-  repeated string args = 3;   // Use $var in expressions.
+  repeated string args = 3;          // Use $var in expressions.
 
   // Timeouts for shutdown.  The sigint timeout is the number of
   // seconds beteen sending SIGINT and SIGTERM.  -1 means no
@@ -33,7 +44,7 @@ message ProcessOptions {
   string description = 1;
 
   repeated config.Variable vars = 2; // Local variables and environment.
-  repeated string args = 3;   // Use $var in expressions.
+  repeated string args = 3;          // Use $var in expressions.
 
   // Timeouts for shutdown.  The sigint timeout is the number of
   // seconds beteen sending SIGINT and SIGTERM.  -1 means no
@@ -56,6 +67,9 @@ message Module {
   string zygote = 3;
   ModuleOptions options = 4;
   string compute = 5;
+  Stream stdin = 6;
+  Stream stdout = 7;
+  Stream stderr = 8;
 }
 
 message StaticProcess {
@@ -63,6 +77,9 @@ message StaticProcess {
   string executable = 2;
   ProcessOptions options = 3;
   string compute = 4;
+  Stream stdin = 5;
+  Stream stdout = 6;
+  Stream stderr = 7;
 }
 
 message Subsystem {
@@ -89,7 +106,7 @@ message SubsystemGraph {
   repeated string interface = 2;
   repeated string autostart = 3;
   repeated config.Compute compute = 4;
-  repeated config.Variable var = 5;   // Global variables.
+  repeated config.Variable var = 5; // Global variables.
 }
 
 message InitRequest { string client_name = 1; }
@@ -98,7 +115,6 @@ message InitResponse {
   string error = 1;
   int32 event_port = 2;
 }
-
 
 message StartSubsystemRequest { string subsystem = 1; }
 

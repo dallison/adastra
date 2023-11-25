@@ -17,6 +17,7 @@
 #include "common/vars.h"
 #include "proto/capcom.pb.h"
 #include "proto/event.pb.h"
+#include "proto/stream.pb.h"
 #include "stagezero/client/client.h"
 #include "toolbelt/fd.h"
 #include "toolbelt/logging.h"
@@ -50,8 +51,9 @@ struct Message {
 
 class Process {
 public:
-  Process(std::string name, std::shared_ptr<stagezero::Client> client)
-      : name_(name), client_(client) {}
+  Process(Capcom &capcom, std::string name,
+          std::shared_ptr<stagezero::Client> client)
+      : capcom_(capcom), name_(name), client_(client) {}
   virtual ~Process() = default;
   virtual absl::Status Launch(co::Coroutine *c) = 0;
   absl::Status Stop(co::Coroutine *c);
@@ -69,9 +71,15 @@ public:
   void RaiseAlarm(Capcom &capcom, const Alarm &alarm);
   void ClearAlarm(Capcom &capcom);
 
+  virtual bool IsZygote() const { return false; }
+
 protected:
   void ParseOptions(const stagezero::config::ProcessOptions &options);
+  void ParseStreams(
+      const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
+          &streams);
 
+  Capcom &capcom_;
   std::string name_;
   std::string description_;
   std::vector<Variable> vars_;
@@ -87,13 +95,17 @@ protected:
   Alarm alarm_;
   bool alarm_raised_ = false;
   std::shared_ptr<stagezero::Client> client_;
+  std::vector<Stream> streams_;
 };
 
 class StaticProcess : public Process {
 public:
-  StaticProcess(std::string name, std::string executable,
-                const stagezero::config::ProcessOptions &options,
-                std::shared_ptr<stagezero::Client> client);
+  StaticProcess(
+      Capcom &capcom, std::string name, std::string executable,
+      const stagezero::config::ProcessOptions &options,
+      const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
+          &streams,
+      std::shared_ptr<stagezero::Client> client);
   absl::Status Launch(co::Coroutine *c) override;
 
 protected:
@@ -102,19 +114,27 @@ protected:
 
 class Zygote : public StaticProcess {
 public:
-  Zygote(std::string name, std::string executable,
-         const stagezero::config::ProcessOptions &options,
-         std::shared_ptr<stagezero::Client> client)
-      : StaticProcess(name, executable, options, std::move(client)) {}
+  Zygote(
+      Capcom &capcom, std::string name, std::string executable,
+      const stagezero::config::ProcessOptions &options,
+      const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
+          &streams,
+      std::shared_ptr<stagezero::Client> client)
+      : StaticProcess(capcom, name, executable, options, streams,
+                      std::move(client)) {}
   absl::Status Launch(co::Coroutine *c) override;
+  bool IsZygote() const override { return true; }
 };
 
 class VirtualProcess : public Process {
 public:
-  VirtualProcess(std::string name, std::string zygote_name, std::string dso,
-                 std::string main_func,
-                 const stagezero::config::ProcessOptions &options,
-                 std::shared_ptr<stagezero::Client> client);
+  VirtualProcess(
+      Capcom &capcom, std::string name, std::string zygote_name,
+      std::string dso, std::string main_func,
+      const stagezero::config::ProcessOptions &options,
+      const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
+          &streams,
+      std::shared_ptr<stagezero::Client> client);
   absl::Status Launch(co::Coroutine *c) override;
 
 private:
@@ -133,15 +153,21 @@ public:
   absl::Status
   AddStaticProcess(const stagezero::config::StaticProcess &proc,
                    const stagezero::config::ProcessOptions &options,
+                   const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
+          &streams,
                    const Compute *compute, co::Coroutine *c);
 
   absl::Status AddZygote(const stagezero::config::StaticProcess &proc,
                          const stagezero::config::ProcessOptions &options,
+                         const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
+          &streams,
                          const Compute *compute, co::Coroutine *c);
 
   absl::Status
   AddVirtualProcess(const stagezero::config::VirtualProcess &proc,
                     const stagezero::config::ProcessOptions &options,
+                    const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
+          &streams,
                     const Compute *compute, co::Coroutine *c);
 
   void RemoveProcess(const std::string &name);
@@ -169,7 +195,7 @@ public:
     parents_.push_back(parent);
   }
 
-  absl::Status RemoveChild(Subsystem* child) {
+  absl::Status RemoveChild(Subsystem *child) {
     for (auto it = children_.begin(); it != children_.end(); it++) {
       if (it->get() == child) {
         children_.erase(it);
@@ -180,7 +206,7 @@ public:
         "Subsystem %s is not a child of %s", child->Name(), Name()));
   }
 
-  absl::Status RemoveParent(Subsystem* parent) {
+  absl::Status RemoveParent(Subsystem *parent) {
     for (auto it = parents_.begin(); it != parents_.end(); it++) {
       if (it->get() == parent) {
         parents_.erase(it);

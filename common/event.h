@@ -7,6 +7,7 @@
 
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
+#include "proto/event.pb.h"
 
 namespace stagezero {
 

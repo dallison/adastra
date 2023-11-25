@@ -8,6 +8,7 @@
 #include "common/alarm.h"
 #include "common/states.h"
 #include "common/event.h"
+#include "common/stream.h"
 #include "common/vars.h"
 #include "common/tcp_client.h"
 #include "coroutine.h"
@@ -38,6 +39,7 @@ struct StaticProcess {
   int32_t sigint_shutdown_timeout_secs = kDefaultSigIntShutdownTimeout;
   int32_t sigterm_shutdown_timeout_secs = kDefaultSigTermShutdownTimeout;
   bool notify = false;
+  std::vector<Stream> streams;
 };
 
 struct Zygote {
@@ -50,6 +52,7 @@ struct Zygote {
   int32_t startup_timeout_secs = kDefaultStartupTimeout;
   int32_t sigint_shutdown_timeout_secs = kDefaultSigIntShutdownTimeout;
   int32_t sigterm_shutdown_timeout_secs = kDefaultSigTermShutdownTimeout;
+  std::vector<Stream> streams;
 };
 
 struct VirtualProcess {
@@ -64,6 +67,7 @@ struct VirtualProcess {
   int32_t startup_timeout_secs = kDefaultStartupTimeout;
   int32_t sigint_shutdown_timeout_secs = kDefaultSigIntShutdownTimeout;
   int32_t sigterm_shutdown_timeout_secs = kDefaultSigTermShutdownTimeout;
+  std::vector<Stream> streams;
 };
 
 struct SubsystemOptions {

@@ -182,7 +182,7 @@ void ClientHandler::HandleAddSubsystem(const proto::AddSubsystemRequest &req,
     switch (proc.proc_case()) {
     case proto::Process::kStaticProcess:
       if (absl::Status status = subsystem->AddStaticProcess(
-              proc.static_process(), proc.options(), compute, c);
+              proc.static_process(), proc.options(), proc.streams(), compute, c);
           !status.ok()) {
         response->set_error(
             absl::StrFormat("Failed to add static process %s: %s",
@@ -192,7 +192,7 @@ void ClientHandler::HandleAddSubsystem(const proto::AddSubsystemRequest &req,
       break;
     case proto::Process::kZygote:
       if (absl::Status status =
-              subsystem->AddZygote(proc.zygote(), proc.options(), compute, c);
+              subsystem->AddZygote(proc.zygote(), proc.options(), proc.streams(), compute, c);
           !status.ok()) {
         response->set_error(absl::StrFormat("Failed to add zygote %s: %s",
                                             proc.options().name(),
@@ -202,7 +202,7 @@ void ClientHandler::HandleAddSubsystem(const proto::AddSubsystemRequest &req,
       break;
     case proto::Process::kVirtualProcess:
       if (absl::Status status = subsystem->AddVirtualProcess(
-              proc.virtual_process(), proc.options(), compute, c);
+              proc.virtual_process(), proc.options(), proc.streams(), compute, c);
           !status.ok()) {
         response->set_error(
             absl::StrFormat("Failed to add virtual process %s: %s",

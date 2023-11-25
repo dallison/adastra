@@ -27,16 +27,16 @@ absl::Status Client::Init(toolbelt::InetAddress addr, const std::string &name,
   return TCPClient::Init(addr, name, fill_init, parse_init, co);
 }
 
-
 absl::StatusOr<std::shared_ptr<Event>> Client::ReadEvent(co::Coroutine *c) {
-  absl::StatusOr<std::shared_ptr<stagezero::proto::Event>> proto_event = ReadProtoEvent(c);
+  absl::StatusOr<std::shared_ptr<stagezero::proto::Event>> proto_event =
+      ReadProtoEvent(c);
   if (!proto_event.ok()) {
     return proto_event.status();
   }
   auto result = std::make_shared<Event>();
   if (absl::Status status = result->FromProto(**proto_event); !status.ok()) {
     return status;
-  }  
+  }
   return result;
 }
 
@@ -111,6 +111,10 @@ absl::Status Client::AddSubsystem(const std::string &name,
       auto *a = opts->add_args();
       *a = arg;
     }
+    for (auto &stream : sproc.streams) {
+      auto *s = proc->add_streams();
+      stream.ToProto(s);
+    }
   }
 
   // Add Zygotes.
@@ -129,6 +133,10 @@ absl::Status Client::AddSubsystem(const std::string &name,
     for (auto &arg : z.args) {
       auto *a = opts->add_args();
       *a = arg;
+    }
+    for (auto &stream : z.streams) {
+      auto *s = proc->add_streams();
+      stream.ToProto(s);
     }
   }
 
@@ -150,6 +158,10 @@ absl::Status Client::AddSubsystem(const std::string &name,
     for (auto &arg : vproc.args) {
       auto *a = opts->add_args();
       *a = arg;
+    }
+    for (auto &stream : vproc.streams) {
+      auto *s = proc->add_streams();
+      stream.ToProto(s);
     }
   }
 
@@ -263,7 +275,7 @@ absl::Status Client::WaitForSubsystemState(const std::string &subsystem,
     if (!e.ok()) {
       return e.status();
     }
-    std::shared_ptr<Event> event = *e; 
+    std::shared_ptr<Event> event = *e;
     if (event->type == EventType::kSubsystemStatus) {
       SubsystemStatusEvent &s = std::get<0>(event->event);
       if (s.subsystem == subsystem) {
@@ -302,8 +314,7 @@ absl::Status Client::Abort(const std::string &reason, co::Coroutine *c) {
   return absl::OkStatus();
 }
 
-absl::Status Client::AddGlobalVariable(const Variable &var,
-                                       co::Coroutine *c) {
+absl::Status Client::AddGlobalVariable(const Variable &var, co::Coroutine *c) {
   if (c == nullptr) {
     c = co_;
   }

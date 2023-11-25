@@ -684,7 +684,7 @@ TEST_F(ClientTest, LaunchAndStopVirtual) {
 
   absl::StatusOr<std::pair<std::string, int>> virt_status =
       client.LaunchVirtualProcess("modtest", "zygote",
-                                  "${runfiles_dir}/__main__/stagezero/"
+                                  "${runfiles_dir}/__main__/"
                                   "testdata/module.so",
                                   "Main", {.args = {"ignore_signal"}});
   ASSERT_TRUE(virt_status.ok());
@@ -723,7 +723,7 @@ TEST_F(ClientTest, LaunchAndStopVirtualVars) {
   absl::StatusOr<std::pair<std::string, int>> virt_status =
       client.LaunchVirtualProcess(
           "modtest", "zygote",
-          "${runfiles_dir}/__main__/stagezero/"
+          "${runfiles_dir}/__main__/"
           "testdata/module.so",
           "Main",
           {
@@ -763,7 +763,7 @@ TEST_F(ClientTest, LaunchAndKillVirtual) {
 
   absl::StatusOr<std::pair<std::string, int>> virt_status =
       client.LaunchVirtualProcess("modtest", "zygote",
-                                  "${runfiles_dir}/__main__/stagezero/"
+                                  "${runfiles_dir}/__main__/"
                                   "testdata/module.so",
                                   "Main");
   ASSERT_TRUE(virt_status.ok());
@@ -802,7 +802,7 @@ TEST_F(ClientTest, VirtualOutput) {
 
   absl::StatusOr<std::pair<std::string, int>> virt_status =
       client.LaunchVirtualProcess("modtest", "zygote",
-                                  "${runfiles_dir}/__main__/stagezero/"
+                                  "${runfiles_dir}/__main__/"
                                   "testdata/module.so",
                                   "Main", {.streams = {output}});
   ASSERT_TRUE(virt_status.ok());

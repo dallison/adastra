@@ -7,6 +7,7 @@ syntax = "proto3";
 package stagezero.control;
 
 import "proto/config.proto";
+import "proto/stream.proto";
 
 message InitRequest {
   string client_name = 1;
@@ -18,43 +19,17 @@ message InitResponse {
   int32 event_port = 2;
 }
 
-message StreamControl {
-  enum Disposition {
-    CLIENT = 0;   // Stdout/err as event, stdin as request.
-    FILENAME = 1; // To/from file
-    FD = 2;       // To/from file descriptor
-    CLOSE = 3;    // Close
-    NOTIFY = 4;   // Special stream for startup notification
-    LOGGER = 5;   // Send to client as log message.
-  };
-
-  // Direction is as seen from the point of view of the process.
-  enum Direction {
-    INPUT = 0;  // Input stream.
-    OUTPUT = 1; // Output stream.
-  };
-
-  int32 stream_fd = 1;         // File descriptor for stream.
-  bool tty = 2;                // Is a tty (isatty() = 1)
-  Disposition disposition = 3; // Where data goes to or comes from
-  Direction direction = 4;     // From the process's point of view.
-
-  oneof data {
-    string filename = 5; // File name for FILENAME (use $var for expressions)
-    int32 fd = 6;        // File descriptor for FD.
-  }
-}
 
 message LaunchStaticProcessRequest {
   config.StaticProcess proc = 1;
   config.ProcessOptions opts = 2;
-  repeated StreamControl streams = 3;
+  repeated stagezero.proto.StreamControl streams = 3;
 }
 
 message LaunchVirtualProcessRequest {
   config.VirtualProcess proc = 1;
   config.ProcessOptions opts = 2;
-  repeated StreamControl streams = 3;
+  repeated stagezero.proto.StreamControl streams = 3;
 }
 
 message LaunchResponse {

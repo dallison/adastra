@@ -12,30 +12,11 @@
 #include "proto/config.pb.h"
 #include "proto/control.pb.h"
 #include "toolbelt/sockets.h"
+#include "common/stream.h"
 
 #include <variant>
 
 namespace stagezero {
-
-struct Stream {
-  enum class Disposition {
-    kClient,
-    kFile,
-    kFd,
-    kClose,
-    kLog,
-  };
-  enum class Direction {
-    kInput,
-    kOutput,
-  };
-
-  int stream_fd;
-  bool tty = false;
-  Disposition disposition = Disposition::kClient;
-  Direction direction = Direction::kOutput;
-  std::variant<std::string, int> data;
-};
 
 constexpr int32_t kDefaultStartupTimeout = 2;
 constexpr int32_t kDefaultSigIntShutdownTimeout = 2;
@@ -130,7 +111,6 @@ private:
   void BuildProcessOptions(const std::string &name,
                            stagezero::config::ProcessOptions *options,
                            ProcessOptions opts) const;
-  void BuildStream(stagezero::control::StreamControl *out,
-                   const Stream &in) const;
+
 };
 } // namespace stagezero

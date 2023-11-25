@@ -66,7 +66,7 @@ int Process::WaitLoop(co::Coroutine *c, int timeout_secs) {
 
 const std::shared_ptr<StreamInfo> Process::FindNotifyStream() const {
   for (auto &stream : streams_) {
-    if (stream->disposition == control::StreamControl::NOTIFY) {
+    if (stream->disposition == proto::StreamControl::NOTIFY) {
       return stream;
     }
   }
@@ -240,14 +240,14 @@ absl::Status WriteToProcess(int fd, const char *buf, size_t len,
 }
 
 absl::Status Process::BuildStreams(
-    const google::protobuf::RepeatedPtrField<control::StreamControl> &streams,
+    const google::protobuf::RepeatedPtrField<proto::StreamControl> &streams,
     bool notify) {
   // If the process is going to notify us of startup, make a pipe
   // for it to use and build a StreamInfo for it.
   if (notify) {
     auto stream = std::make_shared<StreamInfo>();
-    stream->disposition = control::StreamControl::NOTIFY;
-    stream->direction = control::StreamControl::OUTPUT;
+    stream->disposition = proto::StreamControl::NOTIFY;
+    stream->direction = proto::StreamControl::OUTPUT;
     absl::StatusOr<std::pair<int, int>> fds = MakeFileDescriptors(false);
     if (!fds.ok()) {
       return fds.status();
@@ -257,9 +257,9 @@ absl::Status Process::BuildStreams(
     streams_.push_back(stream);
   }
 
-  for (const control::StreamControl &s : streams) {
+  for (const proto::StreamControl &s : streams) {
     auto stream = std::make_shared<StreamInfo>();
-    control::StreamControl::Direction direction = s.direction();
+    proto::StreamControl::Direction direction = s.direction();
     stream->direction = direction;
     stream->fd = s.stream_fd();
     stream->disposition = s.disposition();
@@ -267,9 +267,9 @@ absl::Status Process::BuildStreams(
     streams_.push_back(stream);
 
     switch (stream->disposition) {
-    case control::StreamControl::CLOSE:
+    case proto::StreamControl::CLOSE:
       break;
-    case control::StreamControl::CLIENT: {
+    case proto::StreamControl::CLIENT: {
       absl::StatusOr<std::pair<int, int>> fds = MakeFileDescriptors(s.tty());
       if (!fds.ok()) {
         return fds.status();
@@ -282,7 +282,7 @@ absl::Status Process::BuildStreams(
       //
       // An input stream is handled by an incoming InputData command that writes
       // to the write end of the pipe/tty.
-      if (stream->direction == control::StreamControl::OUTPUT) {
+      if (stream->direction == proto::StreamControl::OUTPUT) {
         client_->AddCoroutine(std::make_unique<co::Coroutine>(
             scheduler_, [ proc = shared_from_this(), stream,
                           client = client_ ](co::Coroutine * c) {
@@ -302,7 +302,7 @@ absl::Status Process::BuildStreams(
       break;
     }
 
-    case control::StreamControl::LOGGER: {
+    case proto::StreamControl::LOGGER: {
       absl::StatusOr<std::pair<int, int>> fds = MakeFileDescriptors(s.tty());
       if (!fds.ok()) {
         return fds.status();
@@ -330,8 +330,8 @@ absl::Status Process::BuildStreams(
 
       break;
     }
-    case control::StreamControl::FILENAME: {
-      int oflag = stream->direction == control::StreamControl::INPUT
+    case proto::StreamControl::FILENAME: {
+      int oflag = stream->direction == proto::StreamControl::INPUT
                       ? O_RDONLY
                       : (O_WRONLY | O_TRUNC | O_CREAT);
 
@@ -343,17 +343,17 @@ absl::Status Process::BuildStreams(
       }
       // Set the process end of the stream (the fd that will be redirected)
       // to the file's open fd.
-      if (stream->direction == control::StreamControl::OUTPUT) {
+      if (stream->direction == proto::StreamControl::OUTPUT) {
         stream->write_fd.SetFd(file_fd);
       } else {
         stream->read_fd.SetFd(file_fd);
       }
       break;
     }
-    case control::StreamControl::FD:
+    case proto::StreamControl::FD:
       // Set the process end of the stream (the fd that will be redirected)
       // to the fd specified by the user.
-      if (stream->direction == control::StreamControl::OUTPUT) {
+      if (stream->direction == proto::StreamControl::OUTPUT) {
         stream->write_fd.SetFd(s.fd());
       } else {
         stream->read_fd.SetFd(s.fd());
@@ -386,14 +386,14 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
 
     // Redirect the streams.
     for (auto &stream : streams_) {
-      if (stream->disposition != control::StreamControl::CLOSE) {
+      if (stream->disposition != proto::StreamControl::CLOSE) {
         // For a notify we don't redirect an fd, but instead tell
         // the process what it is via an environment variable.
         // For other streams, we redirect to the given file descriptor
         // number and close the duplicated file descriptor.
-        if (stream->disposition != control::StreamControl::NOTIFY) {
+        if (stream->disposition != proto::StreamControl::NOTIFY) {
           toolbelt::FileDescriptor &fd =
-              stream->direction == control::StreamControl::OUTPUT
+              stream->direction == proto::StreamControl::OUTPUT
                   ? stream->write_fd
                   : stream->read_fd;
           (void)close(stream->fd);
@@ -407,11 +407,11 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
           fd.Reset();
         }
 
-        if (stream->disposition == control::StreamControl::CLIENT ||
-            stream->disposition == control::StreamControl::NOTIFY) {
+        if (stream->disposition == proto::StreamControl::CLIENT ||
+            stream->disposition == proto::StreamControl::NOTIFY) {
           // Close the duplicated other end of the pipes.
           toolbelt::FileDescriptor &fd =
-              stream->direction == control::StreamControl::OUTPUT
+              stream->direction == proto::StreamControl::OUTPUT
                   ? stream->read_fd
                   : stream->write_fd;
           fd.Reset();
@@ -475,9 +475,9 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
 
   // Close redirected stream fds in parent.
   for (auto &stream : streams_) {
-    if (stream->disposition != control::StreamControl::CLOSE) {
+    if (stream->disposition != proto::StreamControl::CLOSE) {
       toolbelt::FileDescriptor &fd =
-          stream->direction == control::StreamControl::OUTPUT ? stream->write_fd
+          stream->direction == proto::StreamControl::OUTPUT ? stream->write_fd
                                                               : stream->read_fd;
       printf("ForkAndExec: closing %d\n", fd.Fd());
       fd.Reset();
@@ -555,7 +555,7 @@ absl::Status Process::SendInput(int fd, const std::string &data,
 absl::Status Process::CloseFileDescriptor(int fd) {
   for (auto &stream : streams_) {
     if (stream->fd == fd) {
-      int stream_fd = stream->direction == control::StreamControl::INPUT
+      int stream_fd = stream->direction == proto::StreamControl::INPUT
                           ? stream->write_fd.Fd()
                           : stream->read_fd.Fd();
       int e = close(stream_fd);
@@ -640,9 +640,9 @@ Zygote::Spawn(const stagezero::control::LaunchVirtualProcessRequest &req,
   int index = 0;
   for (auto &stream : streams) {
     auto *s = spawn.add_streams();
-    if (stream->disposition != control::StreamControl::CLOSE) {
+    if (stream->disposition != proto::StreamControl::CLOSE) {
       const toolbelt::FileDescriptor &fd =
-          stream->direction == control::StreamControl::OUTPUT ? stream->write_fd
+          stream->direction == proto::StreamControl::OUTPUT ? stream->write_fd
                                                               : stream->read_fd;
       s->set_fd(stream->fd);
       fds.push_back(fd);

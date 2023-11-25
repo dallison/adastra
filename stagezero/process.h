@@ -21,8 +21,8 @@ namespace stagezero {
 class ClientHandler;
 
 struct StreamInfo {
-  control::StreamControl::Direction direction;
-  control::StreamControl::Disposition disposition;
+  proto::StreamControl::Direction direction;
+  proto::StreamControl::Disposition disposition;
   toolbelt::FileDescriptor read_fd;  // Read end of pipe or tty.
   toolbelt::FileDescriptor write_fd; // Write end.
   int fd;                            // Process fd to map to.
@@ -77,7 +77,7 @@ public:
 protected:
   virtual int Wait() = 0;
   absl::Status BuildStreams(
-      const google::protobuf::RepeatedPtrField<control::StreamControl> &streams,
+      const google::protobuf::RepeatedPtrField<proto::StreamControl> &streams,
       bool notify);
 
   co::CoroutineScheduler &scheduler_;

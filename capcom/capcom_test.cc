@@ -710,6 +710,7 @@ TEST_F(CapcomTest, AbortVirtual) {
            .executable =
                "${runfiles_dir}/__main__/stagezero/zygote/standard_zygote",
        }}});
+       std::cerr << status.ToString() << std::endl;
   ASSERT_TRUE(status.ok());
 
   status = client.AddSubsystem(

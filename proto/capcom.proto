@@ -8,6 +8,7 @@ package stagezero.capcom.proto;
 
 import "proto/config.proto";
 import "proto/event.proto";
+import "proto/stream.proto";
 
 message InitRequest { string client_name = 1; }
 
@@ -46,6 +47,9 @@ message Process {
   // For a virtual process, the zygote must be running on the same
   // compute.
   string compute = 5;
+
+  // Stream control.
+  repeated stagezero.proto.StreamControl streams = 6;
 }
 
 message AddSubsystemRequest {

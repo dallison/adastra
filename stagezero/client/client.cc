@@ -44,7 +44,7 @@ absl::StatusOr<std::pair<std::string, int>> Client::LaunchStaticProcessInternal(
 
   for (auto &stream : opts.streams) {
     auto *s = launch->add_streams();
-    BuildStream(s, stream);
+    stream.ToProto(s);
   }
 
   stagezero::control::Response resp;
@@ -77,7 +77,7 @@ absl::StatusOr<std::pair<std::string, int>> Client::LaunchVirtualProcess(
 
   for (auto &stream : opts.streams) {
     auto *s = launch->add_streams();
-    BuildStream(s, stream);
+    stream.ToProto(s);
   }
   stagezero::control::Response resp;
   absl::Status status = SendRequestReceiveResponse(req, resp, co);
@@ -112,45 +112,6 @@ void Client::BuildProcessOptions(const std::string &name,
   options->set_sigterm_shutdown_timeout_secs(
       opts.sigterm_shutdown_timeout_secs);
   options->set_notify(opts.notify);
-}
-
-void Client::BuildStream(stagezero::control::StreamControl *out,
-                         const Stream &in) const {
-  out->set_stream_fd(in.stream_fd);
-  out->set_tty(in.tty);
-  bool direction_set = false;
-  switch (in.disposition) {
-  case Stream::Disposition::kClient:
-    out->set_disposition(stagezero::control::StreamControl::CLIENT);
-    break;
-  case Stream::Disposition::kFile:
-    out->set_disposition(stagezero::control::StreamControl::FILENAME);
-    out->set_filename(std::get<0>(in.data));
-    break;
-  case Stream::Disposition::kFd:
-    out->set_disposition(stagezero::control::StreamControl::FD);
-    out->set_fd(std::get<1>(in.data));
-    break;
-  case Stream::Disposition::kClose:
-    out->set_disposition(stagezero::control::StreamControl::CLOSE);
-    break;
-  case Stream::Disposition::kLog:
-    out->set_disposition(stagezero::control::StreamControl::LOGGER);
-    out->set_direction(stagezero::control::StreamControl::OUTPUT);
-    direction_set = true;
-    break;
-  }
-
-  if (!direction_set) {
-    switch (in.direction) {
-    case Stream::Direction::kInput:
-      out->set_direction(stagezero::control::StreamControl::INPUT);
-      break;
-    case Stream::Direction::kOutput:
-      out->set_direction(stagezero::control::StreamControl::OUTPUT);
-      break;
-    }
-  }
 }
 
 absl::Status Client::StopProcess(const std::string &process_id,
