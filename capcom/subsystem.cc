@@ -277,15 +277,55 @@ void Subsystem::RunSubsystemInState(
   }
 }
 
+OperState
+Subsystem::HandleAdminCommand(const Message &message,
+                              OperState next_state_active_clients,
+                              OperState next_state_no_active_clients) {
+  auto subsystem = shared_from_this();
+  std::cerr << "Subsystem " << subsystem->Name() << " got admin change to "
+            << AdminStateName(message.state.admin) << " in "
+            << OperStateName(subsystem->oper_state_) << " from client "
+            << message.client_id << std::endl;
+  subsystem->SendToChildren(message.state.admin, message.client_id);
+
+  if (message.state.admin == AdminState::kOnline) {
+    if (message.client_id != kNoClient) {
+      subsystem->active_clients_.Set(message.client_id);
+    }
+  } else {
+    if (message.client_id != kNoClient) {
+      subsystem->active_clients_.Clear(message.client_id);
+    }
+  }
+
+  OperState next_state;
+  if (subsystem->active_clients_.IsEmpty()) {
+    next_state = next_state_no_active_clients;
+  } else {
+    next_state = next_state_active_clients;
+  }
+  std::cerr << "next state: " << next_state << std::endl;
+  subsystem->active_clients_.Print();
+  if (next_state == subsystem->oper_state_) {
+    // We are not changing admin states, but the parent will be expecting
+    // to see an event.
+    subsystem->capcom_.SendSubsystemStatusEvent(subsystem.get());
+    subsystem->NotifyParents();
+  }
+  return next_state;
+}
+
 void Subsystem::Offline(uint32_t client_id, co::Coroutine *c) {
   oper_state_ = OperState::kOffline;
   NotifyParents();
   capcom_.SendSubsystemStatusEvent(this);
+
+  OperState next_state = OperState::kOffline;
   RunSubsystemInState(
-      c, [subsystem = shared_from_this()](
-             EventSource event_source,
-             std::shared_ptr<stagezero::Client> stagezero_client,
-             co::Coroutine * c)
+      c, [ subsystem = shared_from_this(),
+           &next_state ](EventSource event_source,
+                         std::shared_ptr<stagezero::Client> stagezero_client,
+                         co::Coroutine * c)
              ->StateTransition {
                switch (event_source) {
                case EventSource::kStageZero: {
@@ -324,34 +364,21 @@ void Subsystem::Offline(uint32_t client_id, co::Coroutine *c) {
                  }
                  switch (message->code) {
                  case Message::kChangeAdmin:
-                   std::cerr << "Subsystem " << subsystem->Name()
-                             << " got admin change in "
-                             << AdminStateName(subsystem->admin_state_)
-                             << " from client " << message->client_id
-                             << std::endl;
-                   if (message->state.admin == AdminState::kOnline) {
+                   next_state = subsystem->HandleAdminCommand(
+                       *message, OperState::kStartingChildren,
+                       OperState::kOffline);
+                   if (next_state == OperState::kStartingChildren) {
                      subsystem->admin_state_ = AdminState::kOnline;
-                     if (message->client_id != kNoClient) {
-                       subsystem->active_clients_.Set(message->client_id);
-                     }
-                     subsystem->active_clients_.Print();
-                     subsystem->EnterState(OperState::kStartingChildren,
-                                           message->client_id);
-                     return StateTransition::kLeave;
-                   } else {
-                     // No state change, but client might be waiting for an
-                     // event.
-                     subsystem->capcom_.SendSubsystemStatusEvent(
-                         subsystem.get());
                    }
-                   subsystem->NotifyParents();
                    break;
+
                  case Message::kReportOper:
                    subsystem->GetLogger().Log(
                        toolbelt::LogLevel::kInfo,
                        "Subsystem %s has reported oper state change to %s",
                        message->sender->Name().c_str(),
                        OperStateName(message->state.oper));
+                   subsystem->NotifyParents();
                    break;
                  case Message::kAbort:
                    break;
@@ -362,6 +389,10 @@ void Subsystem::Offline(uint32_t client_id, co::Coroutine *c) {
                  break;
                }
 
+               if (next_state != OperState::kOffline) {
+                 subsystem->EnterState(next_state, kNoClient);
+                 return StateTransition::kLeave;
+               }
                return StateTransition::kStay;
              });
 }
@@ -384,12 +415,13 @@ void Subsystem::StartingChildren(uint32_t client_id, co::Coroutine *c) {
     child_notified.insert(std::make_pair(child.get(), false));
   }
 
+  OperState next_state = OperState::kStartingProcesses;
   RunSubsystemInState(
       c,
-      [ subsystem = shared_from_this(), client_id,
-        &child_notified ](EventSource event_source,
-                          std::shared_ptr<stagezero::Client> stagezero_client,
-                          co::Coroutine * c)
+      [
+        subsystem = shared_from_this(), &client_id, &child_notified, &next_state
+      ](EventSource event_source,
+        std::shared_ptr<stagezero::Client> stagezero_client, co::Coroutine * c)
           ->StateTransition {
             switch (event_source) {
             case EventSource::kStageZero: {
@@ -433,25 +465,13 @@ void Subsystem::StartingChildren(uint32_t client_id, co::Coroutine *c) {
               }
               switch (message->code) {
               case Message::kChangeAdmin:
-                if (message->state.admin == AdminState::kOffline) {
-                  if (client_id != kNoClient) {
-                    subsystem->active_clients_.Clear(client_id);
-
-                    if (subsystem->active_clients_.IsEmpty()) {
-                      subsystem->admin_state_ = AdminState::kOffline;
-                      // Request to go offline while we are starting our
-                      // chilren.
-                      subsystem->EnterState(OperState::kStoppingProcesses,
-                                            client_id);
-                      return StateTransition::kLeave;
-                    }
-                  }
-                } else {
-                  // No state change, but client might be waiting for an event.
-                  subsystem->capcom_.SendSubsystemStatusEvent(subsystem.get());
+                next_state = subsystem->HandleAdminCommand(
+                    *message, OperState::kStartingProcesses,
+                    OperState::kStoppingChildren);
+                client_id = message->client_id;
+                if (next_state == OperState::kStoppingChildren) {
+                  subsystem->admin_state_ = AdminState::kOffline;
                 }
-                subsystem->NotifyParents();
-
                 break;
               case Message::kReportOper:
                 subsystem->GetLogger().Log(
@@ -459,7 +479,10 @@ void Subsystem::StartingChildren(uint32_t client_id, co::Coroutine *c) {
                     "Subsystem %s has reported oper state change to %s",
                     message->sender->Name().c_str(),
                     OperStateName(message->state.oper));
-                child_notified[message->sender] = true;
+                if (message->state.oper == OperState::kOnline) {
+                  child_notified[message->sender] = true;
+                }
+                subsystem->NotifyParents();
                 break;
               case Message::kAbort:
                 subsystem->Abort();
@@ -477,13 +500,19 @@ void Subsystem::StartingChildren(uint32_t client_id, co::Coroutine *c) {
               }
             }
 
+            if (next_state != OperState::kStartingProcesses) {
+              subsystem->EnterState(next_state, client_id);
+              return StateTransition::kLeave;
+            }
+
             // We only start when the children are online.
             for (auto &child : subsystem->children_) {
               if (child->oper_state_ != OperState::kOnline) {
                 return StateTransition::kStay;
               }
             }
-            subsystem->EnterState(OperState::kStartingProcesses, client_id);
+
+            subsystem->EnterState(next_state, client_id);
             return StateTransition::kLeave;
           });
 }
@@ -503,12 +532,13 @@ void Subsystem::StartingProcesses(uint32_t client_id, co::Coroutine *c) {
   NotifyParents();
   capcom_.SendSubsystemStatusEvent(this);
 
+  OperState next_state = OperState::kOnline;
   RunSubsystemInState(
       c,
-      [ subsystem = shared_from_this(),
-        client_id ](EventSource event_source,
-                    std::shared_ptr<stagezero::Client> stagezero_client,
-                    co::Coroutine * c)
+      [ subsystem = shared_from_this(), &client_id,
+        &next_state ](EventSource event_source,
+                      std::shared_ptr<stagezero::Client> stagezero_client,
+                      co::Coroutine * c)
           ->StateTransition {
             switch (event_source) {
             case EventSource::kStageZero: {
@@ -560,21 +590,13 @@ void Subsystem::StartingProcesses(uint32_t client_id, co::Coroutine *c) {
               }
               switch (message->code) {
               case Message::kChangeAdmin:
-                if (message->state.admin == AdminState::kOffline) {
-                  subsystem->active_clients_.Clear(client_id);
-                  if (subsystem->active_clients_.IsEmpty()) {
-                    subsystem->admin_state_ = AdminState::kOffline;
-
-                    // Request to go offline while we are starting our chilren.
-                    subsystem->EnterState(OperState::kStoppingProcesses,
-                                          client_id);
-                    return StateTransition::kLeave;
-                  }
-                } else {
-                  // No state change, but client might be waiting for an event.
-                  subsystem->capcom_.SendSubsystemStatusEvent(subsystem.get());
+                next_state = subsystem->HandleAdminCommand(
+                    *message, OperState::kOnline,
+                    OperState::kStoppingProcesses);
+                client_id = message->client_id;
+                if (next_state == OperState::kStoppingProcesses) {
+                  subsystem->admin_state_ = AdminState::kOffline;
                 }
-                subsystem->NotifyParents();
                 break;
               case Message::kReportOper:
                 subsystem->GetLogger().Log(
@@ -582,6 +604,7 @@ void Subsystem::StartingProcesses(uint32_t client_id, co::Coroutine *c) {
                     "Subsystem %s has reported oper state change to %s",
                     message->sender->Name().c_str(),
                     OperStateName(message->state.oper));
+                subsystem->NotifyParents();
                 break;
               case Message::kAbort:
                 subsystem->Abort();
@@ -597,7 +620,7 @@ void Subsystem::StartingProcesses(uint32_t client_id, co::Coroutine *c) {
               return StateTransition::kStay;
             }
 
-            subsystem->EnterState(OperState::kOnline, client_id);
+            subsystem->EnterState(next_state, client_id);
             return StateTransition::kLeave;
           });
 }
@@ -607,12 +630,13 @@ void Subsystem::Online(uint32_t client_id, co::Coroutine *c) {
   NotifyParents();
   capcom_.SendSubsystemStatusEvent(this);
 
+  OperState next_state = OperState::kOnline;
   RunSubsystemInState(
       c,
-      [ subsystem = shared_from_this(),
-        client_id ](EventSource event_source,
-                    std::shared_ptr<stagezero::Client> stagezero_client,
-                    co::Coroutine * c)
+      [ subsystem = shared_from_this(), &client_id,
+        &next_state ](EventSource event_source,
+                      std::shared_ptr<stagezero::Client> stagezero_client,
+                      co::Coroutine * c)
           ->StateTransition {
             switch (event_source) {
             case EventSource::kStageZero: {
@@ -659,31 +683,13 @@ void Subsystem::Online(uint32_t client_id, co::Coroutine *c) {
               }
               switch (message->code) {
               case Message::kChangeAdmin:
-                if (message->state.admin == AdminState::kOffline) {
-                  std::cerr << subsystem->Name() << ": Clearing client id "
-                            << message->client_id << " from active set\n";
-                  subsystem->active_clients_.Print();
-
-                  subsystem->active_clients_.Clear(message->client_id);
-                  if (subsystem->active_clients_.IsEmpty()) {
-                    subsystem->active_clients_.Print();
-
-                    std::cerr << "No active clients\n";
-                    subsystem->admin_state_ = AdminState::kOffline;
-                    subsystem->EnterState(OperState::kStoppingProcesses,
-                                          message->client_id);
-                    return StateTransition::kLeave;
-                  }
-                } else {
-                  if (message->client_id != kNoClient) {
-                    // Request to go online while already online,  Add the
-                    // client id to the active clients set.
-                    subsystem->active_clients_.Set(message->client_id);
-                  }
-                  // No state change, but client might be waiting for an event.
-                  subsystem->capcom_.SendSubsystemStatusEvent(subsystem.get());
+                next_state = subsystem->HandleAdminCommand(
+                    *message, OperState::kOnline,
+                    OperState::kStoppingProcesses);
+                client_id = message->client_id;
+                if (next_state == OperState::kStoppingProcesses) {
+                  subsystem->admin_state_ = AdminState::kOffline;
                 }
-                subsystem->NotifyParents();
                 break;
               case Message::kReportOper:
                 subsystem->GetLogger().Log(
@@ -707,6 +713,11 @@ void Subsystem::Online(uint32_t client_id, co::Coroutine *c) {
             case EventSource::kUnknown:
               break;
             }
+
+            if (next_state != OperState::kOnline) {
+              subsystem->EnterState(next_state, client_id);
+              return StateTransition::kLeave;
+            }
             return StateTransition::kStay;
           });
 }
@@ -721,11 +732,12 @@ void Subsystem::StoppingProcesses(uint32_t client_id, co::Coroutine *c) {
   NotifyParents();
   capcom_.SendSubsystemStatusEvent(this);
 
+  OperState next_state = OperState::kStoppingChildren;
   RunSubsystemInState(
-      c, [ subsystem = shared_from_this(),
-           client_id ](EventSource event_source,
-                       std::shared_ptr<stagezero::Client> stagezero_client,
-                       co::Coroutine * c)
+      c, [ subsystem = shared_from_this(), client_id,
+           &next_state ](EventSource event_source,
+                         std::shared_ptr<stagezero::Client> stagezero_client,
+                         co::Coroutine * c)
              ->StateTransition {
                switch (event_source) {
                case EventSource::kStageZero: {
@@ -749,6 +761,7 @@ void Subsystem::StoppingProcesses(uint32_t client_id, co::Coroutine *c) {
                    Process *proc =
                        subsystem->FindProcess(event->stop().process_id());
                    if (proc != nullptr) {
+                     std::cerr << "Process " << proc->Name() << " stopped\n";
                      proc->SetStopped();
                      subsystem->DeleteProcessId(proc->GetProcessId());
                    }
@@ -774,17 +787,9 @@ void Subsystem::StoppingProcesses(uint32_t client_id, co::Coroutine *c) {
                  }
                  switch (message->code) {
                  case Message::kChangeAdmin:
-                   if (message->state.admin == AdminState::kOffline) {
-                     // Request to go offline while we are stopping our
-                     // processes.
-                   } else {
-                     // Request to go online while stopping processes.  Go back
-                     // online by starting children again.
-                     subsystem->EnterState(OperState::kStartingChildren,
-                                           message->client_id);
-                     return StateTransition::kLeave;
-                   }
-                   subsystem->NotifyParents();
+                   next_state = subsystem->HandleAdminCommand(
+                       *message, OperState::kStartingProcesses,
+                       OperState::kStoppingChildren);
                    break;
                  case Message::kReportOper:
                    subsystem->GetLogger().Log(
@@ -792,6 +797,7 @@ void Subsystem::StoppingProcesses(uint32_t client_id, co::Coroutine *c) {
                        "Subsystem %s has reported oper state change to %s",
                        message->sender->Name().c_str(),
                        OperStateName(message->state.oper));
+                   subsystem->NotifyParents();
                    break;
                  case Message::kAbort:
                    subsystem->Abort();
@@ -809,7 +815,7 @@ void Subsystem::StoppingProcesses(uint32_t client_id, co::Coroutine *c) {
                  return StateTransition::kStay;
                }
                // If we have children, stop them now, otherwise we are offline.
-               subsystem->EnterState(OperState::kStoppingChildren, client_id);
+               subsystem->EnterState(next_state, client_id);
                return StateTransition::kLeave;
              });
 }
@@ -831,96 +837,132 @@ void Subsystem::StoppingChildren(uint32_t client_id, co::Coroutine *c) {
     child_notified.insert(std::make_pair(child.get(), false));
   }
 
+  absl::flat_hash_set<uint32_t> offline_requests;
+  offline_requests.insert(client_id);
+
+  OperState next_state = OperState::kOffline;
   RunSubsystemInState(
-      c, [ subsystem = shared_from_this(), client_id, &child_notified ](
-             EventSource event_source,
-             std::shared_ptr<stagezero::Client> stagezero_client,
-             co::Coroutine * c)
-             ->StateTransition {
-               switch (event_source) {
-               case EventSource::kStageZero: {
-                 // Event from stagezero.
-                 absl::StatusOr<std::shared_ptr<stagezero::control::Event>> e =
-                     stagezero_client->ReadEvent(c);
-                 if (!e.ok()) {
-                   subsystem->capcom_.logger_.Log(
-                       toolbelt::LogLevel::kError, "Failed to read event %s",
-                       e.status().ToString().c_str());
-                 }
-                 std::shared_ptr<stagezero::control::Event> event = *e;
-                 switch (event->event_case()) {
-                 case stagezero::control::Event::kStart: {
-                   // We shouldn't get this because all our processes are
-                   // stopped.
-                   break;
-                 }
-                 case stagezero::control::Event::kStop: {
-                   // We shouldn't get this because all our processes are
-                   // stopped.
-                   break;
-                 }
-                 case stagezero::control::Event::kOutput:
-                   break;
-                 case stagezero::control::Event::kLog:
-                   subsystem->capcom_.Log(event->log());
-                   break;
-                 case stagezero::control::Event::EVENT_NOT_SET:
-                   break;
-                 }
-                 break;
-               }
-               case EventSource::kMessage: {
-                 // Incoming message.
-                 absl::StatusOr<Message> message = subsystem->ReadMessage();
-                 if (!message.ok()) {
-                   subsystem->capcom_.logger_.Log(
-                       toolbelt::LogLevel::kError, "%s",
-                       message.status().ToString().c_str());
-                 }
-                 switch (message->code) {
-                 case Message::kChangeAdmin:
-                   if (message->state.admin == AdminState::kOnline) {
-                     // Request to go online while we are stopping childrem.
-                   }
-                   // TODO: report our oper state to the parents.
+      c,
+      [
+        subsystem = shared_from_this(), client_id, &child_notified, &next_state,
+        &offline_requests
+      ](EventSource event_source,
+        std::shared_ptr<stagezero::Client> stagezero_client, co::Coroutine * c)
+          ->StateTransition {
+            switch (event_source) {
+            case EventSource::kStageZero: {
+              // Event from stagezero.
+              absl::StatusOr<std::shared_ptr<stagezero::control::Event>> e =
+                  stagezero_client->ReadEvent(c);
+              if (!e.ok()) {
+                subsystem->capcom_.logger_.Log(toolbelt::LogLevel::kError,
+                                               "Failed to read event %s",
+                                               e.status().ToString().c_str());
+              }
+              std::shared_ptr<stagezero::control::Event> event = *e;
+              switch (event->event_case()) {
+              case stagezero::control::Event::kStart: {
+                // We shouldn't get this because all our processes are
+                // stopped.
+                break;
+              }
+              case stagezero::control::Event::kStop: {
+                // We shouldn't get this because all our processes are
+                // stopped.
+                break;
+              }
+              case stagezero::control::Event::kOutput:
+                break;
+              case stagezero::control::Event::kLog:
+                subsystem->capcom_.Log(event->log());
+                break;
+              case stagezero::control::Event::EVENT_NOT_SET:
+                break;
+              }
+              break;
+            }
+            case EventSource::kMessage: {
+              // Incoming message.
+              absl::StatusOr<Message> message = subsystem->ReadMessage();
+              if (!message.ok()) {
+                subsystem->capcom_.logger_.Log(
+                    toolbelt::LogLevel::kError, "%s",
+                    message.status().ToString().c_str());
+              }
+              switch (message->code) {
+              case Message::kChangeAdmin:
+                next_state = subsystem->HandleAdminCommand(
+                    *message, OperState::kStartingChildren,
+                    OperState::kOffline);
 
-                   break;
-                 case Message::kReportOper:
-                   subsystem->GetLogger().Log(
-                       toolbelt::LogLevel::kInfo,
-                       "Subsystem %s has reported oper state change to %s",
-                       message->sender->Name().c_str(),
-                       OperStateName(message->state.oper));
-                   child_notified[message->sender] = true;
-                   break;
-                 case Message::kAbort:
-                   subsystem->Abort();
-                   return StateTransition::kLeave;
-                 }
-                 break;
-               }
-               case EventSource::kUnknown:
-                 break;
-               }
+                // We are trying to stop the children.  They may or may not
+                // go offline depending on the other active clients that need
+                // themm.  We need to keep track of all the clients that have
+                // requested that we go offline and only go offline when all of
+                // them have been removed from the active client list in the
+                // children.
+                if (message->state.admin == AdminState::kOffline) {
+                  offline_requests.insert(message->client_id);
+                } else {
+                  offline_requests.erase(message->client_id);
+                }
+                break;
+              case Message::kReportOper:
+                subsystem->GetLogger().Log(
+                    toolbelt::LogLevel::kInfo,
+                    "Subsystem %s has reported oper state change to %s",
+                    message->sender->Name().c_str(),
+                    OperStateName(message->state.oper));
 
-               for (auto & [ child, notified ] : child_notified) {
-                 if (!notified) {
-                   return StateTransition::kStay;
-                 }
-               }
+                // The children may be going offline or staying online depending
+                // on their active clients.  Record when we get an event saying
+                // that they are in this state.
+                if (message->state.oper == OperState::kOnline ||
+                    message->state.oper == OperState::kOffline) {
+                  child_notified[message->sender] = true;
+                }
+                subsystem->NotifyParents();
+                break;
+              case Message::kAbort:
+                subsystem->Abort();
+                return StateTransition::kLeave;
+              }
+              break;
+            }
+            case EventSource::kUnknown:
+              break;
+            }
 
-               // We are going offline, but our children might stay online
-               // if they are needed by other subsystems.  We can't check
-               // for their oper state, but we can check if they still contain
-               // our client id.
-               for (auto &child : subsystem->children_) {
-                 if (child->active_clients_.Contains(client_id)) {
-                   return StateTransition::kStay;
-                 }
-               }
-               subsystem->EnterState(OperState::kOffline, client_id);
-               return StateTransition::kLeave;
-             });
+            for (auto & [ child, notified ] : child_notified) {
+              if (!notified) {
+                return StateTransition::kStay;
+              }
+            }
+
+            if (next_state == OperState::kStartingChildren) {
+              subsystem->EnterState(next_state, client_id);
+              return StateTransition::kLeave;
+            }
+
+            std::cerr << subsystem->Name()
+                      << " all children notified, checking\n";
+            // We are going offline, but our children might stay online
+            // if they are needed by other subsystems.  We can't check
+            // for their oper state, but we can check if they still contain
+            // any of the client ids requested to go offline.
+
+            for (auto &child : subsystem->children_) {
+              for (auto &id : offline_requests) {
+                std::cerr << "checking id " << id << std::endl;
+                if (child->active_clients_.Contains(id)) {
+                  return StateTransition::kStay;
+                }
+              }
+            }
+            std::cerr << subsystem->Name() << " going offline\n";
+            subsystem->EnterState(next_state, client_id);
+            return StateTransition::kLeave;
+          });
 }
 
 void Subsystem::RestartNow(uint32_t client_id) {
@@ -1336,7 +1378,7 @@ void Process::ParseStreams(
     const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
         &streams) {
   for (auto &s : streams) {
-    std::cerr << "Capcom parsing stream "<< s.DebugString();
+    std::cerr << "Capcom parsing stream " << s.DebugString();
     Stream stream;
     if (absl::Status status = stream.FromProto(s); !status.ok()) {
       capcom_.logger_.Log(toolbelt::LogLevel::kError,

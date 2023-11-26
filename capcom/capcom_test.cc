@@ -623,6 +623,7 @@ TEST_F(CapcomTest, RestartSimpleSubsystemTree) {
   WaitForState(client, "parent", AdminState::kOffline, OperState::kOffline);
 
   status = client.RemoveSubsystem("child", false);
+  std::cerr << status << std::endl;
   ASSERT_TRUE(status.ok());
 
   status = client.RemoveSubsystem("parent", false);

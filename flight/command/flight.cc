@@ -56,7 +56,6 @@ absl::Status StartCommand::Execute(int argc, char **argv) const {
     return absl::InternalError("usage: flight start <subsystem>");
   }
   std::string subsystem = argv[2];
-  std::cerr << "Sending StartSubsystem " << subsystem << std::endl;
   return client_.StartSubsystem(subsystem);
 }
 
@@ -74,8 +73,8 @@ absl::Status StatusCommand::Execute(int argc, char **argv) const {
     return subsystems.status();
   }
   for (auto& subsystem : *subsystems) {
-    std::cout << "Subsystem " << subsystem.subsystem << " Admin: " << AdminStateName(subsystem.admin_state) << 
-    " Oper: " << OperStateName(subsystem.oper_state) << std::endl;
+    std::cout << "Subsystem " << subsystem.subsystem << " " << AdminStateName(subsystem.admin_state) << 
+    "/" << OperStateName(subsystem.oper_state) << std::endl;
   }
   return absl::OkStatus();
 }

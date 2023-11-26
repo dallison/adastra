@@ -333,6 +333,10 @@ private:
     restart_delay_ = 1s;
   }
 
+  OperState HandleAdminCommand(const Message &message,
+                                        OperState next_state_no_active_clients,
+                                        OperState next_state_active_clients);
+
   co::CoroutineScheduler &Scheduler();
 
   std::string name_;

@@ -288,6 +288,7 @@ absl::Status Client::WaitForSubsystemState(const std::string &subsystem,
     if (event->type == EventType::kSubsystemStatus) {
       SubsystemStatus &s = std::get<0>(event->event);
       if (s.subsystem == subsystem) {
+        std::cerr << "event " << AdminStateName(s.admin_state) << " " << OperStateName(s.oper_state) << std::endl;
         if (admin_state == s.admin_state) {
           if (s.admin_state == AdminState::kOnline &&
               s.oper_state == OperState::kBroken) {

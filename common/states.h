@@ -31,30 +31,30 @@ enum class OperState {
 inline const char *AdminStateName(AdminState s) {
   switch (s) {
   case AdminState::kOnline:
-    return "kOnline";
+    return "online";
   case AdminState::kOffline:
-    return "kOffline";
+    return "offline";
   }
 }
 
 inline const char *OperStateName(OperState s) {
   switch (s) {
   case OperState::kOnline:
-    return "kOnline";
+    return "online";
   case OperState::kOffline:
-    return "kOffline";
+    return "offline";
   case OperState::kStartingChildren:
-    return "kStartingShildren";
+    return "starting-children";
   case OperState::kStartingProcesses:
-    return "kStartingProcesses";
+    return "starting-processes";
   case OperState::kStoppingProcesses:
-    return "kStoppingProcesses";
+    return "stopping-processes";
   case OperState::kStoppingChildren:
-    return "kStoppingChildren";
+    return "stopping-children";
   case OperState::kRestarting:
-    return "kRestarting";  
+    return "restarting";  
    case OperState::kBroken:
-    return "kBroken";  
+    return "broken";  
    }
 }
 
