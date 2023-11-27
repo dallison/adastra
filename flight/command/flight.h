@@ -27,6 +27,12 @@ class Command {
   std::string root_;
 };
 
+class HelpCommand : public Command {
+ public:
+  HelpCommand(flight::client::Client &client) : Command(client, "help") {}
+  absl::Status Execute(int argc, char **argv) const override;
+};
+
 class StartCommand : public Command {
  public:
   StartCommand(flight::client::Client &client) : Command(client, "start") {}
@@ -55,6 +61,7 @@ class FlightCommand {
  public:
   FlightCommand(toolbelt::InetAddress flight_addr);
 
+  void Connect();
   void Run(int argc, char **argv);
 
  private:

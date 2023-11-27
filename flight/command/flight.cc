@@ -16,6 +16,10 @@ namespace stagezero::flight {
 
 FlightCommand::FlightCommand(toolbelt::InetAddress flight_addr)
     : flight_addr_(flight_addr) {
+  InitCommands();
+}
+
+void FlightCommand::Connect() {
   if (absl::Status status = client_.Init(flight_addr_, "FlightCommand");
       !status.ok()) {
     std::cerr << "Can't connect to FlightDirector at address "
@@ -23,7 +27,6 @@ FlightCommand::FlightCommand(toolbelt::InetAddress flight_addr)
               << std::endl;
     exit(1);
   }
-  InitCommands();
 }
 
 void FlightCommand::InitCommands() {
@@ -31,6 +34,7 @@ void FlightCommand::InitCommands() {
   AddCommand(std::make_unique<StopCommand>(client_));
   AddCommand(std::make_unique<StatusCommand>(client_));
   AddCommand(std::make_unique<AbortCommand>(client_));
+  AddCommand(std::make_unique<HelpCommand>(client_));
 }
 
 void FlightCommand::AddCommand(std::unique_ptr<Command> cmd) {
@@ -49,10 +53,22 @@ void FlightCommand::Run(int argc, char **argv) {
     std::cerr << "unknown flight command " << root << std::endl;
     exit(1);
   }
+  if (it->first != "help") {
+    Connect();
+  }
   if (absl::Status status = it->second->Execute(argc, argv); !status.ok()) {
     std::cerr << status.ToString() << std::endl;
     exit(1);
   }
+}
+
+absl::Status HelpCommand::Execute(int argc, char **argv) const {
+  std::cout << "Control Flight Director\n";
+  std::cout << "  flight start <subsystem> - start a subsystem running\n";
+  std::cout << "  flight stop <subsystem> - stop a subsystem\n";
+  std::cout << "  flight status - show status of all subsystems\n";
+  std::cout << "  flight abort <subsystem> - abort all subsystems\n";
+  return absl::OkStatus();
 }
 
 absl::Status StartCommand::Execute(int argc, char **argv) const {
