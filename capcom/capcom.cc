@@ -51,16 +51,13 @@ void Capcom::CloseHandler(std::shared_ptr<ClientHandler> handler) {
   }
 }
 
-absl::Status
-Capcom::HandleIncomingConnection(toolbelt::TCPSocket &listen_socket,
-                                 co::Coroutine *c) {
+absl::Status Capcom::HandleIncomingConnection(
+    toolbelt::TCPSocket &listen_socket, co::Coroutine *c) {
   absl::StatusOr<toolbelt::TCPSocket> s = listen_socket.Accept(c);
   if (!s.ok()) {
     return s.status();
   }
 
-  std::cout << "client handler address: " << s->BoundAddress().ToString()
-            << std::endl;
   if (absl::Status status = s->SetCloseOnExec(); !status.ok()) {
     return status;
   }
@@ -100,7 +97,6 @@ void Capcom::ListenerCoroutine(toolbelt::TCPSocket &listen_socket,
 }
 
 void Capcom::Log(const stagezero::control::LogMessage &msg) {
-  std::cerr << "Logging " << msg.DebugString();
   uint64_t size = msg.ByteSizeLong();
   // Write length prefix.
   ssize_t n = ::write(log_message_.Fd(), &size, sizeof(size));
@@ -146,27 +142,27 @@ void Capcom::LoggerCoroutine(co::Coroutine *c) {
 
 void Capcom::LoggerFlushCoroutine(co::Coroutine *c) {
   for (;;) {
-    c->Millisleep(500); // Flush the log buffer every 500ms.
+    c->Millisleep(500);  // Flush the log buffer every 500ms.
     for (auto & [ timestamp, msg ] : log_buffer_) {
       toolbelt::LogLevel level;
       switch (msg->level()) {
-      case control::LogMessage::VERBOSE:
-        level = toolbelt::LogLevel::kVerboseDebug;
-        break;
-      case control::LogMessage::DBG:
-        level = toolbelt::LogLevel::kDebug;
-        break;
-      case control::LogMessage::INFO:
-        level = toolbelt::LogLevel::kInfo;
-        break;
-      case control::LogMessage::WARNING:
-        level = toolbelt::LogLevel::kWarning;
-        break;
-      case control::LogMessage::ERR:
-        level = toolbelt::LogLevel::kError;
-        break;
-      default:
-        continue;
+        case control::LogMessage::VERBOSE:
+          level = toolbelt::LogLevel::kVerboseDebug;
+          break;
+        case control::LogMessage::DBG:
+          level = toolbelt::LogLevel::kDebug;
+          break;
+        case control::LogMessage::INFO:
+          level = toolbelt::LogLevel::kInfo;
+          break;
+        case control::LogMessage::WARNING:
+          level = toolbelt::LogLevel::kWarning;
+          break;
+        case control::LogMessage::ERR:
+          level = toolbelt::LogLevel::kError;
+          break;
+        default:
+          continue;
       }
       logger_.Log(level, timestamp, msg->process_name(), msg->text());
 
@@ -193,7 +189,7 @@ void Capcom::LoggerFlushCoroutine(co::Coroutine *c) {
 }
 
 absl::Status Capcom::Run() {
-  std::cerr << "Capcom running on address " << addr_.ToString() << std::endl;
+  logger_.Log(toolbelt::LogLevel::kInfo, "Capcom running on address %s", addr_.ToString().c_str());
 
   toolbelt::TCPSocket listen_socket;
 
@@ -278,8 +274,8 @@ std::vector<Subsystem *> Capcom::GetSubsystems() const {
   return result;
 }
 
-std::vector<Alarm *> Capcom::GetAlarms() const {
-  std::vector<Alarm *> result;
+std::vector<Alarm> Capcom::GetAlarms() const {
+  std::vector<Alarm> result;
   for (auto &s : subsystems_) {
     s.second->CollectAlarms(result);
   }
@@ -301,12 +297,9 @@ absl::Status Capcom::Abort(const std::string &reason, co::Coroutine *c) {
   // Make sure all the subsystems are admin offline, oper offline.  If we
   // go ahead and kill the processes without waiting, the subsystems will
   // get notified that their process has died and will attempt to restart it.
-  std::cerr << "waiting for subsystems to go offline\n";
   for (;;) {
     bool all_offline = true;
     for (auto & [ name, subsys ] : subsystems_) {
-      std::cerr << "checking subsystem " << subsys->Name() << " "
-                << subsys->IsOffline() << std::endl;
       if (!subsys->IsOffline()) {
         std::cerr << subsys->Name() << " is not offline\n";
         all_offline = false;
@@ -319,7 +312,6 @@ absl::Status Capcom::Abort(const std::string &reason, co::Coroutine *c) {
     c->Millisleep(20);
   }
 
-  std::cerr << " all subsystems offline\n";
   // Now tell all computes (the stagezero running on them) to kill
   // all the processes.
   std::vector<Compute *> computes;
@@ -335,7 +327,6 @@ absl::Status Capcom::Abort(const std::string &reason, co::Coroutine *c) {
 
   for (auto &compute : computes) {
     stagezero::Client client;
-    std::cerr << "sending abort to " << compute->name << std::endl;
     if (absl::Status status = client.Init(compute->addr, "<capcom abort>");
         !status.ok()) {
       result = absl::InternalError(
@@ -367,8 +358,6 @@ absl::Status Capcom::AddGlobalVariable(const Variable &var, co::Coroutine *c) {
 
   for (auto &compute : computes) {
     stagezero::Client client;
-    std::cerr << "sending set global variable to " << compute->name
-              << std::endl;
     if (absl::Status status =
             client.Init(compute->addr, "<set global variable>");
         !status.ok()) {
@@ -388,4 +377,4 @@ absl::Status Capcom::AddGlobalVariable(const Variable &var, co::Coroutine *c) {
   return result;
 }
 
-} // namespace stagezero::capcom
+}  // namespace stagezero::capcom

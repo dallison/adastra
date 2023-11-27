@@ -7,8 +7,8 @@
 #include "capcom/capcom.h"
 #include "coroutine.h"
 
-#include <iostream>
 #include <signal.h>
+#include <iostream>
 
 stagezero::capcom::Capcom *g_capcom;
 co::CoroutineScheduler *g_scheduler;
@@ -43,7 +43,8 @@ int main(int argc, char **argv) {
 
   toolbelt::InetAddress capcom_addr("localhost", absl::GetFlag(FLAGS_port));
 
-  stagezero::capcom::Capcom capcom(scheduler, capcom_addr, absl::GetFlag(FLAGS_log_file), -1);
+  stagezero::capcom::Capcom capcom(scheduler, capcom_addr,
+                                   absl::GetFlag(FLAGS_log_file), -1);
   g_capcom = &capcom;
 
   if (absl::Status status = capcom.Run(); !status.ok()) {

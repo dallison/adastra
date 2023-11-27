@@ -2,18 +2,18 @@
 // All Rights Reserved
 // See LICENSE file for licensing information.
 
+#include "stagezero/client/client.h"
+#include <gtest/gtest.h>
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
-#include "stagezero/client/client.h"
 #include "stagezero/stagezero.h"
-#include <gtest/gtest.h>
 
-#include <fstream>
 #include <inttypes.h>
-#include <memory>
 #include <signal.h>
-#include <sstream>
 #include <sys/resource.h>
+#include <fstream>
+#include <memory>
+#include <sstream>
 #include <thread>
 
 ABSL_FLAG(bool, start_server, true, "Start the stagezero server");
@@ -21,7 +21,7 @@ ABSL_FLAG(bool, start_server, true, "Start the stagezero server");
 void SignalHandler(int sig);
 
 class ClientTest : public ::testing::Test {
-public:
+ public:
   // We run one server for the duration of the whole test suite.
   static void SetUpTestSuite() {
     if (!absl::GetFlag(FLAGS_start_server)) {
@@ -136,7 +136,7 @@ public:
 
   static stagezero::StageZero *Server() { return server_.get(); }
 
-private:
+ private:
   static co::CoroutineScheduler scheduler_;
   static std::string socket_;
   static int server_pipe_[2];
@@ -532,12 +532,12 @@ TEST_F(ClientTest, Vars) {
       client.GetGlobalVariable("foobar");
   ASSERT_TRUE(var_status2.ok());
   ASSERT_EQ("barfoo", var_status2->first);
-  ASSERT_FALSE(var_status2->second); // Not exported.
+  ASSERT_FALSE(var_status2->second);  // Not exported.
 
   var_status2 = client.GetGlobalVariable("FOOBAR");
   ASSERT_TRUE(var_status2.ok());
   ASSERT_EQ("BARFOO", var_status2->first);
-  ASSERT_TRUE(var_status2->second); // Exported.
+  ASSERT_TRUE(var_status2->second);  // Exported.
 }
 
 TEST_F(ClientTest, ProcessVars) {
@@ -554,12 +554,12 @@ TEST_F(ClientTest, ProcessVars) {
       client.GetGlobalVariable("foobar");
   ASSERT_TRUE(var_status2.ok());
   ASSERT_EQ("barfoo", var_status2->first);
-  ASSERT_FALSE(var_status2->second); // Not exported.
+  ASSERT_FALSE(var_status2->second);  // Not exported.
 
   var_status2 = client.GetGlobalVariable("FOOBAR");
   ASSERT_TRUE(var_status2.ok());
   ASSERT_EQ("BARFOO", var_status2->first);
-  ASSERT_TRUE(var_status2->second); // Exported.
+  ASSERT_TRUE(var_status2->second);  // Exported.
 
   var_status2 = client.GetGlobalVariable("runfiles_dir");
   ASSERT_TRUE(var_status2.ok());

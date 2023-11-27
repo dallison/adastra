@@ -12,8 +12,8 @@
 #include "toolbelt/sockets.h"
 #include "toolbelt/triggerfd.h"
 
-#include "absl/container/flat_hash_map.h"
 #include <list>
+#include "absl/container/flat_hash_map.h"
 
 #include "coroutine.h"
 
@@ -24,10 +24,9 @@ class Capcom;
 class ClientHandler
     : public common::TCPClientHandler<proto::Request, proto::Response,
                                       stagezero::proto::Event> {
-public:
+ public:
   ClientHandler(Capcom &capcom, toolbelt::TCPSocket socket, uint32_t id)
       : TCPClientHandler(std::move(socket)), capcom_(capcom), id_(id) {
-    std::cerr << "Capcom client id " << id << " connected\n";
   }
   ~ClientHandler();
 
@@ -40,7 +39,7 @@ public:
 
   void AddCoroutine(std::unique_ptr<co::Coroutine> c) override;
 
-private:
+ private:
   std::shared_ptr<ClientHandler> shared_from_this() {
     return std::static_pointer_cast<ClientHandler>(
         TCPClientHandler<proto::Request, proto::Response,
@@ -91,4 +90,4 @@ private:
   Capcom &capcom_;
   uint32_t id_;
 };
-} // namespace stagezero::capcom
+}  // namespace stagezero::capcom

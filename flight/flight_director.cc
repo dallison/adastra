@@ -47,8 +47,6 @@ FlightDirector::HandleIncomingConnection(toolbelt::TCPSocket &listen_socket,
     return s.status();
   }
 
-  std::cout << "client handler address: " << s->BoundAddress().ToString()
-            << std::endl;
   if (absl::Status status = s->SetCloseOnExec(); !status.ok()) {
     return status;
   }
@@ -235,7 +233,6 @@ absl::Status FlightDirector::LoadAllSubsystemGraphsFromDir(
 
 absl::StatusOr<std::unique_ptr<proto::SubsystemGraph>>
 FlightDirector::PreloadSubsystemGraph(const std::filesystem::path &file) {
-  std::cerr << "preloading subsystem " << file << std::endl;
   toolbelt::FileDescriptor fd(open(file.c_str(), O_RDONLY));
   if (!fd.Valid()) {
     return absl::InternalError(
@@ -264,7 +261,6 @@ FlightDirector::PreloadSubsystemGraph(const std::filesystem::path &file) {
 
 static void ParseProcessOptions(Process *process,
                                 const proto::ProcessOptions &options) {
-
   for (auto &var : options.vars()) {
     process->vars.push_back(
         {.name = var.name(), .value = var.value(), .exported = var.exported()});
@@ -327,7 +323,6 @@ static void ParseStream(const std::string &process_name,
                         std::vector<Stream> *vec) {
   Stream s;
 
-  std::cerr << "parsing stream " << stream.DebugString();
   switch (stream.where()) {
   case flight::proto::Stream::STAGEZERO:
     s.disposition = Stream::Disposition::kStageZero;
@@ -376,12 +371,10 @@ absl::Status FlightDirector::LoadSubsystemGraph(
     Compute compute = {c.name(), toolbelt::InetAddress(c.ip_addr(), c.port())};
 
     AddCompute(c.name(), std::move(compute));
-    std::cerr << "Added compute " << c.name() << std::endl;
   }
 
   // Global variables.
   for (auto &v : graph->var()) {
-    std::cerr << "Adding global variable " << v.name() << std::endl;
     Variable var = {
         .name = v.name(), .value = v.value(), .exported = v.exported()};
 
@@ -389,7 +382,6 @@ absl::Status FlightDirector::LoadSubsystemGraph(
   }
 
   for (auto &s : graph->subsystem()) {
-    std::cerr << "Adding subsystem " << s.name() << std::endl;
     Subsystem *subsystem = FindSubsystem(s.name());
     assert(subsystem != nullptr);
 
@@ -409,6 +401,19 @@ absl::Status FlightDirector::LoadSubsystemGraph(
       }
       subsystem->deps.push_back(dep);
     }
+
+    // If we have any modules, add a dependency to subspace, if it's not already
+    // there.  And only if there's a subsystem called "subspace".
+    if (!s.module().empty()) {
+      Subsystem *subspace = FindSubsystem("subspace");
+      if (subspace != nullptr) {
+        if (std::find(subsystem->deps.begin(), subsystem->deps.end(),
+                      subspace) == subsystem->deps.end()) {
+          subsystem->deps.push_back(subspace);
+        }
+      }
+    }
+
     for (auto &arg : s.arg()) {
       subsystem->args.push_back(arg);
     }
@@ -581,14 +586,11 @@ void FlightDirector::FlattenSubsystemGraphRecurse(
 
 absl::Status FlightDirector::RegisterCompute(const Compute &compute,
                                              co::Coroutine *c) {
-  std::cerr << "Registering compute " << compute.name << ": "
-            << compute.addr.ToString() << std::endl;
   return capcom_client_.AddCompute(compute.name, compute.addr, c);
 }
 
 absl::Status FlightDirector::RegisterGlobalVariable(const Variable &var,
                                                     co::Coroutine *c) {
-  std::cerr << "Registering global variable " << var.name << std::endl;
   return capcom_client_.AddGlobalVariable(var, c);
 }
 
@@ -670,6 +672,7 @@ absl::Status FlightDirector::RegisterSubsystemGraph(Subsystem *root,
     for (auto &dep : subsystem->deps) {
       options.children.push_back(dep->name);
     }
+
     // Add subsytem vars and args.
     for (auto &arg : subsystem->args) {
       options.args.push_back(arg);

@@ -4,10 +4,10 @@
 
 #pragma once
 
-#include "common/vars.h"
-#include "common/stream.h"
 #include <string>
 #include <vector>
+#include "common/stream.h"
+#include "common/vars.h"
 #include "proto/flight.pb.h"
 
 namespace stagezero::flight {
@@ -31,7 +31,7 @@ struct Process {
   std::vector<Stream> streams;
   std::string user;
   std::string group;
-  
+
   virtual ~Process() = default;
   virtual ProcessType Type() const = 0;
 };
@@ -60,5 +60,4 @@ struct Subsystem {
   std::vector<std::string> args;
 };
 
-
-} // namespace stagezero::flight
+}  // namespace stagezero::flight

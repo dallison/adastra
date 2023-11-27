@@ -3,8 +3,8 @@
 // See LICENSE file for licensing information.
 
 #include "module/module.h"
-#include "absl/strings/numbers.h"
 #include <cerrno>
+#include "absl/strings/numbers.h"
 
 namespace stagezero::module {
 
@@ -179,7 +179,7 @@ absl::StatusOr<void *> PublisherBase::GetMessageBuffer(size_t size,
                     << wait_status.ToString() << std::endl;
           abort();
         }
-        continue; // Try again to get a buffer
+        continue;  // Try again to get a buffer
       } else {
         return absl::InternalError(
             absl::StrFormat("Failed to get buffer for publisher to channel %s",
@@ -222,4 +222,4 @@ void PublisherBase::ReleaseSubscribers() {
   }
 }
 
-} // namespace stagezero::module
+}  // namespace stagezero::module

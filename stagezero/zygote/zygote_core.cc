@@ -10,12 +10,12 @@
 #include "toolbelt/hexdump.h"
 
 #include <dlfcn.h>
-#include <iostream>
 #include <stdlib.h>
-#include <string>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <iostream>
+#include <string>
 
 extern "C" const char **environ;
 
@@ -131,11 +131,9 @@ void ZygoteCore::WaitForSpawn(co::Coroutine *c) {
   }
 }
 
-absl::Status
-ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
-                        control::SpawnResponse *resp,
-                        std::vector<toolbelt::FileDescriptor> &&fds) {
-  std::cerr << "Zygote handling spawn" << req.DebugString() << std::endl;
+absl::Status ZygoteCore::HandleSpawn(
+    const control::SpawnRequest &req, control::SpawnResponse *resp,
+    std::vector<toolbelt::FileDescriptor> &&fds) {
 
   // Update all global symbols.
   for (auto &var : req.global_vars()) {
@@ -177,6 +175,8 @@ ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
     // Child.
     // Close control socket.
     control_socket_.reset();
+
+    local_symbols.AddSymbol("pid", absl::StrFormat("%d", getpid()), false);
 
     for (auto &stream : req.streams()) {
       (void)close(stream.fd());
@@ -230,7 +230,7 @@ void ZygoteCore::InvokeMainAfterSpawn(const control::SpawnRequest &&req,
   }
 
   std::vector<const char *> argv;
-  argv.push_back(exe.c_str()); // Executable.
+  argv.push_back(exe.c_str());  // Executable.
   for (auto &arg : args) {
     argv.push_back(arg.c_str());
   }
@@ -249,4 +249,4 @@ void ZygoteCore::InvokeMainAfterSpawn(const control::SpawnRequest &&req,
   exit(main(argv.size(), argv.data(), environ));
 }
 
-} // namespace stagezero
+}  // namespace stagezero

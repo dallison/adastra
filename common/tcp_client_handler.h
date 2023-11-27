@@ -4,13 +4,13 @@
 
 #pragma once
 
+#include <list>
+#include <memory>
 #include "absl/container/flat_hash_map.h"
 #include "toolbelt/hexdump.h"
 #include "toolbelt/logging.h"
 #include "toolbelt/sockets.h"
 #include "toolbelt/triggerfd.h"
-#include <list>
-#include <memory>
 
 #include "coroutine.h"
 
@@ -21,7 +21,7 @@ namespace stagezero::common {
 template <typename Request, typename Response, typename Event>
 class TCPClientHandler : public std::enable_shared_from_this<
                              TCPClientHandler<Request, Response, Event>> {
-public:
+ public:
   TCPClientHandler(toolbelt::TCPSocket socket)
       : command_socket_(std::move(socket)) {}
   virtual ~TCPClientHandler() = default;
@@ -47,7 +47,7 @@ public:
   // event will be sent asychrnonously by a coroutine.
   absl::Status QueueEvent(std::shared_ptr<Event> event);
 
-protected:
+ protected:
   static constexpr size_t kMaxMessageSize = 4096;
 
   virtual absl::Status HandleMessage(const Request &req, Response &resp,
@@ -55,8 +55,6 @@ protected:
 
   // Init the client and return the port number for the event channel.
   absl::StatusOr<int> Init(const std::string &client_name, co::Coroutine *c);
-
-
 
   // Coroutine spawned by Init to send events in the order queued by
   // QueueEvent.
@@ -84,7 +82,6 @@ inline void TCPClientHandler<Request, Response, Event>::Run(co::Coroutine *c) {
     absl::StatusOr<ssize_t> n = command_socket_.ReceiveMessage(
         command_buffer_, sizeof(command_buffer_), c);
     if (!n.ok()) {
-      printf("ReceiveMessage error %s\n", n.status().ToString().c_str());
       return;
     }
 
@@ -116,17 +113,14 @@ inline void TCPClientHandler<Request, Response, Event>::Run(co::Coroutine *c) {
 }
 
 template <typename Request, typename Response, typename Event>
-inline absl::StatusOr<int>
-TCPClientHandler<Request, Response, Event>::Init(const std::string &client_name,
-                                                 co::Coroutine *c) {
+inline absl::StatusOr<int> TCPClientHandler<Request, Response, Event>::Init(
+    const std::string &client_name, co::Coroutine *c) {
   client_name_ = client_name;
 
   // Event channel is an ephemeral port.
   toolbelt::InetAddress event_channel_addr = command_socket_.BoundAddress();
   event_channel_addr.SetPort(0);
 
-  std::cout << "binding event channel to " << event_channel_addr.ToString()
-            << std::endl;
   // Open listen socket.
   toolbelt::TCPSocket listen_socket;
   if (absl::Status status = listen_socket.SetCloseOnExec(); !status.ok()) {
@@ -144,34 +138,38 @@ TCPClientHandler<Request, Response, Event>::Init(const std::string &client_name,
   }
 
   // Spawn a coroutine to accept the event channel connection.
-  AddCoroutine(std::make_unique<co::Coroutine>(GetScheduler(), [
-    client = this->shared_from_this(), listen_socket = std::move(listen_socket)
-  ](co::Coroutine * c2) mutable {
-    std::cout << "accepting event channel " << std::endl;
-    absl::StatusOr socket = listen_socket.Accept(c2);
-    if (!socket.ok()) {
-      client->GetLogger().Log(toolbelt::LogLevel::kError,
-                              "Failed to open event channel: %s",
-                              socket.status().ToString().c_str());
-      return;
-    }
+  AddCoroutine(std::make_unique<co::Coroutine>(
+      GetScheduler(),
+      [
+        client = this->shared_from_this(),
+        listen_socket = std::move(listen_socket)
+      ](co::Coroutine * c2) mutable {
+        absl::StatusOr socket = listen_socket.Accept(c2);
+        if (!socket.ok()) {
+          client->GetLogger().Log(toolbelt::LogLevel::kError,
+                                  "Failed to open event channel: %s",
+                                  socket.status().ToString().c_str());
+          return;
+        }
 
-    if (absl::Status status = socket->SetCloseOnExec(); !status.ok()) {
-      client->GetLogger().Log(
-          toolbelt::LogLevel::kError,
-          "Failed to set close-on-exec on event channel: %s",
-          socket.status().ToString().c_str());
-      return;
-    }
-    client->SetEventSocket(std::move(*socket));
-    client->GetLogger().Log(toolbelt::LogLevel::kInfo, "Event channel open");
+        if (absl::Status status = socket->SetCloseOnExec(); !status.ok()) {
+          client->GetLogger().Log(
+              toolbelt::LogLevel::kError,
+              "Failed to set close-on-exec on event channel: %s",
+              socket.status().ToString().c_str());
+          return;
+        }
+        client->SetEventSocket(std::move(*socket));
+        client->GetLogger().Log(toolbelt::LogLevel::kInfo,
+                                "Event channel open");
 
-    // Start the event sender coroutine.
-    client->AddCoroutine(std::make_unique<co::Coroutine>(
-        client->GetScheduler(),
-        [client](co::Coroutine *c2) { client->EventSenderCoroutine(c2); },
-        absl::StrFormat("EventSender.%s", client->GetClientName())));
-  }, absl::StrFormat("ClientHandler/event_acceptor.%s", GetClientName())));
+        // Start the event sender coroutine.
+        client->AddCoroutine(std::make_unique<co::Coroutine>(
+            client->GetScheduler(),
+            [client](co::Coroutine *c2) { client->EventSenderCoroutine(c2); },
+            absl::StrFormat("EventSender.%s", client->GetClientName())));
+      },
+      absl::StrFormat("ClientHandler/event_acceptor.%s", GetClientName())));
   return event_port;
 }
 
@@ -229,4 +227,4 @@ inline void TCPClientHandler<Request, Response, Event>::EventSenderCoroutine(
     }
   }
 }
-} // namespace stagezero::common
+}  // namespace stagezero::common

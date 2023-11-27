@@ -7,8 +7,8 @@
 #include "coroutine.h"
 #include "stagezero/stagezero.h"
 
-#include <iostream>
 #include <signal.h>
+#include <iostream>
 
 stagezero::StageZero *g_stagezero;
 co::CoroutineScheduler *g_scheduler;
@@ -36,7 +36,7 @@ int main(int argc, char **argv) {
   signal(SIGTERM, Signal);
   signal(SIGHUP, Signal);
   signal(SIGQUIT, Signal);
-  
+
   co::CoroutineScheduler scheduler;
   g_scheduler = &scheduler;
 

@@ -2,20 +2,20 @@
 // All Rights Reserved
 // See LICENSE file for licensing information.
 
+#include "capcom/capcom.h"
+#include <gtest/gtest.h>
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
-#include "capcom/capcom.h"
 #include "capcom/client/client.h"
 #include "capcom/subsystem.h"
 #include "stagezero/stagezero.h"
-#include <gtest/gtest.h>
 
-#include <fstream>
 #include <inttypes.h>
-#include <memory>
 #include <signal.h>
-#include <sstream>
 #include <sys/resource.h>
+#include <fstream>
+#include <memory>
+#include <sstream>
 #include <thread>
 
 ABSL_FLAG(bool, start_capcom, true, "Start capcom");
@@ -31,7 +31,7 @@ void SignalHandler(int sig);
 void SignalQuitHandler(int sig);
 
 class CapcomTest : public ::testing::Test {
-public:
+ public:
   // We run one server for the duration of the whole test suite.
   static void SetUpTestSuite() {
     if (!absl::GetFlag(FLAGS_start_capcom)) {
@@ -180,7 +180,7 @@ public:
   static stagezero::capcom::Capcom *Capcom() { return capcom_.get(); }
   static stagezero::StageZero *StageZero() { return stagezero_.get(); }
 
-private:
+ private:
   static co::CoroutineScheduler capcom_scheduler_;
   static int capcom_pipe_[2];
   static std::unique_ptr<stagezero::capcom::Capcom> capcom_;
@@ -711,7 +711,7 @@ TEST_F(CapcomTest, AbortVirtual) {
            .executable =
                "${runfiles_dir}/__main__/stagezero/zygote/standard_zygote",
        }}});
-       std::cerr << status.ToString() << std::endl;
+  std::cerr << status.ToString() << std::endl;
   ASSERT_TRUE(status.ok());
 
   status = client.AddSubsystem(
@@ -805,7 +805,6 @@ TEST_F(CapcomTest, TalkAndListen) {
 
   status = client.RemoveSubsystem("chat", true);
   ASSERT_TRUE(status.ok());
-
 }
 
 int main(int argc, char **argv) {

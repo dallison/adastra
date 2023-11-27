@@ -50,7 +50,7 @@ struct Message {
 };
 
 class Process {
-public:
+ public:
   Process(Capcom &capcom, std::string name,
           std::shared_ptr<stagezero::Client> client)
       : capcom_(capcom), name_(name), client_(client) {}
@@ -71,9 +71,16 @@ public:
   void RaiseAlarm(Capcom &capcom, const Alarm &alarm);
   void ClearAlarm(Capcom &capcom);
 
+  const Alarm* GetAlarm() const {
+    if (alarm_raised_) {
+      return &alarm_;
+    }
+    return nullptr;
+  }
+
   virtual bool IsZygote() const { return false; }
 
-protected:
+ protected:
   void ParseOptions(const stagezero::config::ProcessOptions &options);
   void ParseStreams(
       const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
@@ -99,7 +106,7 @@ protected:
 };
 
 class StaticProcess : public Process {
-public:
+ public:
   StaticProcess(
       Capcom &capcom, std::string name, std::string executable,
       const stagezero::config::ProcessOptions &options,
@@ -108,12 +115,12 @@ public:
       std::shared_ptr<stagezero::Client> client);
   absl::Status Launch(co::Coroutine *c) override;
 
-protected:
+ protected:
   std::string executable_;
 };
 
 class Zygote : public StaticProcess {
-public:
+ public:
   Zygote(
       Capcom &capcom, std::string name, std::string executable,
       const stagezero::config::ProcessOptions &options,
@@ -127,7 +134,7 @@ public:
 };
 
 class VirtualProcess : public Process {
-public:
+ public:
   VirtualProcess(
       Capcom &capcom, std::string name, std::string zygote_name,
       std::string dso, std::string main_func,
@@ -137,38 +144,38 @@ public:
       std::shared_ptr<stagezero::Client> client);
   absl::Status Launch(co::Coroutine *c) override;
 
-private:
+ private:
   std::string zygote_name_;
   std::string dso_;
   std::string main_func_;
 };
 
 class Subsystem : public std::enable_shared_from_this<Subsystem> {
-public:
+ public:
   Subsystem(std::string name, Capcom &capcom);
   ~Subsystem() {
-    std::cerr << "Subsystem " << Name() << " destructed" << std::endl;
   }
 
-  absl::Status
-  AddStaticProcess(const stagezero::config::StaticProcess &proc,
-                   const stagezero::config::ProcessOptions &options,
-                   const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
+  absl::Status AddStaticProcess(
+      const stagezero::config::StaticProcess &proc,
+      const stagezero::config::ProcessOptions &options,
+      const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
           &streams,
-                   const Compute *compute, co::Coroutine *c);
+      const Compute *compute, co::Coroutine *c);
 
-  absl::Status AddZygote(const stagezero::config::StaticProcess &proc,
-                         const stagezero::config::ProcessOptions &options,
-                         const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
+  absl::Status AddZygote(
+      const stagezero::config::StaticProcess &proc,
+      const stagezero::config::ProcessOptions &options,
+      const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
           &streams,
-                         const Compute *compute, co::Coroutine *c);
+      const Compute *compute, co::Coroutine *c);
 
-  absl::Status
-  AddVirtualProcess(const stagezero::config::VirtualProcess &proc,
-                    const stagezero::config::ProcessOptions &options,
-                    const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
+  absl::Status AddVirtualProcess(
+      const stagezero::config::VirtualProcess &proc,
+      const stagezero::config::ProcessOptions &options,
+      const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
           &streams,
-                    const Compute *compute, co::Coroutine *c);
+      const Compute *compute, co::Coroutine *c);
 
   void RemoveProcess(const std::string &name);
 
@@ -186,8 +193,6 @@ public:
   void BuildStatus(stagezero::proto::SubsystemStatus *status);
 
   void AddChild(std::shared_ptr<Subsystem> child) {
-    std::cerr << "ADDING CHILD " << child->Name() << " to " << Name()
-              << std::endl;
     children_.push_back(child);
   }
 
@@ -217,18 +222,18 @@ public:
         "Subsystem %s is not a parent of %s", parent->Name(), Name()));
   }
 
-  void CollectAlarms(std::vector<Alarm *> &alarms) const;
+  void CollectAlarms(std::vector<Alarm> &alarms) const;
 
   bool IsOffline() const {
     return admin_state_ == AdminState::kOffline &&
            oper_state_ == OperState::kOffline;
   }
 
-private:
+ private:
   enum class EventSource {
     kUnknown,
-    kStageZero, // StageZero (process state or data).
-    kMessage,   // Message from parents, children or API.
+    kStageZero,  // StageZero (process state or data).
+    kMessage,    // Message from parents, children or API.
   };
 
   enum class StateTransition {
@@ -284,8 +289,8 @@ private:
     return true;
   }
 
-  absl::StatusOr<std::shared_ptr<stagezero::Client>>
-  ConnectToStageZero(const Compute *compute, co::Coroutine *c);
+  absl::StatusOr<std::shared_ptr<stagezero::Client>> ConnectToStageZero(
+      const Compute *compute, co::Coroutine *c);
 
   // State event processing coroutines.
   // General event processor.  Calls handler for incoming events
@@ -334,8 +339,8 @@ private:
   }
 
   OperState HandleAdminCommand(const Message &message,
-                                        OperState next_state_no_active_clients,
-                                        OperState next_state_active_clients);
+                               OperState next_state_no_active_clients,
+                               OperState next_state_active_clients);
 
   co::CoroutineScheduler &Scheduler();
 
@@ -378,4 +383,4 @@ private:
       computes_;
 };
 
-} // namespace stagezero::capcom
+}  // namespace stagezero::capcom

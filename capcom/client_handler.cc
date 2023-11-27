@@ -34,59 +34,60 @@ absl::Status ClientHandler::SendAlarm(const Alarm &alarm) {
   auto event = std::make_shared<stagezero::proto::Event>();
   auto a = event->mutable_alarm();
   alarm.ToProto(a);
-  std::cerr << "SENDING ALARM " << a->DebugString() << std::endl;
   return QueueEvent(std::move(event));
 }
 
 absl::Status ClientHandler::HandleMessage(const proto::Request &req,
                                           proto::Response &resp,
                                           co::Coroutine *c) {
-  std::cerr << "incoming capcom " << req.DebugString();
   switch (req.request_case()) {
-  case proto::Request::kInit:
-    HandleInit(req.init(), resp.mutable_init(), c);
-    break;
-  case proto::Request::kAddCompute:
-    HandleAddCompute(req.add_compute(), resp.mutable_add_compute(), c);
-    break;
+    case proto::Request::kInit:
+      HandleInit(req.init(), resp.mutable_init(), c);
+      break;
+    case proto::Request::kAddCompute:
+      HandleAddCompute(req.add_compute(), resp.mutable_add_compute(), c);
+      break;
 
-  case proto::Request::kRemoveCompute:
-    HandleRemoveCompute(req.remove_compute(), resp.mutable_remove_compute(), c);
-    break;
+    case proto::Request::kRemoveCompute:
+      HandleRemoveCompute(req.remove_compute(), resp.mutable_remove_compute(),
+                          c);
+      break;
 
-  case proto::Request::kAddSubsystem:
-    HandleAddSubsystem(req.add_subsystem(), resp.mutable_add_subsystem(), c);
-    break;
+    case proto::Request::kAddSubsystem:
+      HandleAddSubsystem(req.add_subsystem(), resp.mutable_add_subsystem(), c);
+      break;
 
-  case proto::Request::kRemoveSubsystem:
-    HandleRemoveSubsystem(req.remove_subsystem(),
-                          resp.mutable_remove_subsystem(), c);
-    break;
-  case proto::Request::kStartSubsystem:
-    HandleStartSubsystem(req.start_subsystem(), resp.mutable_start_subsystem(),
-                         c);
-    break;
-  case proto::Request::kStopSubsystem:
-    HandleStopSubsystem(req.stop_subsystem(), resp.mutable_stop_subsystem(), c);
-    break;
-  case proto::Request::kGetSubsystems:
-    HandleGetSubsystems(req.get_subsystems(), resp.mutable_get_subsystems(), c);
-    break;
-  case proto::Request::kGetAlarms:
-    HandleGetAlarms(req.get_alarms(), resp.mutable_get_alarms(), c);
-    break;
+    case proto::Request::kRemoveSubsystem:
+      HandleRemoveSubsystem(req.remove_subsystem(),
+                            resp.mutable_remove_subsystem(), c);
+      break;
+    case proto::Request::kStartSubsystem:
+      HandleStartSubsystem(req.start_subsystem(),
+                           resp.mutable_start_subsystem(), c);
+      break;
+    case proto::Request::kStopSubsystem:
+      HandleStopSubsystem(req.stop_subsystem(), resp.mutable_stop_subsystem(),
+                          c);
+      break;
+    case proto::Request::kGetSubsystems:
+      HandleGetSubsystems(req.get_subsystems(), resp.mutable_get_subsystems(),
+                          c);
+      break;
+    case proto::Request::kGetAlarms:
+      HandleGetAlarms(req.get_alarms(), resp.mutable_get_alarms(), c);
+      break;
 
-  case proto::Request::kAbort:
-    HandleAbort(req.abort(), resp.mutable_abort(), c);
-    break;
+    case proto::Request::kAbort:
+      HandleAbort(req.abort(), resp.mutable_abort(), c);
+      break;
 
-  case proto::Request::kAddGlobalVariable:
-    HandleAddGlobalVariable(req.add_global_variable(),
-                            resp.mutable_add_global_variable(), c);
-    break;
+    case proto::Request::kAddGlobalVariable:
+      HandleAddGlobalVariable(req.add_global_variable(),
+                              resp.mutable_add_global_variable(), c);
+      break;
 
-  case proto::Request::REQUEST_NOT_SET:
-    return absl::InternalError("Protocol error: unknown request");
+    case proto::Request::REQUEST_NOT_SET:
+      return absl::InternalError("Protocol error: unknown request");
   }
   return absl::OkStatus();
 }
@@ -131,8 +132,6 @@ void ClientHandler::HandleAddCompute(const proto::AddComputeRequest &req,
         compute.name(), stagezero_addr.ToString()));
     return;
   }
-
-  std::cerr << "trying to add compute\n";
 
   Compute c2 = {compute.name(), toolbelt::InetAddress(addr)};
   bool ok = capcom_.AddCompute(compute.name(), c2);
@@ -180,38 +179,40 @@ void ClientHandler::HandleAddSubsystem(const proto::AddSubsystemRequest &req,
     }
 
     switch (proc.proc_case()) {
-    case proto::Process::kStaticProcess:
-      if (absl::Status status = subsystem->AddStaticProcess(
-              proc.static_process(), proc.options(), proc.streams(), compute, c);
-          !status.ok()) {
-        response->set_error(
-            absl::StrFormat("Failed to add static process %s: %s",
-                            proc.options().name(), status.ToString()));
-        return;
-      }
-      break;
-    case proto::Process::kZygote:
-      if (absl::Status status =
-              subsystem->AddZygote(proc.zygote(), proc.options(), proc.streams(), compute, c);
-          !status.ok()) {
-        response->set_error(absl::StrFormat("Failed to add zygote %s: %s",
-                                            proc.options().name(),
-                                            status.ToString()));
-        return;
-      }
-      break;
-    case proto::Process::kVirtualProcess:
-      if (absl::Status status = subsystem->AddVirtualProcess(
-              proc.virtual_process(), proc.options(), proc.streams(), compute, c);
-          !status.ok()) {
-        response->set_error(
-            absl::StrFormat("Failed to add virtual process %s: %s",
-                            proc.options().name(), status.ToString()));
-        return;
-      }
-      break;
-    case proto::Process::PROC_NOT_SET:
-      break;
+      case proto::Process::kStaticProcess:
+        if (absl::Status status = subsystem->AddStaticProcess(
+                proc.static_process(), proc.options(), proc.streams(), compute,
+                c);
+            !status.ok()) {
+          response->set_error(
+              absl::StrFormat("Failed to add static process %s: %s",
+                              proc.options().name(), status.ToString()));
+          return;
+        }
+        break;
+      case proto::Process::kZygote:
+        if (absl::Status status = subsystem->AddZygote(
+                proc.zygote(), proc.options(), proc.streams(), compute, c);
+            !status.ok()) {
+          response->set_error(absl::StrFormat("Failed to add zygote %s: %s",
+                                              proc.options().name(),
+                                              status.ToString()));
+          return;
+        }
+        break;
+      case proto::Process::kVirtualProcess:
+        if (absl::Status status = subsystem->AddVirtualProcess(
+                proc.virtual_process(), proc.options(), proc.streams(), compute,
+                c);
+            !status.ok()) {
+          response->set_error(
+              absl::StrFormat("Failed to add virtual process %s: %s",
+                              proc.options().name(), status.ToString()));
+          return;
+        }
+        break;
+      case proto::Process::PROC_NOT_SET:
+        break;
     }
   }
 
@@ -303,10 +304,10 @@ void ClientHandler::HandleGetSubsystems(const proto::GetSubsystemsRequest &req,
 void ClientHandler::HandleGetAlarms(const proto::GetAlarmsRequest &req,
                                     proto::GetAlarmsResponse *response,
                                     co::Coroutine *c) {
-  std::vector<Alarm *> alarms = capcom_.GetAlarms();
-  for (auto alarm : alarms) {
+  std::vector<Alarm> alarms = capcom_.GetAlarms();
+  for (auto& alarm : alarms) {
     auto *a = response->add_alarms();
-    alarm->ToProto(a);
+    alarm.ToProto(a);
   }
 }
 
@@ -321,10 +322,12 @@ void ClientHandler::HandleAbort(const proto::AbortRequest &req,
 void ClientHandler::HandleAddGlobalVariable(
     const proto::AddGlobalVariableRequest &req,
     proto::AddGlobalVariableResponse *response, co::Coroutine *c) {
-      Variable var = {.name = req.var().name(), .value = req.var().value(), .exported = req.var().exported()};
+  Variable var = {.name = req.var().name(),
+                  .value = req.var().value(),
+                  .exported = req.var().exported()};
   if (absl::Status status = capcom_.AddGlobalVariable(std::move(var), c);
       !status.ok()) {
     response->set_error(status.ToString());
   }
 }
-} // namespace stagezero::capcom
+}  // namespace stagezero::capcom

@@ -1,13 +1,13 @@
-#include <iostream>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string>
-#include <vector>
 #include <unistd.h>
 #include <algorithm>
+#include <iostream>
+#include <string>
+#include <vector>
 
-int main(int argc, char **argv, char** envp) {
+int main(int argc, char** argv, char** envp) {
   char* notify = getenv("STAGEZERO_NOTIFY_FD");
   if (notify != nullptr) {
     int notify_fd = atoi(notify);

@@ -3,15 +3,15 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <vector>
 #include <string>
+#include <vector>
 
 void Signal(int sig) { printf("Signal %d\n", sig); }
 
 extern "C" {
-extern char** environ;
+extern char **environ;
 
-int Main(int argc, char **argv, char** envp) {
+int Main(int argc, char **argv, char **envp) {
   for (int i = 0; i < argc; i++) {
     printf("arg[%d]: %s\n", i, argv[i]);
   }

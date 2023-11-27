@@ -2,12 +2,12 @@
 // All Rights Reserved
 // See LICENSE file for licensing information.
 
+#include <signal.h>
+#include <filesystem>
+#include <iostream>
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
 #include "flight/flight_director.h"
-#include <filesystem>
-#include <iostream>
-#include <signal.h>
 
 stagezero::flight::FlightDirector *g_flight;
 co::CoroutineScheduler *g_scheduler;
@@ -18,7 +18,7 @@ static void Signal(int sig) {
   }
   if (g_flight != nullptr) {
     g_flight->Stop();
-  } 
+  }
   if (sig == SIGINT || sig == SIGTERM) {
     return;
   }
@@ -39,7 +39,7 @@ int main(int argc, char **argv) {
   signal(SIGINT, Signal);
   signal(SIGTERM, Signal);
   signal(SIGQUIT, Signal);
-  
+
   toolbelt::InetAddress capcom("localhost", absl::GetFlag(FLAGS_capcom_port));
   toolbelt::InetAddress flight_addr("localhost", absl::GetFlag(FLAGS_port));
 

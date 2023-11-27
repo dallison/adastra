@@ -4,8 +4,8 @@
 
 #pragma once
 
-#include "proto/event.pb.h"
 #include <string>
+#include "proto/event.pb.h"
 
 namespace stagezero {
 
@@ -47,4 +47,4 @@ struct Alarm {
   void FromProto(const proto::Alarm &src);
 };
 
-} // namespace stagezero::capcom
+}  // namespace stagezero

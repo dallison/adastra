@@ -9,7 +9,6 @@ namespace stagezero::flight::client {
 
 absl::Status Client::Init(toolbelt::InetAddress addr, const std::string &name,
                           co::Coroutine *co) {
-
   auto fill_init = [name](flight::proto::Request &req) {
     auto init = req.mutable_init();
     init->set_client_name(name);
@@ -145,8 +144,8 @@ absl::Status Client::Abort(const std::string &reason, co::Coroutine *c) {
   return absl::OkStatus();
 }
 
-absl::StatusOr<std::vector<SubsystemStatus>>
-Client::GetSubsystems(co::Coroutine *c) {
+absl::StatusOr<std::vector<SubsystemStatus>> Client::GetSubsystems(
+    co::Coroutine *c) {
   if (c == nullptr) {
     c = co_;
   }
@@ -175,4 +174,4 @@ Client::GetSubsystems(co::Coroutine *c) {
   return result;
 }
 
-} // namespace stagezero::flight::client
+}  // namespace stagezero::flight::client

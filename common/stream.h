@@ -1,9 +1,9 @@
 #pragma once
 
-#include "proto/stream.pb.h"
+#include <variant>
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
-#include <variant>
+#include "proto/stream.pb.h"
 
 namespace stagezero {
 
@@ -31,5 +31,4 @@ struct Stream {
   absl::Status FromProto(const proto::StreamControl &src);
 };
 
-
-}
+}  // namespace stagezero

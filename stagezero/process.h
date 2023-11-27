@@ -23,9 +23,9 @@ class ClientHandler;
 struct StreamInfo {
   proto::StreamControl::Direction direction;
   proto::StreamControl::Disposition disposition;
-  toolbelt::FileDescriptor read_fd;  // Read end of pipe or tty.
-  toolbelt::FileDescriptor write_fd; // Write end.
-  int fd;                            // Process fd to map to.
+  toolbelt::FileDescriptor read_fd;   // Read end of pipe or tty.
+  toolbelt::FileDescriptor write_fd;  // Write end.
+  int fd;                             // Process fd to map to.
 };
 
 // Ownership of processes is complex due to the fact that the
@@ -35,12 +35,14 @@ struct StreamInfo {
 // will be deleted when the Process has been removed from the
 // StageZero map and all coroutines have finished running.
 class Process : public std::enable_shared_from_this<Process> {
-public:
-  Process(co::CoroutineScheduler &scheduler, std::shared_ptr<ClientHandler> client, std::string name);
-  virtual ~Process() { std::cerr << "Process " << name_ << " destructed" << std::endl; }
+ public:
+  Process(co::CoroutineScheduler &scheduler,
+          std::shared_ptr<ClientHandler> client, std::string name);
+  virtual ~Process() {
+  }
 
-  virtual absl::Status Start(co::Coroutine* c) = 0;
-  virtual absl::Status Stop(co::Coroutine* c);
+  virtual absl::Status Start(co::Coroutine *c) = 0;
+  virtual absl::Status Stop(co::Coroutine *c);
   void KillNow();
 
   virtual bool IsZygote() const { return false; }
@@ -49,8 +51,8 @@ public:
   absl::Status CloseFileDescriptor(int fd);
 
   const std::string &GetId() const { return process_id_; }
-  
-  const std::string& Name() const { return name_; }
+
+  const std::string &Name() const { return name_; }
 
   int WaitLoop(co::Coroutine *c, int timeout_secs);
 
@@ -64,8 +66,10 @@ public:
 
   const std::shared_ptr<StreamInfo> FindNotifyStream() const;
 
-  const std::vector<std::shared_ptr<StreamInfo>>& GetStreams() const { return streams_; }
-  
+  const std::vector<std::shared_ptr<StreamInfo>> &GetStreams() const {
+    return streams_;
+  }
+
   void SetSignalTimeouts(int sigint, int sigterm) {
     sigint_timeout_secs_ = sigint;
     sigterm_timeout_secs_ = sigterm;
@@ -74,12 +78,12 @@ public:
   int SigIntTimeoutSecs() const { return sigint_timeout_secs_; }
   int SigTermTimeoutSecs() const { return sigterm_timeout_secs_; }
 
-  void SetUserAndGroup(const std::string& user, const std::string& group) {
+  void SetUserAndGroup(const std::string &user, const std::string &group) {
     user_ = user;
     group_ = group;
   }
-  
-protected:
+
+ protected:
   virtual int Wait() = 0;
   absl::Status BuildStreams(
       const google::protobuf::RepeatedPtrField<proto::StreamControl> &streams,
@@ -101,15 +105,18 @@ protected:
 };
 
 class StaticProcess : public Process {
-public:
-  StaticProcess(co::CoroutineScheduler &scheduler, std::shared_ptr<ClientHandler> client,
+ public:
+  StaticProcess(co::CoroutineScheduler &scheduler,
+                std::shared_ptr<ClientHandler> client,
                 const stagezero::control::LaunchStaticProcessRequest &&req);
 
-  absl::Status Start(co::Coroutine* c) override;
+  absl::Status Start(co::Coroutine *c) override;
   bool WillNotify() const override { return req_.opts().notify(); }
-  int StartupTimeoutSecs() const override { return req_.opts().startup_timeout_secs(); }
+  int StartupTimeoutSecs() const override {
+    return req_.opts().startup_timeout_secs();
+  }
 
-protected:
+ protected:
   absl::Status StartInternal(const std::vector<std::string> extra_env_vars,
                              bool send_start_event);
   absl::Status ForkAndExec(const std::vector<std::string> extra_env_vars);
@@ -118,20 +125,20 @@ protected:
 };
 
 class Zygote : public StaticProcess {
-public:
-  Zygote(co::CoroutineScheduler &scheduler, std::shared_ptr<ClientHandler> client,
+ public:
+  Zygote(co::CoroutineScheduler &scheduler,
+         std::shared_ptr<ClientHandler> client,
          const stagezero::control::LaunchStaticProcessRequest &&req)
       : StaticProcess(scheduler, client, std::move(req)) {
-    std::cerr << "Zygote created " << req_.DebugString() << std::endl;
   }
 
-  absl::Status Start(co::Coroutine* c) override;
+  absl::Status Start(co::Coroutine *c) override;
 
-  absl::StatusOr<int>
-  Spawn(const stagezero::control::LaunchVirtualProcessRequest &req,
-  const std::vector<std::shared_ptr<StreamInfo>>& streams,
+  absl::StatusOr<int> Spawn(
+      const stagezero::control::LaunchVirtualProcessRequest &req,
+      const std::vector<std::shared_ptr<StreamInfo>> &streams,
 
-        co::Coroutine *c);
+      co::Coroutine *c);
 
   bool IsZygote() const override { return true; }
 
@@ -139,25 +146,28 @@ public:
     control_socket_ = std::move(s);
   }
 
-private:
+ private:
   std::pair<std::string, int> BuildControlSocketName();
 
   toolbelt::UnixSocket control_socket_;
 };
 
 class VirtualProcess : public Process {
-public:
-  VirtualProcess(co::CoroutineScheduler &scheduler, std::shared_ptr<ClientHandler> client,
+ public:
+  VirtualProcess(co::CoroutineScheduler &scheduler,
+                 std::shared_ptr<ClientHandler> client,
                  const stagezero::control::LaunchVirtualProcessRequest &&req);
 
-  absl::Status Start(co::Coroutine* c) override;
+  absl::Status Start(co::Coroutine *c) override;
   bool WillNotify() const override { return req_.opts().notify(); }
-  int StartupTimeoutSecs() const override { return req_.opts().startup_timeout_secs(); }
+  int StartupTimeoutSecs() const override {
+    return req_.opts().startup_timeout_secs();
+  }
 
-private:
+ private:
   int Wait() override;
 
   stagezero::control::LaunchVirtualProcessRequest req_;
 };
 
-} // namespace stagezero
+}  // namespace stagezero

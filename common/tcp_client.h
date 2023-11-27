@@ -4,37 +4,39 @@
 
 #pragma once
 
+#include <memory>
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "coroutine.h"
 #include "toolbelt/sockets.h"
-#include <memory>
 
 namespace stagezero {
 
-template <typename Request, typename Response, typename Event> class TCPClient {
-public:
+template <typename Request, typename Response, typename Event>
+class TCPClient {
+ public:
   TCPClient(co::Coroutine *co = nullptr) : co_(co) {}
   ~TCPClient() = default;
 
-  absl::Status
-  Init(toolbelt::InetAddress addr, const std::string &name,
-       std::function<void(Request &)> fill_request,
-       std::function<absl::StatusOr<int>(const Response &)> parse_response,
-       co::Coroutine *c = nullptr);
+  absl::Status Init(
+      toolbelt::InetAddress addr, const std::string &name,
+      std::function<void(Request &)> fill_request,
+      std::function<absl::StatusOr<int>(const Response &)> parse_response,
+      co::Coroutine *c = nullptr);
 
   toolbelt::FileDescriptor GetEventFd() const {
     return event_socket_.GetFileDescriptor();
   }
 
   // Wait for an incoming event.
-  absl::StatusOr<std::shared_ptr<Event>>
-  WaitForProtoEvent(co::Coroutine *c = nullptr) {
+  absl::StatusOr<std::shared_ptr<Event>> WaitForProtoEvent(
+      co::Coroutine *c = nullptr) {
     return ReadProtoEvent(c);
   }
-  absl::StatusOr<std::shared_ptr<Event>> ReadProtoEvent(co::Coroutine *c = nullptr);
+  absl::StatusOr<std::shared_ptr<Event>> ReadProtoEvent(
+      co::Coroutine *c = nullptr);
 
-protected:
+ protected:
   static constexpr size_t kMaxMessageSize = 4096;
 
   absl::Status SendRequestReceiveResponse(const Request &req,
@@ -85,9 +87,6 @@ absl::Status TCPClient<Request, Response, Event>::Init(
 
   toolbelt::InetAddress event_addr = addr;
   event_addr.SetPort(*event_port);
-
-  std::cout << "flight connecting to event port " << event_addr.ToString()
-            << std::endl;
 
   if (absl::Status status = event_socket_.Connect(event_addr); !status.ok()) {
     return status;
@@ -157,4 +156,4 @@ absl::Status TCPClient<Request, Response, Event>::SendRequestReceiveResponse(
 
   return absl::OkStatus();
 }
-} // namespace stagezero
+}  // namespace stagezero

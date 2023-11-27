@@ -3,13 +3,13 @@
 // See LICENSE file for licensing information.
 
 #include "stagezero/stagezero.h"
-#include "absl/strings/str_format.h"
-#include "stagezero/client_handler.h"
-#include "toolbelt/sockets.h"
 #include <fcntl.h>
 #include <sys/poll.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include "absl/strings/str_format.h"
+#include "stagezero/client_handler.h"
+#include "toolbelt/sockets.h"
 
 #if defined(__APPLE__)
 // For _NSGetExecutablePath
@@ -38,9 +38,8 @@ void StageZero::CloseHandler(std::shared_ptr<ClientHandler> handler) {
   }
 }
 
-absl::Status
-StageZero::HandleIncomingConnection(toolbelt::TCPSocket &listen_socket,
-                                    co::Coroutine *c) {
+absl::Status StageZero::HandleIncomingConnection(
+    toolbelt::TCPSocket &listen_socket, co::Coroutine *c) {
   absl::StatusOr<toolbelt::TCPSocket> s = listen_socket.Accept(c);
   if (!s.ok()) {
     return s.status();
@@ -141,7 +140,7 @@ absl::Status StageZero::Run() {
   }
   global_symbols_.AddSymbol("runfiles_dir", runfiles_dir, false);
 
-  std::cerr << "StageZero running on address " << addr_.ToString() << std::endl;
+  logger_.Log(toolbelt::LogLevel::kInfo, "StageZero running on address %s", addr_.ToString().c_str());
   toolbelt::TCPSocket listen_socket;
 
   if (absl::Status status = listen_socket.SetCloseOnExec(); !status.ok()) {
@@ -169,9 +168,8 @@ absl::Status StageZero::Run() {
   // Register a callback to be called when a coroutine completes.  The
   // server keeps track of all coroutines created.
   // This deletes them when they are done.
-  co_scheduler_.SetCompletionCallback([this](co::Coroutine *c) {
-    coroutines_.erase(c);
-  });
+  co_scheduler_.SetCompletionCallback(
+      [this](co::Coroutine *c) { coroutines_.erase(c); });
 
   // Start the listener coroutine.
   coroutines_.insert(
@@ -196,7 +194,8 @@ absl::Status StageZero::Run() {
 }
 
 void StageZero::KillAllProcesses() {
-  logger_.Log(toolbelt::LogLevel::kInfo, "Kill all processes on StageZero exit");
+  logger_.Log(toolbelt::LogLevel::kInfo,
+              "Kill all processes on StageZero exit");
   // Copy all processes out of the processes_ map as we will
   // be removing them as they are killed.
   std::vector<std::shared_ptr<Process>> procs;
@@ -236,4 +235,4 @@ void StageZero::KillAllProcesses(co::Coroutine *c) {
     c->Millisleep(100);
   }
 }
-} // namespace stagezero
+}  // namespace stagezero

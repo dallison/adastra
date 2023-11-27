@@ -23,15 +23,18 @@
 #else
 #error "Unknown OS"
 #endif
-#include <pwd.h>
 #include <grp.h>
+#include <pwd.h>
 
 namespace stagezero {
 
 Process::Process(co::CoroutineScheduler &scheduler,
                  std::shared_ptr<ClientHandler> client, std::string name)
     : scheduler_(scheduler), client_(std::move(client)), name_(std::move(name)),
-      local_symbols_(client_->GetGlobalSymbols()) {}
+      local_symbols_(client_->GetGlobalSymbols()) {
+        // Add a locall symbol "name" for the process name.
+        local_symbols_.AddSymbol("name", name_, false);
+      }
 
 void Process::SetProcessId() {
   process_id_ = absl::StrFormat("%s/%s@%s:%d", client_->GetClientName(), name_,
@@ -146,8 +149,9 @@ StaticProcess::StartInternal(const std::vector<std::string> extra_env_vars,
           }
         }
         int status = proc->WaitLoop(c, -1);
-        std::cerr << "process " << proc->Name() << " exited with status "
-                  << status << std::endl;
+        client->GetLogger().Log(toolbelt::LogLevel::kInfo,
+                                "static process %s exited with status %d",
+                                proc->Name().c_str(), status);
 
         // The process might have died due to an external signal.  If we didn't
         // kill it, we won't have removed it from the maps.  We try to do this
@@ -261,7 +265,6 @@ absl::Status Process::BuildStreams(
   }
 
   for (const proto::StreamControl &s : streams) {
-    std::cerr << "****** STREAM " << s.DebugString() << std::endl;
     auto stream = std::make_shared<StreamInfo>();
     proto::StreamControl::Direction direction = s.direction();
     stream->direction = direction;
@@ -285,13 +288,12 @@ absl::Status Process::BuildStreams(
       // For an output stream start a coroutine to read from the pipe/tty
       // and send as an event.
       //
-      // An input stream is handled by an incoming InputData command that writes
-      // to the write end of the pipe/tty.
+      // An input stream is handled by an incoming InputData command that
+      // writes to the write end of the pipe/tty.
       if (stream->direction == proto::StreamControl::OUTPUT) {
         client_->AddCoroutine(std::make_unique<co::Coroutine>(
             scheduler_, [ proc = shared_from_this(), stream,
                           client = client_ ](co::Coroutine * c) {
-              std::cout << "relay to client coroutine running" << std::endl;
               absl::Status status = StreamFromFileDescriptor(
                   stream->read_fd.Fd(),
                   [proc, stream, client](const char *buf,
@@ -301,7 +303,6 @@ absl::Status Process::BuildStreams(
                                                    buf, len);
                   },
                   c);
-              std::cout << "relay to client coroutine done" << std::endl;
             }));
       }
       break;
@@ -318,7 +319,6 @@ absl::Status Process::BuildStreams(
       client_->AddCoroutine(std::make_unique<co::Coroutine>(
           scheduler_, [ proc = shared_from_this(), stream,
                         client = client_ ](co::Coroutine * c) {
-            std::cout << "logger coroutine running" << std::endl;
             absl::Status status = StreamFromFileDescriptor(
                 stream->read_fd.Fd(),
                 [proc, stream, client](const char *buf,
@@ -330,7 +330,6 @@ absl::Status Process::BuildStreams(
                       proc->Name(), std::string(buf, len));
                 },
                 c);
-            std::cout << "relay to client coroutine done" << std::endl;
           }));
 
       break;
@@ -382,7 +381,7 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
   gid_t gid = getegid();
 
   if (!user_.empty()) {
-    struct passwd* p = getpwnam(user_.c_str());
+    struct passwd *p = getpwnam(user_.c_str());
     if (p == nullptr) {
       return absl::InternalError(absl::StrFormat("Unknown user %s", user_));
     }
@@ -391,7 +390,7 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
   }
 
   if (!group_.empty()) {
-    struct group* g = getgrnam(group_.c_str());
+    struct group *g = getgrnam(group_.c_str());
     if (g == nullptr) {
       return absl::InternalError(absl::StrFormat("Unknown group %s", group_));
     }
@@ -444,6 +443,10 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
         }
       }
     }
+
+    // Set some local variables for the process.
+    local_symbols_.AddSymbol("pid", absl::StrFormat("%d", getpid()), false);
+
     // Copy args with symbols replaced into local memory to keep the
     // strings around for the argv array.
     std::vector<std::string> args;
@@ -496,7 +499,7 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
       seteuid(uid);
       setegid(gid);
     }
-    
+
     execve(exe.c_str(),
            reinterpret_cast<char *const *>(const_cast<char **>(argv.data())),
            reinterpret_cast<char *const *>(const_cast<char **>(env.data())));
@@ -512,7 +515,6 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
       toolbelt::FileDescriptor &fd =
           stream->direction == proto::StreamControl::OUTPUT ? stream->write_fd
                                                             : stream->read_fd;
-      printf("ForkAndExec: closing %d\n", fd.Fd());
       fd.Reset();
     }
   }
@@ -790,11 +792,10 @@ absl::Status VirtualProcess::Start(co::Coroutine *c) {
           return;
         }
 
-        printf("virtual process waiting\n");
-
         int status = proc->WaitLoop(c2, -1);
-        std::cerr << "virtual process " << proc->Name()
-                  << " exited with status " << status << std::endl;
+        client->GetLogger().Log(toolbelt::LogLevel::kInfo,
+                                "virtual process %s exited with status %d",
+                                proc->Name().c_str(), status);
         if (proc->IsStopping()) {
           // Intentionally stopped.
           eventStatus = client->SendProcessStopEvent(proc->GetId(), true, 0, 0);
@@ -816,7 +817,6 @@ int VirtualProcess::Wait() {
   int e = ::kill(pid_, 0);
   if (e == -1) {
     running_ = false;
-    printf("virtual process terminated\n");
     return 127;
   }
   return 0;

@@ -12,17 +12,20 @@
 
 namespace stagezero::module {
 
-template <typename MessageType> struct ProtobufSerializedLength {
+template <typename MessageType>
+struct ProtobufSerializedLength {
   static uint64_t Invoke(const MessageType &msg) { return msg.ByteSizeLong(); }
 };
 
-template <typename MessageType> struct ProtobufSerialize {
+template <typename MessageType>
+struct ProtobufSerialize {
   static uint64_t Invoke(const MessageType &msg, void *buffer, size_t buflen) {
     return msg.SerializeToArray(buffer, buflen);
   }
 };
 
-template <typename MessageType> struct ProtobufDeserialize {
+template <typename MessageType>
+struct ProtobufDeserialize {
   static uint64_t Invoke(MessageType &msg, const void *buffer, size_t buflen) {
     return msg.ParseFromArray(buffer, buflen);
   }
@@ -38,9 +41,8 @@ using ProtobufPublisher =
     Publisher<MessageType, ProtobufSerializedLength<MessageType>,
               ProtobufSerialize<MessageType>>;
 
-
 class ProtobufModule : public Module {
-public:
+ public:
   ProtobufModule(const std::string &name, const std::string &subspace_socket)
       : Module(name, subspace_socket) {}
 
@@ -94,7 +96,7 @@ public:
         channel, slot_size, num_slots, options);
   }
 
-   template <typename MessageType>
+  template <typename MessageType>
   absl::StatusOr<std::shared_ptr<ProtobufPublisher<MessageType>>>
   RegisterPublisher(const std::string &channel, int slot_size, int num_slots) {
     return RegisterSerializingPublisher<MessageType,
@@ -103,4 +105,4 @@ public:
         channel, slot_size, num_slots);
   }
 };
-} // namespace stagezero::module
+}  // namespace stagezero::module

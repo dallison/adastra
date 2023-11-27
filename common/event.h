@@ -1,13 +1,13 @@
 #pragma once
 
-#include "common/alarm.h"
-#include "common/states.h"
 #include <string>
 #include <variant>
+#include "common/alarm.h"
+#include "common/states.h"
 
-#include "common/subsystem_status.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
+#include "common/subsystem_status.h"
 #include "proto/event.pb.h"
 #include "proto/subsystem_status.pb.h"
 
@@ -28,4 +28,4 @@ struct Event {
   absl::Status FromProto(const proto::Event &src);
 };
 
-} // namespace stagezero
+}  // namespace stagezero

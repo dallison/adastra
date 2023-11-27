@@ -84,8 +84,6 @@ absl::Status Subsystem::Remove(bool recursive) {
   // Remove processes.
   subsys->process_map_.clear();
   for (auto &proc : subsys->processes_) {
-    std::cerr << "Removing subsystem process " << proc->Name() << " IsZygote "
-              << proc->IsZygote() << std::endl;
     if (proc->IsZygote()) {
       if (absl::Status status = subsys->capcom_.RemoveZygote(proc->Name());
           !status.ok()) {
@@ -172,10 +170,7 @@ absl::StatusOr<Message> Subsystem::ReadMessage() const {
 }
 
 absl::Status Subsystem::LaunchProcesses(co::Coroutine *c) {
-  std::cerr << "subsystem " << Name()
-            << " launching processes: " << processes_.size() << std::endl;
   for (auto &proc : processes_) {
-    std::cerr << "process " << proc->Name() << std::endl;
     absl::Status status = proc->Launch(c);
     if (!status.ok()) {
       // A failure to launch one is a failure for all.
@@ -188,7 +183,6 @@ absl::Status Subsystem::LaunchProcesses(co::Coroutine *c) {
 
 void Subsystem::StopProcesses(co::Coroutine *c) {
   for (auto &proc : processes_) {
-
     absl::Status status = proc->Stop(c);
     if (!status.ok()) {
       capcom_.logger_.Log(toolbelt::LogLevel::kError,
@@ -211,8 +205,9 @@ std::function<void(std::shared_ptr<Subsystem>, uint32_t, co::Coroutine *)>
 void Subsystem::EnterState(OperState state, uint32_t client_id) {
   std::string coroutine_name =
       absl::StrFormat("%s/%s", Name(), OperStateName(state));
-  std::cerr << "subsystem " << Name() << " entering state "
-            << OperStateName(state) << std::endl;
+  capcom_.logger_.Log(toolbelt::LogLevel::kDebug,
+                      "Subsystem %s ending state %s", Name().c_str(),
+                      OperStateName(state));
   co::Coroutine *coroutine = new co::Coroutine(
       Scheduler(),
       [ subsystem = shared_from_this(), state, client_id ](co::Coroutine * c) {
@@ -282,10 +277,13 @@ Subsystem::HandleAdminCommand(const Message &message,
                               OperState next_state_active_clients,
                               OperState next_state_no_active_clients) {
   auto subsystem = shared_from_this();
-  std::cerr << "Subsystem " << subsystem->Name() << " got admin change to "
-            << AdminStateName(message.state.admin) << " in "
-            << OperStateName(subsystem->oper_state_) << " from client "
-            << message.client_id << std::endl;
+  capcom_.logger_.Log(toolbelt::LogLevel::kDebug,
+                      "Subsystem %s is in admin state %s/%s and got a command "
+                      "to change admin state to %s from client %d",
+                      Name().c_str(), AdminStateName(subsystem->admin_state_),
+                      OperStateName(message.state.oper),
+                      AdminStateName(message.state.admin), message.client_id);
+
   subsystem->SendToChildren(message.state.admin, message.client_id);
 
   if (message.state.admin == AdminState::kOnline) {
@@ -304,8 +302,6 @@ Subsystem::HandleAdminCommand(const Message &message,
   } else {
     next_state = next_state_active_clients;
   }
-  std::cerr << "next state: " << next_state << std::endl;
-  subsystem->active_clients_.Print();
   if (next_state == subsystem->oper_state_) {
     // We are not changing admin states, but the parent will be expecting
     // to see an event.
@@ -399,7 +395,6 @@ void Subsystem::Offline(uint32_t client_id, co::Coroutine *c) {
 
 void Subsystem::StartingChildren(uint32_t client_id, co::Coroutine *c) {
   if (children_.empty()) {
-    std::cerr << "Subsystem " << Name() << " has no children\n";
     EnterState(OperState::kStartingProcesses, client_id);
     return;
   }
@@ -651,7 +646,8 @@ void Subsystem::Online(uint32_t client_id, co::Coroutine *c) {
               std::shared_ptr<stagezero::control::Event> event = *e;
               switch (event->event_case()) {
               case stagezero::control::Event::kStart: {
-                // We aren't going to get these as all processes are running.
+                // We aren't going to get these as all processes are
+                // running.
                 break;
               }
               case stagezero::control::Event::kStop: {
@@ -761,7 +757,9 @@ void Subsystem::StoppingProcesses(uint32_t client_id, co::Coroutine *c) {
                    Process *proc =
                        subsystem->FindProcess(event->stop().process_id());
                    if (proc != nullptr) {
-                     std::cerr << "Process " << proc->Name() << " stopped\n";
+                     subsystem->capcom_.logger_.Log(toolbelt::LogLevel::kInfo,
+                                                    "Process %s stopped",
+                                                    proc->Name().c_str());
                      proc->SetStopped();
                      subsystem->DeleteProcessId(proc->GetProcessId());
                    }
@@ -896,11 +894,11 @@ void Subsystem::StoppingChildren(uint32_t client_id, co::Coroutine *c) {
                     OperState::kOffline);
 
                 // We are trying to stop the children.  They may or may not
-                // go offline depending on the other active clients that need
-                // themm.  We need to keep track of all the clients that have
-                // requested that we go offline and only go offline when all of
-                // them have been removed from the active client list in the
-                // children.
+                // go offline depending on the other active clients that
+                // need themm.  We need to keep track of all the clients
+                // that have requested that we go offline and only go
+                // offline when all of them have been removed from the
+                // active client list in the children.
                 if (message->state.admin == AdminState::kOffline) {
                   offline_requests.insert(message->client_id);
                 } else {
@@ -914,9 +912,9 @@ void Subsystem::StoppingChildren(uint32_t client_id, co::Coroutine *c) {
                     message->sender->Name().c_str(),
                     OperStateName(message->state.oper));
 
-                // The children may be going offline or staying online depending
-                // on their active clients.  Record when we get an event saying
-                // that they are in this state.
+                // The children may be going offline or staying online
+                // depending on their active clients.  Record when we get an
+                // event saying that they are in this state.
                 if (message->state.oper == OperState::kOnline ||
                     message->state.oper == OperState::kOffline) {
                   child_notified[message->sender] = true;
@@ -944,8 +942,6 @@ void Subsystem::StoppingChildren(uint32_t client_id, co::Coroutine *c) {
               return StateTransition::kLeave;
             }
 
-            std::cerr << subsystem->Name()
-                      << " all children notified, checking\n";
             // We are going offline, but our children might stay online
             // if they are needed by other subsystems.  We can't check
             // for their oper state, but we can check if they still contain
@@ -953,13 +949,11 @@ void Subsystem::StoppingChildren(uint32_t client_id, co::Coroutine *c) {
 
             for (auto &child : subsystem->children_) {
               for (auto &id : offline_requests) {
-                std::cerr << "checking id " << id << std::endl;
                 if (child->active_clients_.Contains(id)) {
                   return StateTransition::kStay;
                 }
               }
             }
-            std::cerr << subsystem->Name() << " going offline\n";
             subsystem->EnterState(next_state, client_id);
             return StateTransition::kLeave;
           });
@@ -1070,8 +1064,8 @@ void Subsystem::Restarting(uint32_t client_id, co::Coroutine *c) {
                  switch (event->event_case()) {
                  case stagezero::control::Event::kStart: {
                    // This might happen if a process crashed while others are
-                   // starting up.  Ignore it, as it will be replaced by a kStop
-                   // event when the process is killed.
+                   // starting up.  Ignore it, as it will be replaced by a
+                   // kStop event when the process is killed.
                    break;
                  }
                  case stagezero::control::Event::kStop: {
@@ -1355,7 +1349,17 @@ void Subsystem::BuildStatus(stagezero::proto::SubsystemStatus *status) {
   }
 }
 
-void Subsystem::CollectAlarms(std::vector<Alarm *> &alarms) const {}
+void Subsystem::CollectAlarms(std::vector<Alarm> &alarms) const {
+  if (alarm_raised_) {
+    alarms.push_back(alarm_);
+  }
+  for (auto& proc : processes_) {
+    const Alarm* a = proc->GetAlarm();
+    if (a != nullptr) {
+      alarms.push_back(*a);
+    }
+  }
+}
 
 void Process::ParseOptions(const stagezero::config::ProcessOptions &options) {
   description_ = options.description();
@@ -1378,7 +1382,6 @@ void Process::ParseStreams(
     const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
         &streams) {
   for (auto &s : streams) {
-    std::cerr << "Capcom parsing stream " << s.DebugString();
     Stream stream;
     if (absl::Status status = stream.FromProto(s); !status.ok()) {
       capcom_.logger_.Log(toolbelt::LogLevel::kError,
@@ -1436,11 +1439,9 @@ absl::Status StaticProcess::Launch(co::Coroutine *c) {
 
   options.streams = streams_;
 
-  std::cerr << "trying to launch " << Name() << std::endl;
   absl::StatusOr<std::pair<std::string, int>> s =
       client_->LaunchStaticProcess(Name(), executable_, options, c);
   if (!s.ok()) {
-    std::cerr << s.status().ToString() << std::endl;
     return s.status();
   }
   process_id_ = s->first;

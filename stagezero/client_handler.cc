@@ -26,8 +26,8 @@ co::CoroutineScheduler &ClientHandler::GetScheduler() const {
   return stagezero_.co_scheduler_;
 }
 
-std::shared_ptr<Zygote>
-ClientHandler::FindZygote(const std::string &name) const {
+std::shared_ptr<Zygote> ClientHandler::FindZygote(
+    const std::string &name) const {
   return stagezero_.FindZygote(name);
 }
 
@@ -43,60 +43,60 @@ absl::Status ClientHandler::HandleMessage(const control::Request &req,
                                           control::Response &resp,
                                           co::Coroutine *c) {
   switch (req.request_case()) {
-  case control::Request::kInit:
-    HandleInit(req.init(), resp.mutable_init(), c);
-    break;
+    case control::Request::kInit:
+      HandleInit(req.init(), resp.mutable_init(), c);
+      break;
 
-  case control::Request::kLaunchStaticProcess:
-    HandleLaunchStaticProcess(std::move(req.launch_static_process()),
-                              resp.mutable_launch(), c);
-    break;
+    case control::Request::kLaunchStaticProcess:
+      HandleLaunchStaticProcess(std::move(req.launch_static_process()),
+                                resp.mutable_launch(), c);
+      break;
 
-  case control::Request::kLaunchZygote:
-    HandleLaunchZygote(std::move(req.launch_zygote()), resp.mutable_launch(),
-                       c);
-    break;
+    case control::Request::kLaunchZygote:
+      HandleLaunchZygote(std::move(req.launch_zygote()), resp.mutable_launch(),
+                         c);
+      break;
 
-  case control::Request::kLaunchVirtualProcess:
-    HandleLaunchVirtualProcess(std::move(req.launch_virtual_process()),
-                               resp.mutable_launch(), c);
-    break;
+    case control::Request::kLaunchVirtualProcess:
+      HandleLaunchVirtualProcess(std::move(req.launch_virtual_process()),
+                                 resp.mutable_launch(), c);
+      break;
 
-  case control::Request::kStop:
-    HandleStopProcess(req.stop(), resp.mutable_stop(), c);
-    break;
+    case control::Request::kStop:
+      HandleStopProcess(req.stop(), resp.mutable_stop(), c);
+      break;
 
-  case control::Request::kInputData:
-    HandleInputData(req.input_data(), resp.mutable_input_data(), c);
-    break;
+    case control::Request::kInputData:
+      HandleInputData(req.input_data(), resp.mutable_input_data(), c);
+      break;
 
-  case control::Request::kCloseProcessFileDescriptor:
-    HandleCloseProcessFileDescriptor(
-        req.close_process_file_descriptor(),
-        resp.mutable_close_process_file_descriptor(), c);
-    break;
+    case control::Request::kCloseProcessFileDescriptor:
+      HandleCloseProcessFileDescriptor(
+          req.close_process_file_descriptor(),
+          resp.mutable_close_process_file_descriptor(), c);
+      break;
 
-  case control::Request::kConnectSocket:
-    break;
-  case control::Request::kOpenPipe:
-    break;
-  case control::Request::kCloseFileDescriptor:
-    break;
-  case control::Request::kSetGlobalVariable:
-    HandleSetGlobalVariable(req.set_global_variable(),
-                            resp.mutable_set_global_variable(), c);
-    break;
-  case control::Request::kGetGlobalVariable:
-    HandleGetGlobalVariable(req.get_global_variable(),
-                            resp.mutable_get_global_variable(), c);
-    break;
+    case control::Request::kConnectSocket:
+      break;
+    case control::Request::kOpenPipe:
+      break;
+    case control::Request::kCloseFileDescriptor:
+      break;
+    case control::Request::kSetGlobalVariable:
+      HandleSetGlobalVariable(req.set_global_variable(),
+                              resp.mutable_set_global_variable(), c);
+      break;
+    case control::Request::kGetGlobalVariable:
+      HandleGetGlobalVariable(req.get_global_variable(),
+                              resp.mutable_get_global_variable(), c);
+      break;
 
-  case control::Request::kAbort:
-    HandleAbort(req.abort(), resp.mutable_abort(), c);
-    break;
+    case control::Request::kAbort:
+      HandleAbort(req.abort(), resp.mutable_abort(), c);
+      break;
 
-  case control::Request::REQUEST_NOT_SET:
-    return absl::InternalError("Protocol error: unknown request");
+    case control::Request::REQUEST_NOT_SET:
+      return absl::InternalError("Protocol error: unknown request");
   }
   return absl::OkStatus();
 }
@@ -116,7 +116,6 @@ void ClientHandler::HandleInit(const control::InitRequest &req,
 void ClientHandler::HandleLaunchStaticProcess(
     const control::LaunchStaticProcessRequest &&req,
     control::LaunchResponse *response, co::Coroutine *c) {
-
   auto proc = std::make_shared<StaticProcess>(
       GetScheduler(), this->shared_from_this(), std::move(req));
   absl::Status status = proc->Start(c);
@@ -139,7 +138,6 @@ void ClientHandler::HandleLaunchStaticProcess(
 void ClientHandler::HandleLaunchZygote(
     const control::LaunchStaticProcessRequest &&req,
     control::LaunchResponse *response, co::Coroutine *c) {
-
   auto zygote = std::make_shared<Zygote>(GetScheduler(), shared_from_this(),
                                          std::move(req));
   absl::Status status = zygote->Start(c);
@@ -226,8 +224,8 @@ void ClientHandler::HandleCloseProcessFileDescriptor(
   }
 }
 
-absl::Status
-ClientHandler::SendProcessStartEvent(const std::string &process_id) {
+absl::Status ClientHandler::SendProcessStartEvent(
+    const std::string &process_id) {
   auto event = std::make_shared<control::Event>();
   auto start = event->mutable_start();
   start->set_process_id(process_id);
@@ -271,24 +269,24 @@ absl::Status ClientHandler::SendLogMessage(toolbelt::LogLevel level,
   log->set_timestamp(now_ns);
 
   switch (level) {
-  case toolbelt::LogLevel::kVerboseDebug:
-    log->set_level(control::LogMessage::VERBOSE);
-    break;
-  case toolbelt::LogLevel::kDebug:
-    log->set_level(control::LogMessage::DBG);
-    break;
-  case toolbelt::LogLevel::kInfo:
-    log->set_level(control::LogMessage::INFO);
-    break;
-  case toolbelt::LogLevel::kWarning:
-    log->set_level(control::LogMessage::WARNING);
-    break;
-  case toolbelt::LogLevel::kError:
-    log->set_level(control::LogMessage::ERR);
-    break;
-  case toolbelt::LogLevel::kFatal:
-    // Fatal not supported here.
-    return absl::OkStatus();
+    case toolbelt::LogLevel::kVerboseDebug:
+      log->set_level(control::LogMessage::VERBOSE);
+      break;
+    case toolbelt::LogLevel::kDebug:
+      log->set_level(control::LogMessage::DBG);
+      break;
+    case toolbelt::LogLevel::kInfo:
+      log->set_level(control::LogMessage::INFO);
+      break;
+    case toolbelt::LogLevel::kWarning:
+      log->set_level(control::LogMessage::WARNING);
+      break;
+    case toolbelt::LogLevel::kError:
+      log->set_level(control::LogMessage::ERR);
+      break;
+    case toolbelt::LogLevel::kFatal:
+      // Fatal not supported here.
+      return absl::OkStatus();
   }
   return QueueEvent(std::move(event));
 }
@@ -308,7 +306,6 @@ void ClientHandler::KillAllProcesses() {
 
 absl::Status ClientHandler::RemoveProcess(Process *proc) {
   std::string id = proc->GetId();
-  std::cerr << "removing process " << id << std::endl;
   auto it = processes_.find(id);
   if (it == processes_.end()) {
     return absl::InternalError(absl::StrFormat("No such process %s", id));
@@ -320,7 +317,6 @@ absl::Status ClientHandler::RemoveProcess(Process *proc) {
 
 void ClientHandler::TryRemoveProcess(std::shared_ptr<Process> proc) {
   std::string id = proc->GetId();
-  std::cerr << "removing process " << id << std::endl;
   auto it = processes_.find(id);
   if (it != processes_.end()) {
     processes_.erase(it);
@@ -357,4 +353,4 @@ void ClientHandler::HandleAbort(const control::AbortRequest &req,
   GetLogger().Log(toolbelt::LogLevel::kError, "All processes aborted: %s",
                   req.reason().c_str());
 }
-} // namespace stagezero
+}  // namespace stagezero

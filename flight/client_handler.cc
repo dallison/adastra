@@ -69,6 +69,11 @@ void ClientHandler::HandleInit(const flight::proto::InitRequest &req,
 void ClientHandler::HandleStartSubsystem(
     const flight::proto::StartSubsystemRequest &req,
     flight::proto::StartSubsystemResponse *response, co::Coroutine *c) {
+  if (!flight_.interfaces_.contains(req.subsystem())) {
+    response->set_error(absl::StrFormat(
+        "Cannot start non-interface subsystem %s", req.subsystem()));
+    return;
+  }
   if (absl::Status status =
           flight_.capcom_client_.StartSubsystem(req.subsystem(), c);
       !status.ok()) {
@@ -79,6 +84,11 @@ void ClientHandler::HandleStartSubsystem(
 void ClientHandler::HandleStopSubsystem(
     const flight::proto::StopSubsystemRequest &req,
     flight::proto::StopSubsystemResponse *response, co::Coroutine *c) {
+  if (!flight_.interfaces_.contains(req.subsystem())) {
+    response->set_error(absl::StrFormat(
+        "Cannot stop non-interface subsystem %s", req.subsystem()));
+    return;
+  }
   if (absl::Status status =
           flight_.capcom_client_.StopSubsystem(req.subsystem(), c);
       !status.ok()) {
@@ -100,14 +110,28 @@ void ClientHandler::HandleGetSubsystems(
     auto *s = response->add_subsystems();
     st.ToProto(s);
   }
-} 
+}
 
 void ClientHandler::HandleGetAlarms(const flight::proto::GetAlarmsRequest &req,
                                     flight::proto::GetAlarmsResponse *response,
-                                    co::Coroutine *c) {}
+                                    co::Coroutine *c) {
+  absl::StatusOr<std::vector<Alarm>> alarms = flight_.capcom_client_.GetAlarms(c);
+  if (!alarms.ok()) {
+    response->set_error(alarms.status().ToString());
+  }
+  for (auto &alarm : *alarms) {
+    auto *a = response->add_alarms();
+    alarm.ToProto(a);
+  }
+}
 
 void ClientHandler::HandleAbort(const flight::proto::AbortRequest &req,
                                 flight::proto::AbortResponse *response,
-                                co::Coroutine *c) {}
+                                co::Coroutine *c) {
+  if (absl::Status status = flight_.capcom_client_.Abort(req.reason(), c);
+      !status.ok()) {
+    response->set_error(status.ToString());
+  }
+}
 
 } // namespace stagezero::flight

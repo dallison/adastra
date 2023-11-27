@@ -13,8 +13,8 @@
 #include "toolbelt/sockets.h"
 #include "toolbelt/triggerfd.h"
 
-#include "absl/container/flat_hash_map.h"
 #include <list>
+#include "absl/container/flat_hash_map.h"
 
 #include "coroutine.h"
 
@@ -25,7 +25,7 @@ class StageZero;
 class ClientHandler
     : public common::TCPClientHandler<control::Request, control::Response,
                                       control::Event> {
-public:
+ public:
   ClientHandler(StageZero &stagezero, toolbelt::TCPSocket socket)
       : TCPClientHandler(std::move(socket)), stagezero_(stagezero) {}
   ~ClientHandler();
@@ -35,7 +35,9 @@ public:
                                     int exit_status, int term_signal);
   absl::Status SendOutputEvent(const std::string &process_id, int fd,
                                const char *data, size_t len);
-  absl::Status SendLogMessage(toolbelt::LogLevel level, const std::string& process, const std::string& text);
+  absl::Status SendLogMessage(toolbelt::LogLevel level,
+                              const std::string &process,
+                              const std::string &text);
 
   toolbelt::Logger &GetLogger() const override;
 
@@ -52,9 +54,9 @@ public:
 
   void AddCoroutine(std::unique_ptr<co::Coroutine> c) override;
 
-  const std::string& GetCompute() const;
+  const std::string &GetCompute() const;
 
-private:
+ private:
   std::shared_ptr<ClientHandler> shared_from_this() {
     return std::static_pointer_cast<ClientHandler>(
         TCPClientHandler<control::Request, control::Response,
@@ -68,18 +70,16 @@ private:
   void HandleInit(const control::InitRequest &req,
                   control::InitResponse *response, co::Coroutine *c);
 
-  void
-  HandleLaunchStaticProcess(const control::LaunchStaticProcessRequest &&req,
-                            control::LaunchResponse *response,
-                            co::Coroutine *c);
+  void HandleLaunchStaticProcess(
+      const control::LaunchStaticProcessRequest &&req,
+      control::LaunchResponse *response, co::Coroutine *c);
 
   void HandleLaunchZygote(const control::LaunchStaticProcessRequest &&req,
                           control::LaunchResponse *response, co::Coroutine *c);
 
-  void
-  HandleLaunchVirtualProcess(const control::LaunchVirtualProcessRequest &&req,
-                             control::LaunchResponse *response,
-                             co::Coroutine *c);
+  void HandleLaunchVirtualProcess(
+      const control::LaunchVirtualProcessRequest &&req,
+      control::LaunchResponse *response, co::Coroutine *c);
 
   void HandleStopProcess(const control::StopProcessRequest &req,
                          control::StopProcessResponse *response,
@@ -100,9 +100,9 @@ private:
       const control::CloseProcessFileDescriptorRequest &req,
       control::CloseProcessFileDescriptorResponse *response, co::Coroutine *c);
 
-  void HandleAbort(
-      const control::AbortRequest &req, control::AbortResponse* response, co::Coroutine *c);
-      
+  void HandleAbort(const control::AbortRequest &req,
+                   control::AbortResponse *response, co::Coroutine *c);
+
   void AddProcess(const std::string &id, std::shared_ptr<Process> proc) {
     processes_.emplace(std::make_pair(id, std::move(proc)));
   }
@@ -114,4 +114,4 @@ private:
   // Keep track of the processs we spawned here.
   absl::flat_hash_map<std::string, std::shared_ptr<Process>> processes_;
 };
-} // namespace stagezero
+}  // namespace stagezero

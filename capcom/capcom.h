@@ -9,10 +9,10 @@
 #include "capcom/bitset.h"
 #include "capcom/client_handler.h"
 #include "capcom/subsystem.h"
+#include "common/vars.h"
 #include "stagezero/client/client.h"
 #include "toolbelt/logging.h"
 #include "toolbelt/sockets.h"
-#include "common/vars.h"
 
 #include <map>
 #include <memory>
@@ -31,20 +31,20 @@ struct Compute {
 };
 
 class Capcom {
-public:
+ public:
   Capcom(co::CoroutineScheduler &scheduler, toolbelt::InetAddress addr,
-         const std::string& log_file_name = "/tmp/capcom.pb",
+         const std::string &log_file_name = "/tmp/capcom.pb",
          int notify_fd = -1);
   ~Capcom();
 
   absl::Status Run();
   void Stop();
 
-private:
+ private:
   friend class ClientHandler;
   friend class Subsystem;
   friend class Process;
- 
+
   absl::Status HandleIncomingConnection(toolbelt::TCPSocket &listen_socket,
                                         co::Coroutine *c);
 
@@ -52,23 +52,20 @@ private:
     coroutines_.insert(std::move(c));
   }
 
-  void Log(const stagezero::control::LogMessage& msg);
+  void Log(const stagezero::control::LogMessage &msg);
 
   void CloseHandler(std::shared_ptr<ClientHandler> handler);
   void ListenerCoroutine(toolbelt::TCPSocket &listen_socket, co::Coroutine *c);
-  void LoggerCoroutine(co::Coroutine* c);
-  void LoggerFlushCoroutine(co::Coroutine* c);
+  void LoggerCoroutine(co::Coroutine *c);
+  void LoggerFlushCoroutine(co::Coroutine *c);
 
   bool AddCompute(std::string name, const Compute &compute) {
-    std::cerr << "adding compute " << name << std::endl;
     auto[it, inserted] =
         computes_.emplace(std::make_pair(std::move(name), compute));
     return inserted;
   }
 
   absl::Status RemoveCompute(const std::string &name) {
-    std::cerr << "Removing compute " << name << std::endl;
-
     auto it = computes_.find(name);
     if (it == computes_.end()) {
       return absl::InternalError(absl::StrFormat("No such compute %s", name));
@@ -79,7 +76,7 @@ private:
 
   const Compute *FindCompute(const std::string &name) const {
     if (name.empty()) {
-            return &local_compute_;
+      return &local_compute_;
     }
     auto it = computes_.find(name);
     if (it == computes_.end()) {
@@ -89,15 +86,12 @@ private:
   }
 
   bool AddSubsystem(std::string name, std::shared_ptr<Subsystem> subsystem) {
-    std::cerr << "adding subsystem " << name << std::endl;
     auto[it, inserted] = subsystems_.emplace(
         std::make_pair(std::move(name), std::move(subsystem)));
     return inserted;
   }
 
   absl::Status RemoveSubsystem(const std::string &name) {
-    std::cerr << "Removing subsystem " << name << std::endl;
-
     auto it = subsystems_.find(name);
     if (it == subsystems_.end()) {
       return absl::InternalError(absl::StrFormat("No such subsystem %s", name));
@@ -115,7 +109,6 @@ private:
   }
 
   bool AddZygote(std::string name, Zygote *zygote) {
-    std::cerr << "adding zygote " << name << std::endl;
     auto[it, inserted] =
         zygotes_.emplace(std::make_pair(std::move(name), zygote));
     return inserted;
@@ -130,8 +123,6 @@ private:
   }
 
   absl::Status RemoveZygote(const std::string &name) {
-    std::cerr << "Removing zygote " << name << std::endl;
-
     auto it = zygotes_.find(name);
     if (it == zygotes_.end()) {
       return absl::InternalError(absl::StrFormat("No such zygote %s", name));
@@ -145,12 +136,12 @@ private:
   void SendAlarm(const Alarm &alarm);
 
   std::vector<Subsystem *> GetSubsystems() const;
-  std::vector<Alarm *> GetAlarms() const;
+  std::vector<Alarm> GetAlarms() const;
 
-  absl::Status Abort(const std::string& reason, co::Coroutine* c);
-  absl::Status AddGlobalVariable(const Variable& var, co::Coroutine* c);
+  absl::Status Abort(const std::string &reason, co::Coroutine *c);
+  absl::Status AddGlobalVariable(const Variable &var, co::Coroutine *c);
 
-private:
+ private:
   co::CoroutineScheduler &co_scheduler_;
   toolbelt::InetAddress addr_;
   toolbelt::FileDescriptor notify_fd_;
@@ -177,4 +168,4 @@ private:
   std::map<uint64_t, std::unique_ptr<control::LogMessage>> log_buffer_;
   toolbelt::FileDescriptor log_file_;
 };
-} // namespace stagezero::capcom
+}  // namespace stagezero::capcom

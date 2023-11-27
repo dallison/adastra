@@ -34,7 +34,7 @@ struct Compute {
 };
 
 class FlightDirector {
-public:
+ public:
   FlightDirector(co::CoroutineScheduler &scheduler, toolbelt::InetAddress addr,
                  toolbelt::InetAddress capcom_addr, const std::string &root_dir,
                  int notify_fd);
@@ -43,7 +43,7 @@ public:
   absl::Status Run();
   void Stop();
 
-private:
+ private:
   friend class ClientHandler;
 
   absl::Status HandleIncomingConnection(toolbelt::TCPSocket &listen_socket,
@@ -61,13 +61,13 @@ private:
   absl::Status LoadAllSubsystemGraphsFromDir(
       const std::filesystem::path &dir,
       std::vector<std::unique_ptr<proto::SubsystemGraph>> &graphs);
-  absl::StatusOr<std::unique_ptr<proto::SubsystemGraph>>
-  PreloadSubsystemGraph(const std::filesystem::path &file);
+  absl::StatusOr<std::unique_ptr<proto::SubsystemGraph>> PreloadSubsystemGraph(
+      const std::filesystem::path &file);
   absl::Status LoadSubsystemGraph(std::unique_ptr<proto::SubsystemGraph> graph);
   absl::Status CheckForSubsystemLoops();
-  absl::Status
-  CheckForSubsystemLoopsRecurse(absl::flat_hash_set<Subsystem *> &visited,
-                                Subsystem *subsystem, std::string path);
+  absl::Status CheckForSubsystemLoopsRecurse(
+      absl::flat_hash_set<Subsystem *> &visited, Subsystem *subsystem,
+      std::string path);
 
   std::vector<Subsystem *> FlattenSubsystemGraph(Subsystem *root);
   void FlattenSubsystemGraphRecurse(absl::flat_hash_set<Subsystem *> &visited,
@@ -129,4 +129,4 @@ private:
   bool running_ = false;
   toolbelt::Logger logger_;
 };
-} // namespace stagezero::flight
+}  // namespace stagezero::flight

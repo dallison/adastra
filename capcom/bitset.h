@@ -34,7 +34,7 @@ class BitSet {
   void Print() const {
     for (auto v : bits_) {
       for (int i = 0; i < 64; i++) {
-        std::cout << ((v & (1LL << i)) ? "1": "0");
+        std::cout << ((v & (1LL << i)) ? "1" : "0");
       }
       std::cout << std::endl;
     }
@@ -71,7 +71,7 @@ inline void BitSet::Clear(uint32_t bit) {
   if (word < 0 || word > bits_.size()) {
     return;
   }
-    // Add new word if it doesn't exist.
+  // Add new word if it doesn't exist.
   if (word == bits_.size()) {
     bits_.push_back(0LL);
   }

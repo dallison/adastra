@@ -1,8 +1,8 @@
 #pragma once
 
-#include "common/states.h"
 #include <string>
 #include <variant>
+#include "common/states.h"
 
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
@@ -27,4 +27,4 @@ struct SubsystemStatus {
   absl::Status FromProto(const proto::SubsystemStatus &src);
 };
 
-}
+}  // namespace stagezero

@@ -6,7 +6,7 @@
 
 void Signal(int sig) { printf("Signal %d\n", sig); }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   printf("Running\n");
   if (argc == 2 && strcmp(argv[1], "ignore_signal") == 0) {
     printf("Ignoring signals\n");

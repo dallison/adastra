@@ -3,35 +3,33 @@ subsystem {
   module {
     name: "talker"
     zygote: "standard_zygote"
-    dso: "${runfiles_dir}/__main__/testdata/talker.so"
+    dso: "${runfiles_dir}/__main__/testdata/${name}.so"
     options {
       sigint_shutdown_timeout_secs: 2
       sigterm_shutdown_timeout_secs: 10
     }
     stdout {
-      where: FILE
+      where: STAGEZERO
     }
     stderr {
-      where: STAGEZERO
+      where: FILE
     }
   }
   module {
     name: "listener"
     zygote: "standard_zygote"
-    dso: "${runfiles_dir}/__main__/testdata/listener.so"
+    dso: "${runfiles_dir}/__main__/testdata/${name}.so"
     options {
       sigint_shutdown_timeout_secs: 2
       sigterm_shutdown_timeout_secs: 10
     }
     stdout {
-      where: STAGEZERO
+      where: LOGGER
     }
     stderr {
-      where: STAGEZERO
+      where: FILE
     }
   }
-
-  dep: "subspace"
 }
 
 interface: "chat"

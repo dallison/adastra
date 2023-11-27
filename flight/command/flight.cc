@@ -1,9 +1,8 @@
+#include "flight/command/flight.h"
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
 #include "flight/client/client.h"
-#include "flight/command/flight.h"
 #include "toolbelt/sockets.h"
-
 
 #include <cstdlib>
 #include <iostream>
@@ -27,9 +26,10 @@ void FlightCommand::InitCommands() {
   AddCommand(std::make_unique<StartCommand>(client_));
   AddCommand(std::make_unique<StopCommand>(client_));
   AddCommand(std::make_unique<StatusCommand>(client_));
+  AddCommand(std::make_unique<AbortCommand>(client_));
 }
 
-void FlightCommand::AddCommand(std::unique_ptr<Command>cmd) {
+void FlightCommand::AddCommand(std::unique_ptr<Command> cmd) {
   std::string root = cmd->Root();
   commands_.insert(std::make_pair(std::move(root), std::move(cmd)));
 }
@@ -68,17 +68,27 @@ absl::Status StopCommand::Execute(int argc, char **argv) const {
 }
 
 absl::Status StatusCommand::Execute(int argc, char **argv) const {
-  absl::StatusOr<std::vector<SubsystemStatus>> subsystems = client_.GetSubsystems();
+  absl::StatusOr<std::vector<SubsystemStatus>> subsystems =
+      client_.GetSubsystems();
   if (!subsystems.ok()) {
     return subsystems.status();
   }
-  for (auto& subsystem : *subsystems) {
-    std::cout << "Subsystem " << subsystem.subsystem << " " << AdminStateName(subsystem.admin_state) << 
-    "/" << OperStateName(subsystem.oper_state) << std::endl;
+  for (auto &subsystem : *subsystems) {
+    std::cout << "Subsystem " << subsystem.subsystem << " "
+              << AdminStateName(subsystem.admin_state) << "/"
+              << OperStateName(subsystem.oper_state) << std::endl;
   }
   return absl::OkStatus();
 }
 
+absl::Status AbortCommand::Execute(int argc, char **argv) const {
+  if (argc < 3) {
+    return absl::InternalError("usage: flight abort <reason>");
+  }
+  std::string reason = argv[2];
+
+  return client_.Abort(reason);
+}
 } // namespace stagezero::flight
 
 int main(int argc, char **argv) {

@@ -28,34 +28,34 @@ enum class OperState {
   kBroken,
 };
 
-inline const char *AdminStateName(AdminState s) {
+inline const char* AdminStateName(AdminState s) {
   switch (s) {
-  case AdminState::kOnline:
-    return "online";
-  case AdminState::kOffline:
-    return "offline";
+    case AdminState::kOnline:
+      return "online";
+    case AdminState::kOffline:
+      return "offline";
   }
 }
 
-inline const char *OperStateName(OperState s) {
+inline const char* OperStateName(OperState s) {
   switch (s) {
-  case OperState::kOnline:
-    return "online";
-  case OperState::kOffline:
-    return "offline";
-  case OperState::kStartingChildren:
-    return "starting-children";
-  case OperState::kStartingProcesses:
-    return "starting-processes";
-  case OperState::kStoppingProcesses:
-    return "stopping-processes";
-  case OperState::kStoppingChildren:
-    return "stopping-children";
-  case OperState::kRestarting:
-    return "restarting";  
-   case OperState::kBroken:
-    return "broken";  
-   }
+    case OperState::kOnline:
+      return "online";
+    case OperState::kOffline:
+      return "offline";
+    case OperState::kStartingChildren:
+      return "starting-children";
+    case OperState::kStartingProcesses:
+      return "starting-processes";
+    case OperState::kStoppingProcesses:
+      return "stopping-processes";
+    case OperState::kStoppingChildren:
+      return "stopping-children";
+    case OperState::kRestarting:
+      return "restarting";
+    case OperState::kBroken:
+      return "broken";
+  }
 }
 
 inline std::ostream& operator<<(std::ostream& os, AdminState s) {
@@ -68,4 +68,4 @@ inline std::ostream& operator<<(std::ostream& os, OperState s) {
   return os;
 }
 
-} // namespace stagezero::capcom
+}  // namespace stagezero

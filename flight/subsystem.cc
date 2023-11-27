@@ -4,6 +4,4 @@
 
 #include "flight/subsystem.h"
 
-namespace stagezero::flight {
-
-}
+namespace stagezero::flight {}

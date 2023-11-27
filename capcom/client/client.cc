@@ -8,7 +8,6 @@ namespace stagezero::capcom::client {
 
 absl::Status Client::Init(toolbelt::InetAddress addr, const std::string &name,
                           co::Coroutine *co) {
-
   auto fill_init = [name](capcom::proto::Request &req) {
     auto init = req.mutable_init();
     init->set_client_name(name);
@@ -288,7 +287,8 @@ absl::Status Client::WaitForSubsystemState(const std::string &subsystem,
     if (event->type == EventType::kSubsystemStatus) {
       SubsystemStatus &s = std::get<0>(event->event);
       if (s.subsystem == subsystem) {
-        std::cerr << "event " << AdminStateName(s.admin_state) << " " << OperStateName(s.oper_state) << std::endl;
+        std::cerr << "event " << AdminStateName(s.admin_state) << " "
+                  << OperStateName(s.oper_state) << std::endl;
         if (admin_state == s.admin_state) {
           if (s.admin_state == AdminState::kOnline &&
               s.oper_state == OperState::kBroken) {
@@ -372,6 +372,34 @@ Client::GetSubsystems(co::Coroutine *c) {
     if (absl::Status s = result[index].FromProto(status); !s.ok()) {
       return s;
     }
+    index++;
+  }
+  return result;
+}
+
+absl::StatusOr<std::vector<Alarm>>
+Client::GetAlarms(co::Coroutine *c) {
+  if (c == nullptr) {
+    c = co_;
+  }
+  stagezero::capcom::proto::Request req;
+  (void)req.mutable_get_alarms();
+
+  stagezero::capcom::proto::Response resp;
+  if (absl::Status status = SendRequestReceiveResponse(req, resp, c);
+      !status.ok()) {
+    return status;
+  }
+  auto &get_resp = resp.get_alarms();
+  if (!get_resp.error().empty()) {
+    return absl::InternalError(
+        absl::StrFormat("Failed to get alarms: %s", get_resp.error()));
+  }
+
+  std::vector<Alarm> result(get_resp.alarms_size());
+  int index = 0;
+  for (auto &alarm : get_resp.alarms()) {
+    result[index].FromProto(alarm);
     index++;
   }
   return result;

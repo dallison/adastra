@@ -21,14 +21,14 @@ Symbol *SymbolTable::FindSymbol(const std::string &name) const {
     if (parent_ == nullptr) {
       return nullptr;
     }
-    return parent_->FindSymbol(name);;
+    return parent_->FindSymbol(name);
+    ;
   }
   return it->second.get();
 }
 
-
-absl::flat_hash_map<std::string, Symbol *>
-SymbolTable::GetEnvironmentSymbols() const {
+absl::flat_hash_map<std::string, Symbol *> SymbolTable::GetEnvironmentSymbols()
+    const {
   // Get all global exported symbols.
   absl::flat_hash_map<std::string, Symbol *> symbols;
   if (parent_ != nullptr) {
@@ -75,4 +75,4 @@ std::string SymbolTable::ReplaceSymbols(const std::string &str) {
   }
   return result;
 }
-} // namespace stagezero
+}  // namespace stagezero

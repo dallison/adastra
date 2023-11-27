@@ -2,15 +2,17 @@
 #include "module/protobuf_module.h"
 #include "testdata/proto/chat.pb.h"
 
-template <typename T> using Publisher = stagezero::module::ProtobufPublisher<T>;
+template <typename T>
+using Publisher = stagezero::module::ProtobufPublisher<T>;
 
 template <typename T>
 using Subscriber = stagezero::module::ProtobufSubscriber<T>;
 
-template <typename T> using Message = stagezero::module::Message<T>;
+template <typename T>
+using Message = stagezero::module::Message<T>;
 
 class Talker : public stagezero::module::ProtobufModule {
-public:
+ public:
   Talker(const std::string &name, const std::string &subspace_server)
       : ProtobufModule(name, subspace_server) {}
 
@@ -44,7 +46,7 @@ public:
     return absl::OkStatus();
   }
 
-private:
+ private:
   int count_ = 0;
   std::shared_ptr<Publisher<chat::Question>> pub_;
   std::shared_ptr<Subscriber<chat::Answer>> sub_;

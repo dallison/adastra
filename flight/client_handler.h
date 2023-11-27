@@ -4,18 +4,18 @@
 
 #pragma once
 
+#include "capcom/client/client.h"
 #include "common/alarm.h"
 #include "common/tcp_client_handler.h"
-#include "proto/flight.pb.h"
+#include "flight/subsystem.h"
 #include "proto/capcom.pb.h"
+#include "proto/flight.pb.h"
 #include "toolbelt/logging.h"
 #include "toolbelt/sockets.h"
 #include "toolbelt/triggerfd.h"
-#include "capcom/client/client.h"
-#include "flight/subsystem.h"
 
-#include "absl/container/flat_hash_map.h"
 #include <list>
+#include "absl/container/flat_hash_map.h"
 
 #include "coroutine.h"
 
@@ -23,10 +23,10 @@ namespace stagezero::flight {
 
 class FlightDirector;
 
-class ClientHandler
-    : public common::TCPClientHandler<flight::proto::Request, flight::proto::Response,
-                                      stagezero::proto::Event> {
-public:
+class ClientHandler : public common::TCPClientHandler<flight::proto::Request,
+                                                      flight::proto::Response,
+                                                      stagezero::proto::Event> {
+ public:
   ClientHandler(FlightDirector &flight, toolbelt::TCPSocket socket)
       : TCPClientHandler(std::move(socket)), flight_(flight) {}
   ~ClientHandler();
@@ -40,14 +40,15 @@ public:
 
   void AddCoroutine(std::unique_ptr<co::Coroutine> c) override;
 
-private:
+ private:
   std::shared_ptr<ClientHandler> shared_from_this() {
     return std::static_pointer_cast<ClientHandler>(
         TCPClientHandler<flight::proto::Request, flight::proto::Response,
                          stagezero::proto::Event>::shared_from_this());
   }
 
-  absl::Status HandleMessage(const flight::proto::Request &req, flight::proto::Response &resp,
+  absl::Status HandleMessage(const flight::proto::Request &req,
+                             flight::proto::Response &resp,
                              co::Coroutine *c) override;
 
   void HandleInit(const flight::proto::InitRequest &req,
@@ -64,11 +65,12 @@ private:
                            flight::proto::GetSubsystemsResponse *response,
                            co::Coroutine *c);
   void HandleGetAlarms(const flight::proto::GetAlarmsRequest &req,
-                       flight::proto::GetAlarmsResponse *response, co::Coroutine *c);
+                       flight::proto::GetAlarmsResponse *response,
+                       co::Coroutine *c);
 
   void HandleAbort(const flight::proto::AbortRequest &req,
                    flight::proto::AbortResponse *response, co::Coroutine *c);
 
   FlightDirector &flight_;
 };
-} // namespace stagezero::flight
+}  // namespace stagezero::flight

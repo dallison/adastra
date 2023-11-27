@@ -1,9 +1,9 @@
-#include <iostream>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string>
 #include <unistd.h>
+#include <iostream>
+#include <string>
 
 int main(int argc, char **argv) {
   char *notify = getenv("STAGEZERO_NOTIFY_FD");
