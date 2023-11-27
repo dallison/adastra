@@ -71,7 +71,7 @@ absl::Status Capcom::HandleIncomingConnection(
       co_scheduler_,
       [this, handler, client_id](co::Coroutine *c) {
         handler->Run(c);
-        logger_.Log(toolbelt::LogLevel::kInfo, "client %s closed",
+        logger_.Log(toolbelt::LogLevel::kDebug, "client %s closed",
                     handler->GetClientName().c_str());
         client_ids_.Clear(client_id);
         CloseHandler(handler);

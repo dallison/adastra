@@ -59,7 +59,7 @@ FlightDirector::HandleIncomingConnection(toolbelt::TCPSocket &listen_socket,
       co_scheduler_,
       [this, handler](co::Coroutine *c) {
         handler->Run(c);
-        logger_.Log(toolbelt::LogLevel::kInfo, "client %s closed",
+        logger_.Log(toolbelt::LogLevel::kDebug, "client %s closed",
                     handler->GetClientName().c_str());
         CloseHandler(handler);
       },

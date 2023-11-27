@@ -160,7 +160,7 @@ inline absl::StatusOr<int> TCPClientHandler<Request, Response, Event>::Init(
           return;
         }
         client->SetEventSocket(std::move(*socket));
-        client->GetLogger().Log(toolbelt::LogLevel::kInfo,
+        client->GetLogger().Log(toolbelt::LogLevel::kDebug,
                                 "Event channel open");
 
         // Start the event sender coroutine.

@@ -12,6 +12,10 @@
 #include <iostream>
 #include <string>
 
+ABSL_FLAG(std::string, hostname, "localhost",
+          "Flight Director hostname (or IP address)");
+ABSL_FLAG(int, port, 6524, "Flight Director listening port");
+
 namespace stagezero::flight {
 
 FlightCommand::FlightCommand(toolbelt::InetAddress flight_addr)
@@ -104,8 +108,7 @@ absl::Status StatusCommand::Execute(int argc, char **argv) const {
 }
 
 absl::Status AlarmsCommand::Execute(int argc, char **argv) const {
-  absl::StatusOr<std::vector<Alarm>> alarms =
-      client_.GetAlarms();
+  absl::StatusOr<std::vector<Alarm>> alarms = client_.GetAlarms();
   if (!alarms.ok()) {
     return alarms.status();
   }
@@ -127,7 +130,8 @@ absl::Status AbortCommand::Execute(int argc, char **argv) const {
 int main(int argc, char **argv) {
   absl::ParseCommandLine(argc, argv);
 
-  toolbelt::InetAddress flight_addr("localhost", 6524);
+  toolbelt::InetAddress flight_addr(absl::GetFlag(FLAGS_hostname),
+                                    absl::GetFlag(FLAGS_port));
   stagezero::flight::FlightCommand flight(flight_addr);
 
   flight.Run(argc, argv);
