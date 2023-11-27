@@ -76,6 +76,7 @@ message Module {
   Stream stdin = 6;
   Stream stdout = 7;
   Stream stderr = 8;
+  string main_func = 9;   // ModuleMain if omitted.
 }
 
 message StaticProcess {

@@ -48,6 +48,7 @@ struct Zygote : public StaticProcess {
 struct Module : public Process {
   std::string dso;
   std::string zygote;
+  std::string main_func;
   ProcessType Type() const override { return ProcessType::kModule; }
 };
 

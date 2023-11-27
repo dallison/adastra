@@ -301,7 +301,6 @@ absl::Status Capcom::Abort(const std::string &reason, co::Coroutine *c) {
     bool all_offline = true;
     for (auto & [ name, subsys ] : subsystems_) {
       if (!subsys->IsOffline()) {
-        std::cerr << subsys->Name() << " is not offline\n";
         all_offline = false;
         break;
       }

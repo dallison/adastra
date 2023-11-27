@@ -205,8 +205,8 @@ std::function<void(std::shared_ptr<Subsystem>, uint32_t, co::Coroutine *)>
 void Subsystem::EnterState(OperState state, uint32_t client_id) {
   std::string coroutine_name =
       absl::StrFormat("%s/%s", Name(), OperStateName(state));
-  capcom_.logger_.Log(toolbelt::LogLevel::kDebug,
-                      "Subsystem %s ending state %s", Name().c_str(),
+  capcom_.logger_.Log(toolbelt::LogLevel::kInfo,
+                      "Subsystem %s entering state %s", Name().c_str(),
                       OperStateName(state));
   co::Coroutine *coroutine = new co::Coroutine(
       Scheduler(),
@@ -1022,6 +1022,9 @@ void Subsystem::RestartIfPossible(uint32_t client_id, co::Coroutine *c) {
 void Subsystem::Abort() {
   admin_state_ = AdminState::kOffline;
   active_clients_.ClearAll();
+  for (auto& proc : processes_) {
+    proc->SetStopped();
+  }
   EnterState(OperState::kOffline, kNoClient);
 }
 

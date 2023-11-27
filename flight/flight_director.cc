@@ -481,6 +481,7 @@ absl::Status FlightDirector::LoadSubsystemGraph(
       module->zygote = mod.zygote();
       module->dso = mod.dso();
       module->compute = mod.compute();
+      module->main_func = mod.main_func().empty() ? "ModuleMain" : mod.main_func();
       ParseStream(module->name, mod.stdin(), STDIN_FILENO, &module->streams);
       ParseStream(module->name, mod.stdout(), STDOUT_FILENO, &module->streams);
       ParseStream(module->name, mod.stderr(), STDERR_FILENO, &module->streams);
@@ -645,7 +646,7 @@ absl::Status FlightDirector::RegisterSubsystemGraph(Subsystem *root,
             .description = src->description,
             .zygote = src->zygote,
             .dso = src->dso,
-            .main_func = "ModuleMain",
+            .main_func = src->main_func,
             .compute = src->compute,
             .vars = src->vars,
             .startup_timeout_secs = src->startup_timeout_secs,
