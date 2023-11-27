@@ -3,12 +3,21 @@ subsystem {
 
  static_process {
   name: "subspace_server"
-  executable: "${runfiles_dir}/subspace/server/subspace_server"
+  executable: "${runfiles_dir}/subspace/server/${name}"
   options {
     args: "--socket=${subspace_socket}"
     args: "--interface=${subspace_interface}"
     args: "--local=${subspace_local}"
     notify: true
+  }
+  stdin {
+    where: CLOSE
+  }
+  stdout {
+    where: STAGEZERO
+  }
+  stderr {
+    where: STAGEZERO
   }
  }
 }

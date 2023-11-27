@@ -32,9 +32,9 @@ Process::Process(co::CoroutineScheduler &scheduler,
                  std::shared_ptr<ClientHandler> client, std::string name)
     : scheduler_(scheduler), client_(std::move(client)), name_(std::move(name)),
       local_symbols_(client_->GetGlobalSymbols()) {
-        // Add a locall symbol "name" for the process name.
-        local_symbols_.AddSymbol("name", name_, false);
-      }
+  // Add a locall symbol "name" for the process name.
+  local_symbols_.AddSymbol("name", name_, false);
+}
 
 void Process::SetProcessId() {
   process_id_ = absl::StrFormat("%s/%s@%s:%d", client_->GetClientName(), name_,
@@ -98,8 +98,6 @@ absl::Status StaticProcess::Start(co::Coroutine *c) {
 absl::Status
 StaticProcess::StartInternal(const std::vector<std::string> extra_env_vars,
                              bool send_start_event) {
-  client_->GetLogger().Log(toolbelt::LogLevel::kInfo, "starting %s",
-                           req_.proc().executable().c_str());
   absl::Status s = ForkAndExec(extra_env_vars);
   if (!s.ok()) {
     return s;
@@ -458,6 +456,8 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
     // Build the argv array for execve.
     std::vector<const char *> argv;
     std::string exe = local_symbols_.ReplaceSymbols(req_.proc().executable());
+    client_->GetLogger().Log(toolbelt::LogLevel::kInfo, "Starting %s",
+                             exe.c_str());
     argv.push_back(exe.c_str());
     for (auto &arg : args) {
       argv.push_back(arg.c_str());
@@ -696,6 +696,12 @@ Zygote::Spawn(const stagezero::control::LaunchVirtualProcessRequest &req,
     v->set_value(g.second->Value());
     v->set_exported(g.second->Exported());
   }
+
+  // Add process name as "name"
+  auto* name = spawn.add_vars();
+  name->set_name("name");
+  name->set_value(req.opts().name());
+  name->set_exported(false);
 
   // Local Variables.
   for (auto &var : req.opts().vars()) {

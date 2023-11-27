@@ -51,6 +51,12 @@ class StatusCommand : public Command {
   absl::Status Execute(int argc, char **argv) const override;
 };
 
+class AlarmsCommand : public Command {
+ public:
+  AlarmsCommand(flight::client::Client &client) : Command(client, "status") {}
+  absl::Status Execute(int argc, char **argv) const override;
+};
+
 class AbortCommand : public Command {
  public:
   AbortCommand(flight::client::Client &client) : Command(client, "abort") {}

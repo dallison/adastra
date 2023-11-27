@@ -57,6 +57,8 @@ class Client : public TCPClient<flight::proto::Request, flight::proto::Response,
   absl::StatusOr<std::vector<SubsystemStatus>> GetSubsystems(
       co::Coroutine *c = nullptr);
 
+  absl::StatusOr<std::vector<Alarm>> GetAlarms(
+      co::Coroutine *c = nullptr);
  private:
   absl::Status WaitForSubsystemState(const std::string &subsystem,
                                      AdminState admin_state,

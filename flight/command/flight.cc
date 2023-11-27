@@ -35,6 +35,7 @@ void FlightCommand::InitCommands() {
   AddCommand(std::make_unique<StatusCommand>(client_));
   AddCommand(std::make_unique<AbortCommand>(client_));
   AddCommand(std::make_unique<HelpCommand>(client_));
+  AddCommand(std::make_unique<AlarmsCommand>(client_));
 }
 
 void FlightCommand::AddCommand(std::unique_ptr<Command> cmd) {
@@ -68,6 +69,7 @@ absl::Status HelpCommand::Execute(int argc, char **argv) const {
   std::cout << "  flight stop <subsystem> - stop a subsystem\n";
   std::cout << "  flight status - show status of all subsystems\n";
   std::cout << "  flight abort <subsystem> - abort all subsystems\n";
+  std::cout << "  flight alarms - show all alarms\n";
   return absl::OkStatus();
 }
 
@@ -101,6 +103,17 @@ absl::Status StatusCommand::Execute(int argc, char **argv) const {
   return absl::OkStatus();
 }
 
+absl::Status AlarmsCommand::Execute(int argc, char **argv) const {
+  absl::StatusOr<std::vector<Alarm>> alarms =
+      client_.GetAlarms();
+  if (!alarms.ok()) {
+    return alarms.status();
+  }
+  for (auto &alarm : *alarms) {
+    std::cout << alarm << std::endl;
+  }
+  return absl::OkStatus();
+}
 absl::Status AbortCommand::Execute(int argc, char **argv) const {
   if (argc < 3) {
     return absl::InternalError("usage: flight abort <reason>");

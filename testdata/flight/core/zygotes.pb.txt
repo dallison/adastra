@@ -2,7 +2,10 @@ subsystem {
   name: "standard_zygote"
   zygote {
     name: "standard_zygote"
-    executable: "${runfiles_dir}/__main__/stagezero/zygote/standard_zygote"
+    executable: "${runfiles_dir}/__main__/stagezero/zygote/${name}"
+    options {
+      notify: true
+    }
     stdin {
       where: STAGEZERO
     }

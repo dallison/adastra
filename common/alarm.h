@@ -4,8 +4,8 @@
 
 #pragma once
 
-#include <string>
 #include "proto/event.pb.h"
+#include <string>
 
 namespace stagezero {
 
@@ -47,4 +47,60 @@ struct Alarm {
   void FromProto(const proto::Alarm &src);
 };
 
-}  // namespace stagezero
+inline const char *TypeName(Alarm::Type type) {
+  switch (type) {
+  case Alarm::Type::kProcess:
+    return "process";
+  case Alarm::Type::kSubsystem:
+    return "subsystem";
+  default:
+    return "unknown";
+  }
+}
+
+inline const char *SeverityName(Alarm::Severity s) {
+  switch (s) {
+  case Alarm::Severity::kWarning:
+    return "warning";
+  case Alarm::Severity::kError:
+    return "error";
+  case Alarm::Severity::kCritical:
+    return "critical";
+  default:
+    return "unknown";
+  }
+}
+
+inline const char *ReasonName(Alarm::Reason r) {
+  switch (r) {
+  case Alarm::Reason::kCrashed:
+    return "crashed";
+  case Alarm::Reason::kBroken:
+    return "broken";
+  default:
+    return "unknown";
+  }
+}
+
+inline const char *StatusName(Alarm::Status s) {
+  switch (s) {
+  case Alarm::Status::kRaised:
+    return "raised";
+  case Alarm::Status::kCleared:
+    return "cleared";
+  default:
+    return "unknown";
+  }
+}
+
+inline std::ostream &operator<<(std::ostream &os, const Alarm &alarm) {
+  os << "id: " << alarm.id << " name: " << alarm.name
+     << " status: " << StatusName(alarm.status)
+     << " type: " << TypeName(alarm.type)
+     << " severity: " << SeverityName(alarm.severity)
+     << " reason: " << ReasonName(alarm.reason)
+     << " details: " << alarm.details;
+  return os;
+}
+
+} // namespace stagezero

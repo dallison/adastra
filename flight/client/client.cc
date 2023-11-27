@@ -174,4 +174,31 @@ absl::StatusOr<std::vector<SubsystemStatus>> Client::GetSubsystems(
   return result;
 }
 
+absl::StatusOr<std::vector<Alarm>> Client::GetAlarms(
+    co::Coroutine *c) {
+  if (c == nullptr) {
+    c = co_;
+  }
+  stagezero::flight::proto::Request req;
+  (void)req.mutable_get_alarms();
+
+  stagezero::flight::proto::Response resp;
+  if (absl::Status status = SendRequestReceiveResponse(req, resp, c);
+      !status.ok()) {
+    return status;
+  }
+  auto &get_resp = resp.get_alarms();
+  if (!get_resp.error().empty()) {
+    return absl::InternalError(
+        absl::StrFormat("Failed to get alarms: %s", get_resp.error()));
+  }
+
+  std::vector<Alarm> result(get_resp.alarms_size());
+  int index = 0;
+  for (auto &status : get_resp.alarms()) {
+    result[index].FromProto(status);
+    index++;
+  }
+  return result;
+}
 }  // namespace stagezero::flight::client
