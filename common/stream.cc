@@ -1,3 +1,7 @@
+// Copyright 2023 David Allison
+// All Rights Reserved
+// See LICENSE file for licensing information.
+
 #include "common/stream.h"
 
 namespace stagezero {

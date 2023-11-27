@@ -1,3 +1,7 @@
+// Copyright 2023 David Allison
+// All Rights Reserved
+// See LICENSE file for licensing information.
+
 #include "flight/command/flight.h"
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
