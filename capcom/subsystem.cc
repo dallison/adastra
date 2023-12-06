@@ -8,8 +8,10 @@
 #include <unistd.h>
 
 namespace stagezero::capcom {
-Subsystem::Subsystem(std::string name, Capcom &capcom)
-    : name_(std::move(name)), capcom_(capcom) {
+Subsystem::Subsystem(std::string name, Capcom &capcom,
+                     std::vector<Variable> vars, std::vector<Stream> streams)
+    : name_(std::move(name)), capcom_(capcom), vars_(std::move(vars)),
+      streams_(std::move(streams)) {
   // Build the command pipe.
   if (absl::Status status = BuildMessagePipe(); !status.ok()) {
     capcom_.logger_.Log(toolbelt::LogLevel::kError, "%s",
@@ -143,6 +145,24 @@ void Subsystem::NotifyParents() {
   }
 }
 
+absl::Status Subsystem::SendInput(const std::string &process, int fd,
+                                  const std::string &data, co::Coroutine *c) {
+  Process *proc = FindProcessName(process);
+  if (proc == nullptr) {
+    return absl::InternalError(absl::StrFormat("No such process %s", process));
+  }
+  return proc->SendInput(fd, data, c);
+}
+
+absl::Status Subsystem::CloseFd(const std::string &process, int fd,
+                                co::Coroutine *c) {
+  Process *proc = FindProcessName(process);
+  if (proc == nullptr) {
+    return absl::InternalError(absl::StrFormat("No such process %s", process));
+  }
+  return proc->CloseFd(fd, c);
+}
+
 void Subsystem::SendToChildren(AdminState state, uint32_t client_id) {
   Message message = {.code = Message::kChangeAdmin,
                      .sender = this,
@@ -171,7 +191,7 @@ absl::StatusOr<Message> Subsystem::ReadMessage() const {
 
 absl::Status Subsystem::LaunchProcesses(co::Coroutine *c) {
   for (auto &proc : processes_) {
-    absl::Status status = proc->Launch(c);
+    absl::Status status = proc->Launch(this, c);
     if (!status.ok()) {
       // A failure to launch one is a failure for all.
       return status;
@@ -272,6 +292,17 @@ void Subsystem::RunSubsystemInState(
   }
 }
 
+void Subsystem::SendOutput(int fd, const std::string &data, co::Coroutine *c) {
+  c->Wait(interactive_output_.Fd(), POLLOUT);
+  int e = ::write(interactive_output_.Fd(), data.data(), data.size());
+  if (e <= 0) {
+    capcom_.logger_.Log(toolbelt::LogLevel::kDebug,
+                        "Failed to send process output: %s", strerror(errno));
+  }
+}
+
+Process *Subsystem::FindInteractiveProcess() { return nullptr; }
+
 OperState
 Subsystem::HandleAdminCommand(const Message &message,
                               OperState next_state_active_clients,
@@ -339,7 +370,10 @@ void Subsystem::Offline(uint32_t client_id, co::Coroutine *c) {
                    break;
                  }
                  case stagezero::control::Event::kStop:
+                   break;
                  case stagezero::control::Event::kOutput:
+                   subsystem->SendOutput(event->output().fd(),
+                                         event->output().data(), c);
                    break;
                  case stagezero::control::Event::kLog:
                    subsystem->capcom_.Log(event->log());
@@ -366,6 +400,13 @@ void Subsystem::Offline(uint32_t client_id, co::Coroutine *c) {
                    if (next_state == OperState::kStartingChildren) {
                      subsystem->admin_state_ = AdminState::kOnline;
                    }
+                   subsystem->interactive_ = message->interactive;
+                   if (message->interactive) {
+                     subsystem->interactive_output_.SetFd(message->output_fd);
+                   } else {
+                     subsystem->interactive_output_.Close();
+                   }
+
                    break;
 
                  case Message::kReportOper:
@@ -441,6 +482,8 @@ void Subsystem::StartingChildren(uint32_t client_id, co::Coroutine *c) {
                 return StateTransition::kStay;
 
               case stagezero::control::Event::kOutput:
+                subsystem->SendOutput(event->output().fd(),
+                                      event->output().data(), c);
                 break;
               case stagezero::control::Event::kLog:
                 subsystem->capcom_.Log(event->log());
@@ -566,6 +609,8 @@ void Subsystem::StartingProcesses(uint32_t client_id, co::Coroutine *c) {
                 return StateTransition::kLeave;
 
               case stagezero::control::Event::kOutput:
+                subsystem->SendOutput(event->output().fd(),
+                                      event->output().data(), c);
                 break;
               case stagezero::control::Event::kLog:
                 subsystem->capcom_.Log(event->log());
@@ -651,7 +696,22 @@ void Subsystem::Online(uint32_t client_id, co::Coroutine *c) {
                 break;
               }
               case stagezero::control::Event::kStop: {
-                // Process crashed.  Restart.
+                if (subsystem->interactive_) {
+                  Process *proc =
+                      subsystem->FindProcess(event->stop().process_id());
+                  if (proc != nullptr) {
+                    subsystem->capcom_.logger_.Log(
+                        toolbelt::LogLevel::kInfo,
+                        "Interactive process %s stopped", proc->Name().c_str());
+                    proc->SetStopped();
+                    subsystem->DeleteProcessId(proc->GetProcessId());
+                    subsystem->interactive_output_.Reset();
+                    subsystem->EnterState(OperState::kOffline, kNoClient);
+                    return StateTransition::kLeave;
+                  }
+                }
+
+                // Non-interative process crashed.  Restart.
                 subsystem->GetLogger().Log(toolbelt::LogLevel::kInfo,
                                            "Process %s has crashed, restarting",
                                            event->stop().process_id().c_str());
@@ -660,6 +720,8 @@ void Subsystem::Online(uint32_t client_id, co::Coroutine *c) {
                 return StateTransition::kLeave;
               }
               case stagezero::control::Event::kOutput:
+                subsystem->SendOutput(event->output().fd(),
+                                      event->output().data(), c);
                 break;
               case stagezero::control::Event::kLog:
                 subsystem->capcom_.Log(event->log());
@@ -762,10 +824,15 @@ void Subsystem::StoppingProcesses(uint32_t client_id, co::Coroutine *c) {
                                                     proc->Name().c_str());
                      proc->SetStopped();
                      subsystem->DeleteProcessId(proc->GetProcessId());
+                     if (subsystem->interactive_) {
+                       subsystem->interactive_output_.Reset();
+                     }
                    }
                    break;
                  }
                  case stagezero::control::Event::kOutput:
+                   subsystem->SendOutput(event->output().fd(),
+                                         event->output().data(), c);
                    break;
                  case stagezero::control::Event::kLog:
                    subsystem->capcom_.Log(event->log());
@@ -870,6 +937,8 @@ void Subsystem::StoppingChildren(uint32_t client_id, co::Coroutine *c) {
                 break;
               }
               case stagezero::control::Event::kOutput:
+                subsystem->SendOutput(event->output().fd(),
+                                      event->output().data(), c);
                 break;
               case stagezero::control::Event::kLog:
                 subsystem->capcom_.Log(event->log());
@@ -1022,7 +1091,7 @@ void Subsystem::RestartIfPossible(uint32_t client_id, co::Coroutine *c) {
 void Subsystem::Abort() {
   admin_state_ = AdminState::kOffline;
   active_clients_.ClearAll();
-  for (auto& proc : processes_) {
+  for (auto &proc : processes_) {
     proc->SetStopped();
   }
   EnterState(OperState::kOffline, kNoClient);
@@ -1081,6 +1150,8 @@ void Subsystem::Restarting(uint32_t client_id, co::Coroutine *c) {
                    break;
                  }
                  case stagezero::control::Event::kOutput:
+                   subsystem->SendOutput(event->output().fd(),
+                                         event->output().data(), c);
                    break;
                  case stagezero::control::Event::kLog:
                    subsystem->capcom_.Log(event->log());
@@ -1228,7 +1299,7 @@ absl::Status Subsystem::AddStaticProcess(
 
   auto p = std::make_unique<StaticProcess>(
       capcom_, options.name(), proc.executable(), options, streams, *client);
-  processes_.push_back(std::move(p));
+  AddProcess(std::move(p));
 
   return absl::OkStatus();
 }
@@ -1260,7 +1331,7 @@ absl::Status Subsystem::AddZygote(
                                     options, streams, *client);
   capcom_.AddZygote(options.name(), p.get());
 
-  processes_.push_back(std::move(p));
+  AddProcess(std::move(p));
   return absl::OkStatus();
 }
 
@@ -1298,7 +1369,7 @@ absl::Status Subsystem::AddVirtualProcess(
   auto p = std::make_unique<VirtualProcess>(
       capcom_, options.name(), proc.zygote(), proc.dso(), proc.main_func(),
       options, streams, *client);
-  processes_.push_back(std::move(p));
+  AddProcess(std::move(p));
 
   return absl::OkStatus();
 }
@@ -1356,12 +1427,21 @@ void Subsystem::CollectAlarms(std::vector<Alarm> &alarms) const {
   if (alarm_raised_) {
     alarms.push_back(alarm_);
   }
-  for (auto& proc : processes_) {
-    const Alarm* a = proc->GetAlarm();
+  for (auto &proc : processes_) {
+    const Alarm *a = proc->GetAlarm();
     if (a != nullptr) {
       alarms.push_back(*a);
     }
   }
+}
+
+absl::Status Process::SendInput(int fd, const std::string &data,
+                                co::Coroutine *c) {
+  return client_->SendInput(process_id_, fd, data, c);
+}
+
+absl::Status Process::CloseFd(int fd, co::Coroutine *c) {
+  return client_->CloseProcessFileDescriptor(process_id_, fd, c);
 }
 
 void Process::ParseOptions(const stagezero::config::ProcessOptions &options) {
@@ -1379,6 +1459,7 @@ void Process::ParseOptions(const stagezero::config::ProcessOptions &options) {
   sigint_shutdown_timeout_secs_ = options.sigint_shutdown_timeout_secs();
   sigterm_shutdown_timeout_secs_ = options.sigterm_shutdown_timeout_secs();
   notify_ = options.notify();
+  interactive_ = options.interactive();
 }
 
 void Process::ParseStreams(
@@ -1427,7 +1508,7 @@ StaticProcess::StaticProcess(
   ParseStreams(streams);
 }
 
-absl::Status StaticProcess::Launch(co::Coroutine *c) {
+absl::Status StaticProcess::Launch(Subsystem *subsystem, co::Coroutine *c) {
   stagezero::ProcessOptions options = {
       .description = description_,
       .args = args_,
@@ -1435,12 +1516,21 @@ absl::Status StaticProcess::Launch(co::Coroutine *c) {
       .sigint_shutdown_timeout_secs = sigint_shutdown_timeout_secs_,
       .sigterm_shutdown_timeout_secs = sigterm_shutdown_timeout_secs_,
       .notify = notify_,
+      .interactive = interactive_,
   };
+  // Subsystem vars.
+  for (auto &var : subsystem->Vars()) {
+    options.vars.push_back(var);
+  }
+  // Process variables, can override subsystem vars.
   for (auto &var : vars_) {
     options.vars.push_back({var.name, var.value, var.exported});
   }
 
-  options.streams = streams_;
+  options.streams = subsystem->Streams();
+  for (auto &stream : streams_) {
+    AddStream(options.streams, stream);
+  }
 
   absl::StatusOr<std::pair<std::string, int>> s =
       client_->LaunchStaticProcess(Name(), executable_, options, c);
@@ -1452,7 +1542,7 @@ absl::Status StaticProcess::Launch(co::Coroutine *c) {
   return absl::OkStatus();
 }
 
-absl::Status Zygote::Launch(co::Coroutine *c) {
+absl::Status Zygote::Launch(Subsystem *subsystem, co::Coroutine *c) {
   stagezero::ProcessOptions options = {
       .description = description_,
       .args = args_,
@@ -1461,11 +1551,19 @@ absl::Status Zygote::Launch(co::Coroutine *c) {
       .sigterm_shutdown_timeout_secs = sigterm_shutdown_timeout_secs_,
       .notify = notify_,
   };
+  // Subsystem vars.
+  for (auto &var : subsystem->Vars()) {
+    options.vars.push_back(var);
+  }
+  // Process variables, can override subsystem vars.
   for (auto &var : vars_) {
     options.vars.push_back({var.name, var.value, var.exported});
   }
 
-  options.streams = streams_;
+  options.streams = subsystem->Streams();
+  for (auto &stream : streams_) {
+    AddStream(options.streams, stream);
+  }
 
   absl::StatusOr<std::pair<std::string, int>> s =
       client_->LaunchZygote(Name(), executable_, options, c);
@@ -1489,7 +1587,7 @@ VirtualProcess::VirtualProcess(
   ParseStreams(streams);
 }
 
-absl::Status VirtualProcess::Launch(co::Coroutine *c) {
+absl::Status VirtualProcess::Launch(Subsystem *subsystem, co::Coroutine *c) {
   stagezero::ProcessOptions options = {
       .description = description_,
       .args = args_,
@@ -1498,11 +1596,20 @@ absl::Status VirtualProcess::Launch(co::Coroutine *c) {
       .sigterm_shutdown_timeout_secs = sigterm_shutdown_timeout_secs_,
       .notify = notify_,
   };
+
+  // Subsystem vars.
+  for (auto &var : subsystem->Vars()) {
+    options.vars.push_back(var);
+  }
+  // Process variables, can override subsystem vars.
   for (auto &var : vars_) {
     options.vars.push_back({var.name, var.value, var.exported});
   }
 
-  options.streams = streams_;
+  options.streams = subsystem->Streams();
+  for (auto &stream : streams_) {
+    AddStream(options.streams, stream);
+  }
 
   absl::StatusOr<std::pair<std::string, int>> s = client_->LaunchVirtualProcess(
       Name(), zygote_name_, dso_, main_func_, options, c);

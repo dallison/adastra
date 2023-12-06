@@ -11,6 +11,7 @@ build --cxxopt='-Wno-sign-compare'
 
 # For Apple Silicon
 build:apple_silicon --cpu=darwin_arm64
+build:apple_silicon --features=oso_prefix_is_pwd
 
 # Common flags for Clang
 build:clang --action_env=BAZEL_COMPILER=clang

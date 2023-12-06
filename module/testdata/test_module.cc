@@ -2,8 +2,8 @@
 
 class TestModule : public stagezero::module::ProtobufModule {
  public:
-  TestModule(const std::string& name, const std::string& subspace_server)
-      : ProtobufModule(name, subspace_server) {}
+  TestModule(stagezero::SymbolTable&& symbols)
+      : ProtobufModule(std::move(symbols)) {}
 
   absl::Status Init(int argc, char** argv) override {
     int count = 0;

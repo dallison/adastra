@@ -13,6 +13,7 @@
 #include "absl/strings/str_format.h"
 #include "absl/types/span.h"
 #include "google/protobuf/message.h"
+#include "stagezero/symbols.h"
 
 #include "client/client.h"
 #include "coroutine.h"
@@ -302,7 +303,7 @@ private:
 
 class Module {
 public:
-  Module(const std::string &name, const std::string &subspace_socket);
+  Module(stagezero::SymbolTable symbols);
   virtual ~Module() = default;
 
   absl::Status ModuleInit();
@@ -320,6 +321,11 @@ public:
   // Stops the module immediately.  All coroutines will be stopped in their
   // tracks.
   void Stop();
+
+  const std::string &Name() const;
+  const std::string &SubspaceSocket() const;
+
+  const std::string &LookupSymbol(const std::string &name) const;
 
   template <typename MessageType, typename Deserialize>
   absl::StatusOr<std::shared_ptr<Subscriber<MessageType, Deserialize>>>
@@ -491,8 +497,7 @@ private:
     coroutines_.insert(std::move(c));
   }
 
-  std::string name_;
-  std::string subspace_socket_;
+  stagezero::SymbolTable symbols_;
   subspace::Client subspace_client_;
 
   // All coroutines are owned by this set.
@@ -804,23 +809,20 @@ Module::RegisterZeroCopyPublisher(
 }
 
 #define _DEFINE_MODULE(_type, _main)                                           \
-  extern "C" void _main(int argc, char **argv) {                               \
-    std::string name = argv[1];                                                \
-    std::string subspace_socket = argv[2];                                     \
+  extern "C" void _main(stagezero::SymbolTable &&symbols, int argc,            \
+                        char **argv) {                                         \
     std::unique_ptr<_type> module =                                            \
-        std::make_unique<_type>(name, subspace_socket);                        \
+        std::make_unique<_type>(std::move(symbols));                           \
     /* Initialize the base module*/                                            \
     if (absl::Status status = module->ModuleInit(); !status.ok()) {            \
-      std::cerr << "Failed to initialize base module " << name << ": "         \
-                << status.ToString() << std::endl;                             \
+      std::cerr << "Failed to initialize base module " << module->Name()       \
+                << ": " << status.ToString() << std::endl;                     \
       abort();                                                                 \
     }                                                                          \
     /* Now initialize the derived module.*/                                    \
-    argv[2] = argv[0];                                                         \
-    if (absl::Status status = module->Init(argc - 2, argv + 2);                \
-        !status.ok()) {                                                        \
-      std::cerr << "Failed to initialize derived module " << name << ": "      \
-                << status.ToString() << std::endl;                             \
+    if (absl::Status status = module->Init(argc, argv); !status.ok()) {        \
+      std::cerr << "Failed to initialize derived module " << module->Name()    \
+                << ": " << status.ToString() << std::endl;                     \
       abort();                                                                 \
     }                                                                          \
     if (absl::Status status = module->NotifyStartup(); !status.ok()) {         \

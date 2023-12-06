@@ -111,6 +111,7 @@ void Client::BuildProcessOptions(const std::string &name,
   options->set_sigterm_shutdown_timeout_secs(
       opts.sigterm_shutdown_timeout_secs);
   options->set_notify(opts.notify);
+  options->set_interactive(opts.interactive);
 }
 
 absl::Status Client::StopProcess(const std::string &process_id,

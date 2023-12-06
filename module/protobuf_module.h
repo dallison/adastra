@@ -12,20 +12,17 @@
 
 namespace stagezero::module {
 
-template <typename MessageType>
-struct ProtobufSerializedLength {
+template <typename MessageType> struct ProtobufSerializedLength {
   static uint64_t Invoke(const MessageType &msg) { return msg.ByteSizeLong(); }
 };
 
-template <typename MessageType>
-struct ProtobufSerialize {
+template <typename MessageType> struct ProtobufSerialize {
   static uint64_t Invoke(const MessageType &msg, void *buffer, size_t buflen) {
     return msg.SerializeToArray(buffer, buflen);
   }
 };
 
-template <typename MessageType>
-struct ProtobufDeserialize {
+template <typename MessageType> struct ProtobufDeserialize {
   static uint64_t Invoke(MessageType &msg, const void *buffer, size_t buflen) {
     return msg.ParseFromArray(buffer, buflen);
   }
@@ -42,9 +39,9 @@ using ProtobufPublisher =
               ProtobufSerialize<MessageType>>;
 
 class ProtobufModule : public Module {
- public:
-  ProtobufModule(const std::string &name, const std::string &subspace_socket)
-      : Module(name, subspace_socket) {}
+public:
+  ProtobufModule(stagezero::SymbolTable &&symbols)
+      : Module(std::move(symbols)) {}
 
   template <typename MessageType>
   absl::StatusOr<std::shared_ptr<ProtobufSubscriber<MessageType>>>
@@ -73,7 +70,10 @@ class ProtobufModule : public Module {
                     std::function<bool(const ProtobufPublisher<MessageType> &,
                                        MessageType &, co::Coroutine *)>
                         callback) {
-    return RegisterSerializingPublisher(channel, slot_size, num_slots, options,
+    PublisherOptions opts = options;
+    const ::google::protobuf::Descriptor *desc = MessageType::descriptor();
+    opts.type = absl::StrFormat("protobuf/%s", desc->full_name());
+    return RegisterSerializingPublisher(channel, slot_size, num_slots, opts,
                                         callback);
   }
 
@@ -83,7 +83,10 @@ class ProtobufModule : public Module {
                     std::function<bool(const ProtobufPublisher<MessageType> &,
                                        MessageType &, co::Coroutine *)>
                         callback) {
-    return RegisterPublisher(channel, slot_size, num_slots, {}, callback);
+    const ::google::protobuf::Descriptor *desc = MessageType::descriptor();
+    PublisherOptions opts = {
+        .type = absl::StrFormat("protobuf/%s", desc->full_name())};
+    return RegisterPublisher(channel, slot_size, num_slots, opts, callback);
   }
 
   template <typename MessageType>
@@ -105,4 +108,4 @@ class ProtobufModule : public Module {
         channel, slot_size, num_slots);
   }
 };
-}  // namespace stagezero::module
+} // namespace stagezero::module

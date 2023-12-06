@@ -5,6 +5,7 @@
 #include "stagezero/process.h"
 
 #include "absl/strings/str_format.h"
+#include "common/stream.h"
 #include "stagezero/client_handler.h"
 #include "toolbelt/hexdump.h"
 
@@ -25,6 +26,8 @@
 #endif
 #include <grp.h>
 #include <pwd.h>
+#include <sys/ioctl.h>
+#include <termios.h>
 
 namespace stagezero {
 
@@ -89,6 +92,7 @@ StaticProcess::StaticProcess(
   SetSignalTimeouts(req.opts().sigint_shutdown_timeout_secs(),
                     req.opts().sigterm_shutdown_timeout_secs());
   SetUserAndGroup(req.opts().user(), req.opts().group());
+  interactive_ = req.opts().interactive();
 }
 
 absl::Status StaticProcess::Start(co::Coroutine *c) {
@@ -98,9 +102,11 @@ absl::Status StaticProcess::Start(co::Coroutine *c) {
 absl::Status
 StaticProcess::StartInternal(const std::vector<std::string> extra_env_vars,
                              bool send_start_event) {
-  absl::Status s = ForkAndExec(extra_env_vars);
-  if (!s.ok()) {
-    return s;
+  if (absl::Status status = ValidateStreams(req_.streams()); !status.ok()) {
+    return status;
+  }
+  if (absl::Status status = ForkAndExec(extra_env_vars); !status.ok()) {
+    return status;
   }
   // Generate process id.
   SetProcessId();
@@ -176,15 +182,31 @@ StaticProcess::StartInternal(const std::vector<std::string> extra_env_vars,
 
 // Returns a pair of open file descriptors.  The first is the stagezero end
 // and the second is the process end.
-static absl::StatusOr<std::pair<int, int>> MakeFileDescriptors(bool istty) {
+static absl::StatusOr<std::pair<int, int>>
+MakeFileDescriptors(bool istty, const proto::StreamControl::Terminal *term) {
   if (istty) {
     int this_end, proc_end;
-    // TODO: terminal parameters.
-    int e = openpty(&this_end, &proc_end, nullptr, nullptr, nullptr);
+
+    struct winsize win = {};
+    ioctl(0, TIOCGWINSZ, &win); // Might fail.
+
+    if (term != nullptr) {
+      win.ws_col = term->cols();
+      win.ws_row = term->rows();
+    }
+    if (win.ws_col == 0) {
+      win.ws_col = 80;
+    }
+    if (win.ws_row == 0) {
+      win.ws_row = 24;
+    }
+
+    int e = openpty(&this_end, &proc_end, nullptr, nullptr, &win);
     if (e == -1) {
       return absl::InternalError(absl::StrFormat(
           "Failed to open pty for stream: %s", strerror(errno)));
     }
+
     return std::make_pair(this_end, proc_end);
   }
 
@@ -205,7 +227,6 @@ absl::Status StreamFromFileDescriptor(
   for (;;) {
     int wait_fd = c->Wait(fd, POLLIN);
     if (wait_fd != fd) {
-      std::cerr << "wait returned " << wait_fd << std::endl;
       return absl::InternalError("Interrupted");
     }
     ssize_t n = ::read(fd, buffer, sizeof(buffer));
@@ -244,6 +265,27 @@ absl::Status WriteToProcess(int fd, const char *buf, size_t len,
   return absl::OkStatus();
 }
 
+static void DefaultStreamDirections(std::shared_ptr<StreamInfo> stream) {
+  if (stream->disposition == proto::StreamControl::CLOSE ||
+      stream->disposition == proto::StreamControl::STAGEZERO) {
+    return;
+  }
+
+  switch (stream->fd) {
+  case STDIN_FILENO:
+    if (stream->direction != proto::StreamControl::DEFAULT) {
+      stream->direction = proto::StreamControl::INPUT;
+    }
+    break;
+  case STDOUT_FILENO:
+  case STDERR_FILENO:
+    if (stream->direction != proto::StreamControl::DEFAULT) {
+      stream->direction = proto::StreamControl::OUTPUT;
+    }
+    break;
+  }
+}
+
 absl::Status Process::BuildStreams(
     const google::protobuf::RepeatedPtrField<proto::StreamControl> &streams,
     bool notify) {
@@ -253,7 +295,8 @@ absl::Status Process::BuildStreams(
     auto stream = std::make_shared<StreamInfo>();
     stream->disposition = proto::StreamControl::NOTIFY;
     stream->direction = proto::StreamControl::OUTPUT;
-    absl::StatusOr<std::pair<int, int>> fds = MakeFileDescriptors(false);
+    absl::StatusOr<std::pair<int, int>> fds =
+        MakeFileDescriptors(false, nullptr);
     if (!fds.ok()) {
       return fds.status();
     }
@@ -262,13 +305,43 @@ absl::Status Process::BuildStreams(
     streams_.push_back(stream);
   }
 
+  if (interactive_) {
+    int this_end, proc_end;
+
+    int e = openpty(&this_end, &proc_end, nullptr, nullptr, nullptr);
+    if (e == -1) {
+      return absl::InternalError(absl::StrFormat(
+          "Failed to open pty for interactive stream: %s", strerror(errno)));
+    }
+    interactive_this_end_.SetFd(this_end);
+    interactive_proc_end_.SetFd(proc_end);
+
+    // Spawn coroutine to read from the pty and send output events.
+    client_->AddCoroutine(std::make_unique<co::Coroutine>(scheduler_, [
+      proc = shared_from_this(), client = client_, this_end
+    ](co::Coroutine * c) {
+      std::cerr << "streaming from fd " << this_end << std::endl;
+      absl::Status status = StreamFromFileDescriptor(
+          this_end,
+          [proc, client](const char *buf,
+                                   size_t len) -> absl::Status {
+            // Write to client using an event.
+            std::cerr << "output data available: " << std::string(buf, len) << std::endl;
+            return client->SendOutputEvent(proc->GetId(), STDOUT_FILENO, buf, len);
+          },
+          c);
+    }));
+  }
+
   for (const proto::StreamControl &s : streams) {
+    // TODO: do we allow both interactive and setting of streams?
     auto stream = std::make_shared<StreamInfo>();
     proto::StreamControl::Direction direction = s.direction();
     stream->direction = direction;
     stream->fd = s.stream_fd();
     stream->disposition = s.disposition();
-
+    stream->tty = s.tty();
+    DefaultStreamDirections(stream);
     streams_.push_back(stream);
 
     switch (stream->disposition) {
@@ -276,13 +349,17 @@ absl::Status Process::BuildStreams(
     case proto::StreamControl::STAGEZERO:
       break;
     case proto::StreamControl::CLIENT: {
-      absl::StatusOr<std::pair<int, int>> fds = MakeFileDescriptors(s.tty());
+      absl::StatusOr<std::pair<int, int>> fds = MakeFileDescriptors(
+          s.tty(), s.has_terminal() ? &s.terminal() : nullptr);
       if (!fds.ok()) {
         return fds.status();
       }
       stream->read_fd.SetFd(fds->first);
       stream->write_fd.SetFd(fds->second);
 
+      if (s.has_terminal()) {
+        stream->term_name = s.terminal().name();
+      }
       // For an output stream start a coroutine to read from the pipe/tty
       // and send as an event.
       //
@@ -307,13 +384,17 @@ absl::Status Process::BuildStreams(
     }
 
     case proto::StreamControl::LOGGER: {
-      absl::StatusOr<std::pair<int, int>> fds = MakeFileDescriptors(s.tty());
+      absl::StatusOr<std::pair<int, int>> fds = MakeFileDescriptors(
+          s.tty(), s.has_terminal() ? &s.terminal() : nullptr);
       if (!fds.ok()) {
         return fds.status();
       }
       stream->read_fd.SetFd(fds->first);
       stream->write_fd.SetFd(fds->second);
 
+      if (s.has_terminal()) {
+        stream->term_name = s.terminal().name();
+      }
       client_->AddCoroutine(std::make_unique<co::Coroutine>(
           scheduler_, [ proc = shared_from_this(), stream,
                         client = client_ ](co::Coroutine * c) {
@@ -407,6 +488,27 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
     client_->GetScheduler().Stop();
 
     // Redirect the streams.
+    if (interactive_) {
+      std::cerr << "interactive, redirecting streams " << interactive_proc_end_.Fd() << "\n";
+      setsid();
+      int e = ioctl(interactive_proc_end_.Fd(), TIOCSCTTY, 0);
+      if (e != 0) {
+        std::cerr << "unable to make controlling terminal: " << strerror(errno)
+                  << "\n";
+      }
+      interactive_this_end_.Reset();
+      for (int i = 0; i < 3; i++) {
+        ::close(i);
+        int e = dup2(interactive_proc_end_.Fd(), i);
+        if (e == -1) {
+          std::cerr << "Failed to redirect interactive file descriptor: " << i << " "
+                    << strerror(errno) << std::endl;
+          exit(1);
+        }
+      }
+      interactive_proc_end_.Reset();
+    }
+
     for (auto &stream : streams_) {
       if (stream->disposition != proto::StreamControl::CLOSE &&
           stream->disposition != proto::StreamControl::STAGEZERO) {
@@ -420,10 +522,17 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
                   ? stream->write_fd
                   : stream->read_fd;
           (void)close(stream->fd);
+
           int e = dup2(fd.Fd(), stream->fd);
           if (e == -1) {
-            std::cerr << "Failed to redirect file descriptor" << std::endl;
+            std::cerr << "Failed to redirect file descriptor: "
+                      << strerror(errno) << std::endl;
             exit(1);
+          }
+
+          if (!stream->term_name.empty()) {
+            // Set the TERM environment variable to the terminal name given.
+            local_symbols_.AddSymbol("TERM", stream->term_name, true);
           }
 
           // Close the duplicated fd.
@@ -509,9 +618,16 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
   }
 
   // Close redirected stream fds in parent.
+  if (interactive_) {
+    // The proc end has been duplicated in the child and we don't need it
+    // in the parent.
+    interactive_proc_end_.Reset();
+    // This end is what we read and write.
+  }
   for (auto &stream : streams_) {
     if (stream->disposition != proto::StreamControl::CLOSE &&
-        stream->disposition != proto::StreamControl::STAGEZERO) {
+        stream->disposition != proto::StreamControl::STAGEZERO &&
+        stream->disposition != proto::StreamControl::NOTIFY) {
       toolbelt::FileDescriptor &fd =
           stream->direction == proto::StreamControl::OUTPUT ? stream->write_fd
                                                             : stream->read_fd;
@@ -579,8 +695,15 @@ absl::Status Process::Stop(co::Coroutine *c) {
 
 absl::Status Process::SendInput(int fd, const std::string &data,
                                 co::Coroutine *c) {
+  if (interactive_) {
+    std::cerr << "interactive input\n";
+    return WriteToProcess(interactive_this_end_.Fd(), data.data(), data.size(),
+                          c);
+  }
   for (auto &stream : streams_) {
-    if (stream->fd == fd) {
+    if (stream->fd == fd &&
+        stream->disposition == proto::StreamControl::CLIENT &&
+        stream->direction == proto::StreamControl::INPUT) {
       return WriteToProcess(stream->write_fd.Fd(), data.data(), data.size(), c);
     }
   }
@@ -589,7 +712,9 @@ absl::Status Process::SendInput(int fd, const std::string &data,
 
 absl::Status Process::CloseFileDescriptor(int fd) {
   for (auto &stream : streams_) {
-    if (stream->fd == fd) {
+    if (stream->fd == fd &&
+        stream->disposition == proto::StreamControl::CLIENT &&
+        stream->direction == proto::StreamControl::INPUT) {
       int stream_fd = stream->direction == proto::StreamControl::INPUT
                           ? stream->write_fd.Fd()
                           : stream->read_fd.Fd();
@@ -698,7 +823,7 @@ Zygote::Spawn(const stagezero::control::LaunchVirtualProcessRequest &req,
   }
 
   // Add process name as "name"
-  auto* name = spawn.add_vars();
+  auto *name = spawn.add_vars();
   name->set_name("name");
   name->set_value(req.opts().name());
   name->set_exported(false);
@@ -765,6 +890,7 @@ VirtualProcess::VirtualProcess(
   SetSignalTimeouts(req.opts().sigint_shutdown_timeout_secs(),
                     req.opts().sigterm_shutdown_timeout_secs());
   SetUserAndGroup(req.opts().user(), req.opts().group());
+  interactive_ = req.opts().interactive();
 }
 
 absl::Status VirtualProcess::Start(co::Coroutine *c) {
@@ -774,6 +900,9 @@ absl::Status VirtualProcess::Start(co::Coroutine *c) {
         absl::StrFormat("No such zygote %s", req_.proc().zygote()));
   }
 
+  if (absl::Status status = ValidateStreams(req_.streams()); !status.ok()) {
+    return status;
+  }
   if (absl::Status status = BuildStreams(req_.streams(), req_.opts().notify());
       !status.ok()) {
     return status;

@@ -279,6 +279,9 @@ static void ParseProcessOptions(Process *process,
       options.has_sigterm_shutdown_timeout_secs()
           ? options.sigterm_shutdown_timeout_secs()
           : kDefaultSigTermTimeout;
+  process->startup_timeout_secs = options.has_startup_timeout_secs()
+                                      ? options.startup_timeout_secs()
+                                      : kDefaultStartupTimeout;
   process->notify = options.has_notify() ? options.notify() : true;
   process->user = options.user();
   process->group = options.group();
@@ -304,6 +307,9 @@ static void ParseModuleOptions(Process *process,
       options.has_sigterm_shutdown_timeout_secs()
           ? options.sigterm_shutdown_timeout_secs()
           : kDefaultSigTermTimeout;
+  process->startup_timeout_secs = options.has_startup_timeout_secs()
+                                      ? options.startup_timeout_secs()
+                                      : kDefaultStartupTimeout;
   process->user = options.user();
   process->group = options.group();
 }
@@ -355,6 +361,7 @@ static void ParseStream(const std::string &process_name,
   } else {
     s.direction = Stream::Direction::kOutput;
   }
+  s.tty = stream.tty();
   s.stream_fd = fd;
   vec->push_back(s);
 }
@@ -382,6 +389,7 @@ absl::Status FlightDirector::LoadSubsystemGraph(
   }
 
   for (auto &s : graph->subsystem()) {
+    int num_interactive_procs = 0;
     Subsystem *subsystem = FindSubsystem(s.name());
     assert(subsystem != nullptr);
 
@@ -437,11 +445,23 @@ absl::Status FlightDirector::LoadSubsystemGraph(
 
       auto &options = proc.options();
       ParseProcessOptions(process.get(), options);
-      ParseStream(process->name, proc.stdin(), STDIN_FILENO, &process->streams);
-      ParseStream(process->name, proc.stdout(), STDOUT_FILENO,
-                  &process->streams);
-      ParseStream(process->name, proc.stderr(), STDERR_FILENO,
-                  &process->streams);
+      if (proc.interactive()) {
+        if (proc.has_stdin() || proc.has_stdout() || proc.has_stderr()) {
+          return absl::InternalError(
+              absl::StrFormat("Process %s is marked interactive so you can't "
+                              "set its standard streams too",
+                              proc.name()));
+        }
+        num_interactive_procs++;
+        process->interactive = true;
+      } else {
+        ParseStream(process->name, proc.stdin(), STDIN_FILENO,
+                    &process->streams);
+        ParseStream(process->name, proc.stdout(), STDOUT_FILENO,
+                    &process->streams);
+        ParseStream(process->name, proc.stderr(), STDERR_FILENO,
+                    &process->streams);
+      }
       subsystem->processes.push_back(std::move(process));
     }
 
@@ -450,6 +470,10 @@ absl::Status FlightDirector::LoadSubsystemGraph(
       if (!CheckProcessUniqueness(*subsystem, z.name())) {
         return absl::InternalError(absl::StrFormat(
             "Zygote %s already exists in subsystem %s", z.name(), s.name()));
+      }
+      if (z.interactive()) {
+        return absl::InternalError(
+            absl::StrFormat("Zygote %s cannot be interactive", z.name()));
       }
       auto zygote = std::make_unique<Zygote>();
       zygote->name = z.name();
@@ -481,10 +505,24 @@ absl::Status FlightDirector::LoadSubsystemGraph(
       module->zygote = mod.zygote();
       module->dso = mod.dso();
       module->compute = mod.compute();
-      module->main_func = mod.main_func().empty() ? "ModuleMain" : mod.main_func();
-      ParseStream(module->name, mod.stdin(), STDIN_FILENO, &module->streams);
-      ParseStream(module->name, mod.stdout(), STDOUT_FILENO, &module->streams);
-      ParseStream(module->name, mod.stderr(), STDERR_FILENO, &module->streams);
+      module->main_func =
+          mod.main_func().empty() ? "ModuleMain" : mod.main_func();
+      if (mod.interactive()) {
+        if (mod.has_stdin() || mod.has_stdout() || mod.has_stderr()) {
+          return absl::InternalError(
+              absl::StrFormat("Module %s is marked interactive so you can't "
+                              "set its standard streams too",
+                              mod.name()));
+        }
+        num_interactive_procs++;
+        module->interactive = true;
+      } else {
+        ParseStream(module->name, mod.stdin(), STDIN_FILENO, &module->streams);
+        ParseStream(module->name, mod.stdout(), STDOUT_FILENO,
+                    &module->streams);
+        ParseStream(module->name, mod.stderr(), STDERR_FILENO,
+                    &module->streams);
+      }
 
       // Automatically add a dep to the zygote unless it's already there.
       bool present = false;
@@ -500,6 +538,11 @@ absl::Status FlightDirector::LoadSubsystemGraph(
       auto &options = mod.options();
       ParseModuleOptions(module.get(), options);
       subsystem->processes.push_back(std::move(module));
+    }
+    if (num_interactive_procs > 1) {
+      return absl::InternalError(absl::StrFormat(
+          "Too may interactive processes in subsystem %s; %d specified",
+          subsystem->name, num_interactive_procs));
     }
   }
 
@@ -618,6 +661,7 @@ absl::Status FlightDirector::RegisterSubsystemGraph(Subsystem *root,
             .streams = src->streams,
             .user = src->user,
             .group = src->group,
+            .interactive = src->interactive,
         });
         break;
       }
@@ -655,15 +699,8 @@ absl::Status FlightDirector::RegisterSubsystemGraph(Subsystem *root,
             .streams = src->streams,
             .user = src->user,
             .group = src->group,
+            .interactive = src->interactive,
         });
-        // Add the args, but after the two module args: name and
-        // subspace_socket.
-        auto &vproc = options.virtual_processes.back();
-        vproc.args.push_back(src->name);
-        vproc.args.push_back("${subspace_socket}");
-        for (auto &arg : src->args) {
-          vproc.args.push_back(arg);
-        }
         break;
       }
       }
@@ -694,7 +731,8 @@ absl::Status FlightDirector::RegisterSubsystemGraph(Subsystem *root,
 
 absl::Status FlightDirector::AutostartSubsystem(Subsystem *subsystem,
                                                 co::Coroutine *c) {
-  return autostart_capcom_client_.StartSubsystem(subsystem->name, c);
+  return autostart_capcom_client_.StartSubsystem(
+      subsystem->name, stagezero::capcom::client::RunMode::kNoninteractive, c);
 }
 
 void FlightDirector::EventMonitorCoroutine(co::Coroutine *c) {
@@ -702,9 +740,13 @@ void FlightDirector::EventMonitorCoroutine(co::Coroutine *c) {
     absl::StatusOr<std::shared_ptr<stagezero::Event>> event =
         capcom_client_.WaitForEvent(c);
     if (!event.ok()) {
-      logger_.Log(toolbelt::LogLevel::kError, "Failed to read capcom event: %s",
+      logger_.Log(toolbelt::LogLevel::kDebug, "Failed to read capcom event: %s",
                   event.status().ToString().c_str());
       // TODO: what do we do here?
+      for (auto &handler : client_handlers_) {
+        handler->Stop();
+      }
+
       return;
     }
     auto proto_event = std::make_shared<stagezero::proto::Event>();
@@ -718,4 +760,14 @@ void FlightDirector::EventMonitorCoroutine(co::Coroutine *c) {
     }
   }
 }
+
+Process *FlightDirector::FindInteractiveProcess(Subsystem *subsystem) const {
+  for (auto &proc : subsystem->processes) {
+    if (proc->interactive) {
+      return proc.get();
+    }
+  }
+  return nullptr;
+}
+
 } // namespace stagezero::flight

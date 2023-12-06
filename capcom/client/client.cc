@@ -105,6 +105,8 @@ absl::Status Client::AddSubsystem(const std::string &name,
     opts->set_notify(sproc.notify);
     opts->set_user(sproc.user);
     opts->set_group(sproc.group);
+    opts->set_interactive(sproc.interactive);
+
     auto *s = proc->mutable_static_process();
     s->set_executable(sproc.executable);
     proc->set_compute(sproc.compute);
@@ -155,6 +157,7 @@ absl::Status Client::AddSubsystem(const std::string &name,
     opts->set_notify(true);
     opts->set_user(vproc.user);
     opts->set_group(vproc.group);
+    opts->set_interactive(vproc.interactive);
 
     auto *s = proc->mutable_virtual_process();
     s->set_zygote(vproc.zygote);
@@ -169,8 +172,29 @@ absl::Status Client::AddSubsystem(const std::string &name,
       auto *s = proc->add_streams();
       stream.ToProto(s);
     }
+ }
+
+  // Variables.
+  for (auto& var : options.vars) {
+    auto* v = add->add_vars();
+    v->set_name(var.name);
+    v->set_value(var.value);
+    v->set_exported(var.exported);
   }
 
+  // Streams.
+  for (auto& stream : options.streams) {
+    auto* s = add->add_streams();
+    stream.ToProto(s);
+  }
+
+  // Args.
+  for (auto& arg : options.args) {
+    auto *a = add->add_args();
+    *a = arg;
+  }
+
+  // Children.
   for (auto &child : options.children) {
     auto *ch = add->add_children();
     *ch = child;
@@ -220,13 +244,14 @@ absl::Status Client::RemoveSubsystem(const std::string &name, bool recursive,
   return absl::OkStatus();
 }
 
-absl::Status Client::StartSubsystem(const std::string &name, co::Coroutine *c) {
+absl::Status Client::StartSubsystem(const std::string &name, RunMode mode, co::Coroutine *c) {
   if (c == nullptr) {
     c = co_;
   }
   stagezero::capcom::proto::Request req;
   auto s = req.mutable_start_subsystem();
   s->set_subsystem(name);
+  s->set_interactive(mode == RunMode::kInteractive);
 
   stagezero::capcom::proto::Response resp;
   absl::Status status = SendRequestReceiveResponse(req, resp, c);
@@ -377,8 +402,7 @@ Client::GetSubsystems(co::Coroutine *c) {
   return result;
 }
 
-absl::StatusOr<std::vector<Alarm>>
-Client::GetAlarms(co::Coroutine *c) {
+absl::StatusOr<std::vector<Alarm>> Client::GetAlarms(co::Coroutine *c) {
   if (c == nullptr) {
     c = co_;
   }
@@ -403,5 +427,57 @@ Client::GetAlarms(co::Coroutine *c) {
     index++;
   }
   return result;
+}
+
+absl::Status Client::SendInput(const std::string &subsystem,
+                               const std::string &process, int fd,
+                               const std::string &data, co::Coroutine *c) {
+  if (c == nullptr) {
+    c = co_;
+  }
+  stagezero::capcom::proto::Request req;
+  auto input = req.mutable_input();
+  input->set_subsystem(subsystem);
+  input->set_process(process);
+  input->set_fd(fd);
+  input->set_data(data);
+
+  std::cerr << "Client sending input " << subsystem << " " << process << " " << fd << std::endl;
+  stagezero::capcom::proto::Response resp;
+  if (absl::Status status = SendRequestReceiveResponse(req, resp, c);
+      !status.ok()) {
+    return status;
+  }
+  auto &input_resp = resp.input();
+  if (!input_resp.error().empty()) {
+    return absl::InternalError(
+        absl::StrFormat("Failed to send input: %s", input_resp.error()));
+  }
+  return absl::OkStatus();
+}
+
+absl::Status Client::CloseFd(const std::string &subsystem,
+                             const std::string &process, int fd,
+                             co::Coroutine *c) {
+  if (c == nullptr) {
+    c = co_;
+  }
+  stagezero::capcom::proto::Request req;
+  auto close = req.mutable_close_fd();
+  close->set_subsystem(subsystem);
+  close->set_process(process);
+  close->set_fd(fd);
+
+  stagezero::capcom::proto::Response resp;
+  if (absl::Status status = SendRequestReceiveResponse(req, resp, c);
+      !status.ok()) {
+    return status;
+  }
+  auto &close_resp = resp.close_fd();
+  if (!close_resp.error().empty()) {
+    return absl::InternalError(
+        absl::StrFormat("Failed to close fd: %s", close_resp.error()));
+  }
+  return absl::OkStatus();
 }
 } // namespace stagezero::capcom::client

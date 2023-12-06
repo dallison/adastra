@@ -31,6 +31,7 @@ struct ProcessOptions {
   int32_t sigint_shutdown_timeout_secs = kDefaultSigIntShutdownTimeout;
   int32_t sigterm_shutdown_timeout_secs = kDefaultSigTermShutdownTimeout;
   bool notify = false;
+  bool interactive = false;
 };
 
 class Client

@@ -8,17 +8,34 @@
 
 namespace stagezero::module {
 
-Module::Module(const std::string &name, const std::string &subspace_socket)
-    : name_(name), subspace_socket_(subspace_socket) {}
+Module::Module(stagezero::SymbolTable symbols)
+    : symbols_(std::move(symbols)) {}
 
 absl::Status Module::ModuleInit() {
-  if (absl::Status status = subspace_client_.Init(subspace_socket_);
+  if (absl::Status status = subspace_client_.Init(SubspaceSocket());
       !status.ok()) {
     return status;
   }
 
   return absl::OkStatus();
 }
+
+  const std::string& Module::Name() const {
+    return LookupSymbol("name");
+  }
+
+  const std::string& Module::SubspaceSocket() const {
+    return LookupSymbol("subspace_socket");
+  }
+  
+  const std::string& Module::LookupSymbol(const std::string& name) const {
+    static std::string empty;
+    Symbol* sym = symbols_.FindSymbol(name);
+    if (sym == nullptr) {
+      return empty;
+    }
+    return sym->Value();
+  }
 
 absl::Status Module::NotifyStartup() {
   // Notify stagezero of startup.
@@ -148,7 +165,7 @@ SubscriberBase::SubscriberBase(Module &module, subspace::Subscriber sub,
     // TODO log.
     std::cerr << "Failed to open trigger: " << status.ToString() << std::endl;
   }
-  coroutine_name_ = absl::StrFormat("sub/%s/%s", module_.name_, sub_.Name());
+  coroutine_name_ = absl::StrFormat("sub/%s/%s", module_.Name(), sub_.Name());
 }
 
 absl::StatusOr<void *> PublisherBase::GetMessageBuffer(size_t size,
@@ -201,7 +218,7 @@ PublisherBase::PublisherBase(Module &module, subspace::Publisher pub,
     // TODO log.
     std::cerr << "Failed to open trigger: " << status.ToString() << std::endl;
   }
-  coroutine_name_ = absl::StrFormat("pub/%s/%s", module_.name_, pub_.Name());
+  coroutine_name_ = absl::StrFormat("pub/%s/%s", module_.Name(), pub_.Name());
 }
 
 void PublisherBase::Stop() {

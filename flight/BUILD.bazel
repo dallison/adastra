@@ -53,6 +53,7 @@ cc_binary(
         "//testdata:flight",
         "//testdata:listener.so",
         "//testdata:talker.so",
+        "//testdata:echoraw",
         "@subspace//server:subspace_server",
     ],
     deps = [

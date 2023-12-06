@@ -4,13 +4,13 @@
 
 #pragma once
 
-#include <list>
-#include <memory>
 #include "absl/container/flat_hash_map.h"
 #include "toolbelt/hexdump.h"
 #include "toolbelt/logging.h"
 #include "toolbelt/sockets.h"
 #include "toolbelt/triggerfd.h"
+#include <list>
+#include <memory>
 
 #include "coroutine.h"
 
@@ -21,12 +21,13 @@ namespace stagezero::common {
 template <typename Request, typename Response, typename Event>
 class TCPClientHandler : public std::enable_shared_from_this<
                              TCPClientHandler<Request, Response, Event>> {
- public:
+public:
   TCPClientHandler(toolbelt::TCPSocket socket)
       : command_socket_(std::move(socket)) {}
   virtual ~TCPClientHandler() = default;
 
   void Run(co::Coroutine *c);
+  void Stop();
 
   const std::string &GetClientName() const { return client_name_; }
 
@@ -35,6 +36,8 @@ class TCPClientHandler : public std::enable_shared_from_this<
   virtual co::CoroutineScheduler &GetScheduler() const = 0;
 
   virtual void AddCoroutine(std::unique_ptr<co::Coroutine> c) = 0;
+
+  virtual void Shutdown() {}
 
   char *GetEventBuffer() { return event_buffer_; }
 
@@ -47,7 +50,7 @@ class TCPClientHandler : public std::enable_shared_from_this<
   // event will be sent asychrnonously by a coroutine.
   absl::Status QueueEvent(std::shared_ptr<Event> event);
 
- protected:
+protected:
   static constexpr size_t kMaxMessageSize = 4096;
 
   virtual absl::Status HandleMessage(const Request &req, Response &resp,
@@ -68,8 +71,14 @@ class TCPClientHandler : public std::enable_shared_from_this<
   toolbelt::TCPSocket event_socket_;
 
   std::list<std::shared_ptr<Event>> events_;
+  toolbelt::TriggerFd stop_trigger_;
   toolbelt::TriggerFd event_trigger_;
 };
+
+template <typename Request, typename Response, typename Event>
+inline void TCPClientHandler<Request, Response, Event>::Stop() {
+  stop_trigger_.Trigger();
+}
 
 template <typename Request, typename Response, typename Event>
 inline void TCPClientHandler<Request, Response, Event>::Run(co::Coroutine *c) {
@@ -79,6 +88,13 @@ inline void TCPClientHandler<Request, Response, Event>::Run(co::Coroutine *c) {
   char *sendbuf = command_buffer_ + sizeof(int32_t);
   constexpr size_t kSendBufLen = sizeof(command_buffer_) - sizeof(int32_t);
   for (;;) {
+    // Wait for command socket input or stop trigger.
+    int fd = c->Wait({command_socket_.GetFileDescriptor().Fd(),
+                      stop_trigger_.GetPollFd().Fd()},
+                     POLLIN);
+    if (fd == stop_trigger_.GetPollFd().Fd()) {
+      break;
+    }
     absl::StatusOr<ssize_t> n = command_socket_.ReceiveMessage(
         command_buffer_, sizeof(command_buffer_), c);
     if (!n.ok()) {
@@ -113,8 +129,9 @@ inline void TCPClientHandler<Request, Response, Event>::Run(co::Coroutine *c) {
 }
 
 template <typename Request, typename Response, typename Event>
-inline absl::StatusOr<int> TCPClientHandler<Request, Response, Event>::Init(
-    const std::string &client_name, co::Coroutine *c) {
+inline absl::StatusOr<int>
+TCPClientHandler<Request, Response, Event>::Init(const std::string &client_name,
+                                                 co::Coroutine *c) {
   client_name_ = client_name;
 
   // Event channel is an ephemeral port.
@@ -133,6 +150,9 @@ inline absl::StatusOr<int> TCPClientHandler<Request, Response, Event>::Init(
   }
   int event_port = listen_socket.BoundAddress().Port();
 
+  if (absl::Status status = stop_trigger_.Open(); !status.ok()) {
+    return status;
+  }
   if (absl::Status status = event_trigger_.Open(); !status.ok()) {
     return status;
   }
@@ -191,10 +211,12 @@ inline void TCPClientHandler<Request, Response, Event>::EventSenderCoroutine(
   auto client = this->shared_from_this();
   while (client->event_socket_.Connected()) {
     // Wait for an event to be queued.
-    int fd = c->Wait({client->event_trigger_.GetPollFd().Fd(),
+    int fd = c->Wait({client->stop_trigger_.GetPollFd().Fd(),
+                      client->event_trigger_.GetPollFd().Fd(),
                       event_socket_.GetFileDescriptor().Fd()},
                      POLLIN);
-    if (fd == event_socket_.GetFileDescriptor().Fd()) {
+    if (fd == event_socket_.GetFileDescriptor().Fd() ||
+        fd == client->stop_trigger_.GetPollFd().Fd()) {
       break;
     }
     client->event_trigger_.Clear();
@@ -227,4 +249,4 @@ inline void TCPClientHandler<Request, Response, Event>::EventSenderCoroutine(
     }
   }
 }
-}  // namespace stagezero::common
+} // namespace stagezero::common

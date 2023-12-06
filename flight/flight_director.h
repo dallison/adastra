@@ -105,6 +105,8 @@ class FlightDirector {
     global_variables_.push_back(std::move(var));
   }
 
+  Process* FindInteractiveProcess(Subsystem* subsystem) const;
+  
   co::CoroutineScheduler &co_scheduler_;
   toolbelt::InetAddress addr_;
   toolbelt::InetAddress capcom_addr_;

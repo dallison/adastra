@@ -111,6 +111,8 @@ void ClientHandler::HandleInit(const control::InitRequest &req,
   }
   stagezero_.compute_ = req.compute();
   response->set_event_port(*s);
+  // Add a "compute" global symbol.
+  stagezero_.global_symbols_.AddSymbol("compute", req.compute(), false);
 }
 
 void ClientHandler::HandleLaunchStaticProcess(
@@ -202,6 +204,7 @@ void ClientHandler::HandleInputData(const control::InputDataRequest &req,
         absl::StrFormat("No such process %s", req.process_id()));
     return;
   }
+  std::cerr << "StageZero sending input to " << req.fd() << std::endl;
   if (absl::Status status = proc->SendInput(req.fd(), req.data(), c);
       !status.ok()) {
     response->set_error(
@@ -219,6 +222,7 @@ void ClientHandler::HandleCloseProcessFileDescriptor(
         absl::StrFormat("No such process %s", req.process_id()));
     return;
   }
+  std::cerr << "closing process fd " << req.fd() << "\n";
   if (absl::Status status = proc->CloseFileDescriptor(req.fd()); !status.ok()) {
     response->set_error(status.ToString());
   }

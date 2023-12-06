@@ -49,6 +49,19 @@ absl::Status ClientHandler::HandleMessage(const flight::proto::Request &req,
     HandleAbort(req.abort(), resp.mutable_abort(), c);
     break;
 
+  case flight::proto::Request::kInput:
+    HandleInput(req.input(), resp.mutable_input(), c);
+    break;
+
+  case flight::proto::Request::kCloseFd:
+    HandleCloseFd(req.close_fd(), resp.mutable_close_fd(), c);
+    break;
+
+  case flight::proto::Request::kAddGlobalVariable:
+    HandleAddGlobalVariable(req.add_global_variable(),
+                            resp.mutable_add_global_variable(), c);
+    break;
+
   case flight::proto::Request::REQUEST_NOT_SET:
     return absl::InternalError("Protocol error: unknown request");
   }
@@ -74,8 +87,12 @@ void ClientHandler::HandleStartSubsystem(
         "Cannot start non-interface subsystem %s", req.subsystem()));
     return;
   }
-  if (absl::Status status =
-          flight_.capcom_client_.StartSubsystem(req.subsystem(), c);
+  if (absl::Status status = flight_.capcom_client_.StartSubsystem(
+          req.subsystem(),
+          req.interactive()
+              ? stagezero::capcom::client::RunMode::kInteractive
+              : stagezero::capcom::client::RunMode::kNoninteractive,
+          c);
       !status.ok()) {
     response->set_error(status.ToString());
   }
@@ -115,7 +132,8 @@ void ClientHandler::HandleGetSubsystems(
 void ClientHandler::HandleGetAlarms(const flight::proto::GetAlarmsRequest &req,
                                     flight::proto::GetAlarmsResponse *response,
                                     co::Coroutine *c) {
-  absl::StatusOr<std::vector<Alarm>> alarms = flight_.capcom_client_.GetAlarms(c);
+  absl::StatusOr<std::vector<Alarm>> alarms =
+      flight_.capcom_client_.GetAlarms(c);
   if (!alarms.ok()) {
     response->set_error(alarms.status().ToString());
   }
@@ -134,4 +152,60 @@ void ClientHandler::HandleAbort(const flight::proto::AbortRequest &req,
   }
 }
 
+void ClientHandler::HandleAddGlobalVariable(
+    const proto::AddGlobalVariableRequest &req,
+    proto::AddGlobalVariableResponse *response, co::Coroutine *c) {
+  Variable var = {.name = req.var().name(),
+                  .value = req.var().value(),
+                  .exported = req.var().exported()};
+  if (absl::Status status =
+          flight_.capcom_client_.AddGlobalVariable(std::move(var), c);
+      !status.ok()) {
+    response->set_error(status.ToString());
+  }
+}
+
+void ClientHandler::HandleInput(const proto::InputRequest &req,
+                                proto::InputResponse *response,
+                                co::Coroutine *c) {
+  Subsystem *subsystem = flight_.FindSubsystem(req.subsystem());
+  if (subsystem == nullptr) {
+    response->set_error(
+        absl::StrFormat("No such subsystem %s", req.subsystem()));
+    return;
+  }
+  Process *proc = flight_.FindInteractiveProcess(subsystem);
+  if (proc == nullptr) {
+    response->set_error(absl::StrFormat(
+        "Subsystem %s doesn't have an interactive process", req.subsystem()));
+    return;
+  }
+  if (absl::Status status = flight_.capcom_client_.SendInput(
+          req.subsystem(), proc->name, req.fd(), req.data());
+      !status.ok()) {
+    response->set_error(status.ToString());
+  }
+}
+
+void ClientHandler::HandleCloseFd(const proto::CloseFdRequest &req,
+                                  proto::CloseFdResponse *response,
+                                  co::Coroutine *c) {
+  Subsystem *subsystem = flight_.FindSubsystem(req.subsystem());
+  if (subsystem == nullptr) {
+    response->set_error(
+        absl::StrFormat("No such subsystem %s", req.subsystem()));
+    return;
+  }
+  Process *proc = flight_.FindInteractiveProcess(subsystem);
+  if (proc == nullptr) {
+    response->set_error(absl::StrFormat(
+        "Subsystem %s doesn't have an interactive procdess", req.subsystem()));
+    return;
+  }
+  if (absl::Status status =
+          flight_.capcom_client_.CloseFd(req.subsystem(), proc->name, req.fd());
+      !status.ok()) {
+    response->set_error(status.ToString());
+  }
+}
 } // namespace stagezero::flight

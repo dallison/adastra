@@ -18,22 +18,13 @@ message InitResponse {
   int32 event_port = 2;
 }
 
+message AddComputeRequest { config.Compute compute = 1; }
 
-message AddComputeRequest {
-  config.Compute compute = 1;
-}
+message AddComputeResponse { string error = 1; }
 
-message AddComputeResponse {
-  string error = 1;
-}
+message RemoveComputeRequest { string name = 1; }
 
-message RemoveComputeRequest {
-  string name = 1;
-}
-
-message RemoveComputeResponse {
-  string error = 1;
-}
+message RemoveComputeResponse { string error = 1; }
 
 message Process {
   config.ProcessOptions options = 1;
@@ -63,8 +54,11 @@ message AddSubsystemRequest {
   // Args to pass to all processes in this subsystem.
   repeated string args = 4;
 
+  // Default stream control for all processes.
+  repeated stagezero.proto.StreamControl streams = 5;
+
   // Names of children subsystems.  They must exist.
-  repeated string children = 45;
+  repeated string children = 6;
 }
 
 message AddSubsystemResponse { string error = 1; }
@@ -76,7 +70,10 @@ message RemoveSubsystemRequest {
 
 message RemoveSubsystemResponse { string error = 1; }
 
-message StartSubsystemRequest { string subsystem = 1; }
+message StartSubsystemRequest {
+  string subsystem = 1;
+  bool interactive = 2;
+}
 
 message StartSubsystemResponse { string error = 1; }
 
@@ -84,38 +81,46 @@ message StopSubsystemRequest { string subsystem = 1; }
 
 message StopSubsystemResponse { string error = 1; }
 
-message GetSubsystemsRequest {
-}
+message GetSubsystemsRequest {}
 
 message GetSubsystemsResponse {
   string error = 1;
   repeated stagezero.proto.SubsystemStatus subsystems = 2;
 }
 
-message GetAlarmsRequest {
-}
+message GetAlarmsRequest {}
 
 message GetAlarmsResponse {
-   string error = 1;
+  string error = 1;
   repeated stagezero.proto.Alarm alarms = 2;
-
 }
 
 message AbortRequest {
-  string reason = 1;      // Why we are aborting.
+  string reason = 1; // Why we are aborting.
 }
 
-message AbortResponse {
-  string error = 1;     
+message AbortResponse { string error = 1; }
+
+message AddGlobalVariableRequest { config.Variable var = 1; }
+
+message AddGlobalVariableResponse { string error = 1; }
+
+message InputRequest {
+  string subsystem = 1;
+  string process = 2;
+  bytes data = 3;
+  int32 fd = 4;
 }
 
-message AddGlobalVariableRequest {
-  config.Variable var = 1;
+message InputResponse { string error = 1; }
+
+message CloseFdRequest {
+  string subsystem = 1;
+  string process = 2;
+  int32 fd = 3;
 }
 
-message AddGlobalVariableResponse {
-  string error = 1;     
-}
+message CloseFdResponse { string error = 1; }
 
 message Request {
   oneof request {
@@ -130,6 +135,8 @@ message Request {
     GetAlarmsRequest get_alarms = 9;
     AbortRequest abort = 10;
     AddGlobalVariableRequest add_global_variable = 11;
+    InputRequest input = 12;
+    CloseFdRequest close_fd = 13;
   }
 }
 
@@ -146,6 +153,7 @@ message Response {
     GetAlarmsResponse get_alarms = 9;
     AbortResponse abort = 10;
     AddGlobalVariableResponse add_global_variable = 11;
+    InputResponse input = 12;
+    CloseFdResponse close_fd = 13;
   }
 }
-

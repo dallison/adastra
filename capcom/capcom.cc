@@ -74,6 +74,7 @@ absl::Status Capcom::HandleIncomingConnection(
         logger_.Log(toolbelt::LogLevel::kDebug, "client %s closed",
                     handler->GetClientName().c_str());
         client_ids_.Clear(client_id);
+        handler->Shutdown();
         CloseHandler(handler);
       },
       "Client handler"));

@@ -5,13 +5,14 @@
 #include <unistd.h>
 #include <string>
 #include <vector>
+#include "stagezero/symbols.h"
 
 void Signal(int sig) { printf("Signal %d\n", sig); }
 
 extern "C" {
 extern char **environ;
 
-int Main(int argc, char **argv, char **envp) {
+int Main(stagezero::SymbolTable&& symbols, int argc, char **argv, char **envp) {
   for (int i = 0; i < argc; i++) {
     printf("arg[%d]: %s\n", i, argv[i]);
   }

@@ -2,7 +2,6 @@
 // All Rights Reserved
 // See LICENSE file for licensing information.
 
-#include <gtest/gtest.h>
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
 #include "client/client.h"
@@ -10,30 +9,29 @@
 #include "module/testdata/test.pb.h"
 #include "server/server.h"
 #include "toolbelt/hexdump.h"
+#include <gtest/gtest.h>
 
-#include <inttypes.h>
-#include <signal.h>
-#include <sys/resource.h>
 #include <fstream>
+#include <inttypes.h>
 #include <memory>
+#include <signal.h>
 #include <sstream>
+#include <sys/resource.h>
 #include <thread>
 
 using namespace stagezero::module::frequency_literals;
 
 void SignalHandler(int sig) { printf("Signal %d", sig); }
 
-template <typename T>
-using Message = stagezero::module::Message<T>;
+template <typename T> using Message = stagezero::module::Message<T>;
 template <typename T>
 using Subscriber = stagezero::module::ProtobufSubscriber<T>;
-template <typename T>
-using Publisher = stagezero::module::ProtobufPublisher<T>;
+template <typename T> using Publisher = stagezero::module::ProtobufPublisher<T>;
 using ProtobufModule = stagezero::module::ProtobufModule;
 using namespace std::chrono_literals;
 
 class ModuleTest : public ::testing::Test {
- public:
+public:
   // We run one server for the duration of the whole test suite.
   static void SetUpTestSuite() {
     printf("Starting Subspace server\n");
@@ -81,7 +79,14 @@ class ModuleTest : public ::testing::Test {
 
   static const std::string &Socket() { return socket_; }
 
- private:
+  static stagezero::SymbolTable Symbols() {
+    stagezero::SymbolTable symbols;
+    symbols.AddSymbol("name", "test", false);
+    symbols.AddSymbol("subspace_socket", Socket(), false);
+    return symbols;
+  }
+
+private:
   static co::CoroutineScheduler scheduler_;
   static std::string socket_;
   static int server_pipe_[2];
@@ -96,8 +101,8 @@ std::unique_ptr<subspace::Server> ModuleTest::server_;
 std::thread ModuleTest::server_thread_;
 
 class MyModule : public ProtobufModule {
- public:
-  MyModule() : ProtobufModule("test", ModuleTest::Socket()) {}
+public:
+  MyModule() : ProtobufModule(ModuleTest::Symbols()) {}
 
   absl::Status Init(int argc, char **argv) override { return absl::OkStatus(); }
 };

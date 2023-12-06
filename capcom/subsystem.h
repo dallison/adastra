@@ -47,15 +47,19 @@ struct Message {
     AdminState admin;
     OperState oper;
   } state;
+
+  // Information for interactive.
+  bool interactive;
+  int output_fd;
 };
 
 class Process {
- public:
+public:
   Process(Capcom &capcom, std::string name,
           std::shared_ptr<stagezero::Client> client)
       : capcom_(capcom), name_(name), client_(client) {}
   virtual ~Process() = default;
-  virtual absl::Status Launch(co::Coroutine *c) = 0;
+  virtual absl::Status Launch(Subsystem *subsystem, co::Coroutine *c) = 0;
   absl::Status Stop(co::Coroutine *c);
 
   const std::string &Name() const { return name_; }
@@ -71,7 +75,7 @@ class Process {
   void RaiseAlarm(Capcom &capcom, const Alarm &alarm);
   void ClearAlarm(Capcom &capcom);
 
-  const Alarm* GetAlarm() const {
+  const Alarm *GetAlarm() const {
     if (alarm_raised_) {
       return &alarm_;
     }
@@ -80,7 +84,11 @@ class Process {
 
   virtual bool IsZygote() const { return false; }
 
- protected:
+  absl::Status SendInput(int fd, const std::string &data, co::Coroutine *c);
+
+  absl::Status CloseFd(int fd, co::Coroutine *c);
+
+protected:
   void ParseOptions(const stagezero::config::ProcessOptions &options);
   void ParseStreams(
       const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
@@ -103,24 +111,25 @@ class Process {
   bool alarm_raised_ = false;
   std::shared_ptr<stagezero::Client> client_;
   std::vector<Stream> streams_;
+  bool interactive_ = false;
 };
 
 class StaticProcess : public Process {
- public:
+public:
   StaticProcess(
       Capcom &capcom, std::string name, std::string executable,
       const stagezero::config::ProcessOptions &options,
       const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
           &streams,
       std::shared_ptr<stagezero::Client> client);
-  absl::Status Launch(co::Coroutine *c) override;
+  absl::Status Launch(Subsystem *subsystem, co::Coroutine *c) override;
 
- protected:
+protected:
   std::string executable_;
 };
 
 class Zygote : public StaticProcess {
- public:
+public:
   Zygote(
       Capcom &capcom, std::string name, std::string executable,
       const stagezero::config::ProcessOptions &options,
@@ -129,12 +138,12 @@ class Zygote : public StaticProcess {
       std::shared_ptr<stagezero::Client> client)
       : StaticProcess(capcom, name, executable, options, streams,
                       std::move(client)) {}
-  absl::Status Launch(co::Coroutine *c) override;
+  absl::Status Launch(Subsystem *subsystem, co::Coroutine *c) override;
   bool IsZygote() const override { return true; }
 };
 
 class VirtualProcess : public Process {
- public:
+public:
   VirtualProcess(
       Capcom &capcom, std::string name, std::string zygote_name,
       std::string dso, std::string main_func,
@@ -142,19 +151,19 @@ class VirtualProcess : public Process {
       const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
           &streams,
       std::shared_ptr<stagezero::Client> client);
-  absl::Status Launch(co::Coroutine *c) override;
+  absl::Status Launch(Subsystem *subsystem, co::Coroutine *c) override;
 
- private:
+private:
   std::string zygote_name_;
   std::string dso_;
   std::string main_func_;
 };
 
 class Subsystem : public std::enable_shared_from_this<Subsystem> {
- public:
-  Subsystem(std::string name, Capcom &capcom);
-  ~Subsystem() {
-  }
+public:
+  Subsystem(std::string name, Capcom &capcom, std::vector<Variable> vars,
+  std::vector<Stream> streams);
+  ~Subsystem() {}
 
   absl::Status AddStaticProcess(
       const stagezero::config::StaticProcess &proc,
@@ -229,11 +238,19 @@ class Subsystem : public std::enable_shared_from_this<Subsystem> {
            oper_state_ == OperState::kOffline;
   }
 
- private:
+  absl::Status SendInput(const std::string &process, int fd,
+                         const std::string &data, co::Coroutine *c);
+
+  absl::Status CloseFd(const std::string &process, int fd, co::Coroutine *c);
+
+  const std::vector<Variable> &Vars() const { return vars_; }
+  const std::vector<Stream> &Streams() const { return streams_; }
+
+private:
   enum class EventSource {
     kUnknown,
-    kStageZero,  // StageZero (process state or data).
-    kMessage,    // Message from parents, children or API.
+    kStageZero, // StageZero (process state or data).
+    kMessage,   // Message from parents, children or API.
   };
 
   enum class StateTransition {
@@ -253,17 +270,26 @@ class Subsystem : public std::enable_shared_from_this<Subsystem> {
   // TODO: remove parent function.
 
   void AddProcess(std::unique_ptr<Process> p) {
+    process_map_.insert(std::make_pair(p->Name(), p.get()));
     processes_.push_back(std::move(p));
   }
 
   void RecordProcessId(const std::string &id, Process *p) {
-    process_map_[id] = p;
+    process_id_map_[id] = p;
   }
 
   void DeleteProcessId(const std::string &id) { process_map_.erase(id); }
 
   Process *FindProcess(const std::string &id) {
-    auto it = process_map_.find(id);
+    auto it = process_id_map_.find(id);
+    if (it == process_id_map_.end()) {
+      return nullptr;
+    }
+    return it->second;
+  }
+
+  Process *FindProcessName(const std::string &name) {
+    auto it = process_map_.find(name);
     if (it == process_map_.end()) {
       return nullptr;
     }
@@ -289,8 +315,8 @@ class Subsystem : public std::enable_shared_from_this<Subsystem> {
     return true;
   }
 
-  absl::StatusOr<std::shared_ptr<stagezero::Client>> ConnectToStageZero(
-      const Compute *compute, co::Coroutine *c);
+  absl::StatusOr<std::shared_ptr<stagezero::Client>>
+  ConnectToStageZero(const Compute *compute, co::Coroutine *c);
 
   // State event processing coroutines.
   // General event processor.  Calls handler for incoming events
@@ -344,8 +370,14 @@ class Subsystem : public std::enable_shared_from_this<Subsystem> {
 
   co::CoroutineScheduler &Scheduler();
 
+  void SendOutput(int fd, const std::string &data, co::Coroutine *c);
+
+  Process *FindInteractiveProcess();
+
   std::string name_;
   Capcom &capcom_;
+  std::vector<Variable> vars_;
+  std::vector<Stream> streams_;
   bool running_ = false;
   AdminState admin_state_;
   OperState oper_state_;
@@ -361,6 +393,7 @@ class Subsystem : public std::enable_shared_from_this<Subsystem> {
 
   std::vector<std::unique_ptr<Process>> processes_;
   absl::flat_hash_map<std::string, Process *> process_map_;
+  absl::flat_hash_map<std::string, Process *> process_id_map_;
 
   std::list<std::shared_ptr<Subsystem>> children_;
   std::list<std::shared_ptr<Subsystem>> parents_;
@@ -381,6 +414,9 @@ class Subsystem : public std::enable_shared_from_this<Subsystem> {
   // maintains its own connections to the StageZeros on the computes.
   absl::flat_hash_map<std::string, std::shared_ptr<stagezero::Client>>
       computes_;
+
+  bool interactive_ = false;
+  toolbelt::FileDescriptor interactive_output_;
 };
 
-}  // namespace stagezero::capcom
+} // namespace stagezero::capcom

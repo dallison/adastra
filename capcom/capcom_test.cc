@@ -2,20 +2,20 @@
 // All Rights Reserved
 // See LICENSE file for licensing information.
 
-#include "capcom/capcom.h"
-#include <gtest/gtest.h>
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
+#include "capcom/capcom.h"
 #include "capcom/client/client.h"
 #include "capcom/subsystem.h"
 #include "stagezero/stagezero.h"
+#include <gtest/gtest.h>
 
-#include <inttypes.h>
-#include <signal.h>
-#include <sys/resource.h>
 #include <fstream>
+#include <inttypes.h>
 #include <memory>
+#include <signal.h>
 #include <sstream>
+#include <sys/resource.h>
 #include <thread>
 
 ABSL_FLAG(bool, start_capcom, true, "Start capcom");
@@ -31,7 +31,7 @@ void SignalHandler(int sig);
 void SignalQuitHandler(int sig);
 
 class CapcomTest : public ::testing::Test {
- public:
+public:
   // We run one server for the duration of the whole test suite.
   static void SetUpTestSuite() {
     if (!absl::GetFlag(FLAGS_start_capcom)) {
@@ -153,6 +153,7 @@ class CapcomTest : public ::testing::Test {
         return {};
       }
       std::shared_ptr<Event> event = *e;
+      std::cerr << "WaitForState: event " << (int)event->type << "\n";
       if (event->type == EventType::kSubsystemStatus) {
         SubsystemStatus &s = std::get<0>(event->event);
         std::cerr << s.subsystem << " " << s.admin_state << " " << s.oper_state
@@ -170,6 +171,35 @@ class CapcomTest : public ::testing::Test {
     return {};
   }
 
+  std::string WaitForOutput(stagezero::capcom::client::Client &client,
+                            std::string match) {
+    std::cout << "waiting for output " << match << "\n";
+    std::stringstream s;
+    for (int retry = 0; retry < 10; retry++) {
+      absl::StatusOr<std::shared_ptr<stagezero::Event>> e =
+          client.WaitForEvent();
+      std::cout << e.status().ToString() << "\n";
+      if (!e.ok()) {
+        return s.str();
+      }
+      std::shared_ptr<stagezero::Event> event = *e;
+      if (event->type == stagezero::EventType::kOutput) {
+        s << std::get<2>(event->event).data;
+        if (s.str().find(match) != std::string::npos) {
+          return s.str();
+        }
+      }
+    }
+    abort();
+  }
+
+  void SendInput(stagezero::capcom::client::Client &client,
+                 std::string subsystem, std::string process, int fd,
+                 std::string s) {
+    absl::Status status = client.SendInput(subsystem, process, fd, s);
+    ASSERT_TRUE(status.ok());
+  }
+
   static const toolbelt::InetAddress &CapcomAddr() { return capcom_addr_; }
 
   static co::CoroutineScheduler &CapcomScheduler() { return capcom_scheduler_; }
@@ -180,7 +210,7 @@ class CapcomTest : public ::testing::Test {
   static stagezero::capcom::Capcom *Capcom() { return capcom_.get(); }
   static stagezero::StageZero *StageZero() { return stagezero_.get(); }
 
- private:
+private:
   static co::CoroutineScheduler capcom_scheduler_;
   static int capcom_pipe_[2];
   static std::unique_ptr<stagezero::capcom::Capcom> capcom_;
@@ -701,7 +731,7 @@ TEST_F(CapcomTest, VirtualProcess) {
 }
 
 TEST_F(CapcomTest, AbortVirtual) {
-  stagezero::capcom::client::Client client(ClientMode::kBlocking);
+  stagezero::capcom::client::Client client(ClientMode::kNonBlocking);
   InitClient(client, "foobar1");
 
   absl::Status status = client.AddSubsystem(
@@ -749,7 +779,11 @@ TEST_F(CapcomTest, TalkAndListen) {
   stagezero::capcom::client::Client client(ClientMode::kBlocking);
   InitClient(client, "foobar1");
 
-  absl::Status status = client.AddSubsystem(
+  absl::Status status = client.AddGlobalVariable(
+      {.name = "subspace_socket", .value = "/tmp/subspace", .exported = false});
+  ASSERT_TRUE(status.ok());
+
+  status = client.AddSubsystem(
       "subspace",
       {.static_processes = {{
            .name = "subspace_server",
@@ -772,20 +806,12 @@ TEST_F(CapcomTest, TalkAndListen) {
                         .zygote = "standard_zygote",
                         .dso = "${runfiles_dir}/__main__/testdata/talker.so",
                         .main_func = "ModuleMain",
-                        .args =
-                            {
-                                "talker", "/tmp/subspace",
-                            },
                     },
                     {
                         .name = "listener",
                         .zygote = "standard_zygote",
                         .dso = "${runfiles_dir}/__main__/testdata/listener.so",
                         .main_func = "ModuleMain",
-                        .args =
-                            {
-                                "listener", "/tmp/subspace",
-                            },
                     }},
                .children = {
                    "subspace",
@@ -804,6 +830,182 @@ TEST_F(CapcomTest, TalkAndListen) {
   ASSERT_TRUE(status.ok());
 
   status = client.RemoveSubsystem("chat", true);
+  ASSERT_TRUE(status.ok());
+}
+
+TEST_F(CapcomTest, Echo) {
+  stagezero::capcom::client::Client client(ClientMode::kNonBlocking);
+  InitClient(client, "foobar1");
+
+  absl::Status status = client.AddSubsystem(
+      "echo",
+      {.static_processes = {{
+           .name = "echo",
+           .executable = "${runfiles_dir}/__main__/testdata/echo",
+           .notify = true,
+           .interactive = true,
+       }},
+      .streams = {{
+                      .stream_fd = STDIN_FILENO,
+                      .tty = true,
+                      .disposition = stagezero::Stream::Disposition::kClient,
+                      .direction = stagezero::Stream::Direction::kInput,
+                  },
+                  {
+                      .stream_fd = STDOUT_FILENO,
+                      .tty = true,
+                      .disposition = stagezero::Stream::Disposition::kClient,
+                      .direction = stagezero::Stream::Direction::kOutput,
+                  },
+                  {
+                      .stream_fd = STDERR_FILENO,
+                      .tty = true,
+                      .disposition = stagezero::Stream::Disposition::kClient,
+                      .direction = stagezero::Stream::Direction::kOutput,
+                  }}});
+  ASSERT_TRUE(status.ok());
+
+  status = client.StartSubsystem(
+      "echo", stagezero::capcom::client::RunMode::kInteractive);
+  ASSERT_TRUE(status.ok());
+
+  std::string data = WaitForOutput(client, "running");
+  std::cout << "output: " << data;
+
+  // Send a string to the echo program and check that it's echoed.
+  SendInput(client, "echo", "echo", STDIN_FILENO, "testing\r\r\r\n");
+  data = WaitForOutput(client, "testing");
+  std::cout << "output: " << data;
+
+  // Close stdin for the process.  This will cause the process to exit.
+  absl::Status close_status = client.CloseFd("echo", "echo", STDIN_FILENO);
+  ASSERT_TRUE(close_status.ok());
+
+  // The echo program prints "done" when it is exiting.
+  data = WaitForOutput(client, "done");
+  std::cout << "output: " << data;
+
+  status = client.StopSubsystem("echo");
+  ASSERT_TRUE(status.ok());
+
+  WaitForState(client, "echo", AdminState::kOffline, OperState::kOffline);
+
+  status = client.RemoveSubsystem("echo", false);
+  ASSERT_TRUE(status.ok());
+}
+
+TEST_F(CapcomTest, BadStreams) {
+  stagezero::capcom::client::Client client(ClientMode::kNonBlocking);
+  InitClient(client, "foobar1");
+
+  // echo1 has stdin with output direction.
+  absl::Status status = client.AddSubsystem(
+      "echo1",
+      {.static_processes = {{
+           .name = "echo1",
+           .executable = "${runfiles_dir}/__main__/testdata/echo",
+           .notify = true,
+           .streams =
+               {{
+                    .stream_fd = STDIN_FILENO,
+                    .tty = true,
+                    .disposition = stagezero::Stream::Disposition::kClient,
+                    .direction = stagezero::Stream::Direction::kOutput,
+                },
+                {
+                    .stream_fd = STDOUT_FILENO,
+                    .tty = true,
+                    .disposition = stagezero::Stream::Disposition::kClient,
+                    .direction = stagezero::Stream::Direction::kOutput,
+                },
+                {
+                    .stream_fd = STDERR_FILENO,
+                    .tty = true,
+                    .disposition = stagezero::Stream::Disposition::kClient,
+                    .direction = stagezero::Stream::Direction::kOutput,
+                }},
+           .interactive = true,
+       }}});
+  ASSERT_FALSE(status.ok());
+
+  // echo2 has stdout as input
+  status = client.AddSubsystem(
+      "echo2",
+      {.static_processes = {{
+           .name = "echo2",
+           .executable = "${runfiles_dir}/__main__/testdata/echo",
+           .notify = true,
+           .streams =
+               {{
+                    .stream_fd = STDIN_FILENO,
+                    .tty = true,
+                    .disposition = stagezero::Stream::Disposition::kClient,
+                    .direction = stagezero::Stream::Direction::kInput,
+                },
+                {
+                    .stream_fd = STDOUT_FILENO,
+                    .tty = true,
+                    .disposition = stagezero::Stream::Disposition::kClient,
+                    .direction = stagezero::Stream::Direction::kInput,
+                },
+                {
+                    .stream_fd = STDERR_FILENO,
+                    .tty = true,
+                    .disposition = stagezero::Stream::Disposition::kClient,
+                    .direction = stagezero::Stream::Direction::kOutput,
+                }},
+           .interactive = true,
+       }}});
+  ASSERT_FALSE(status.ok());
+
+  // echo3 has default for stdin and stdout.
+  status = client.AddSubsystem(
+      "echo3",
+      {.static_processes = {{
+           .name = "echo3",
+           .executable = "${runfiles_dir}/__main__/testdata/echo",
+           .notify = true,
+           .streams =
+               {{
+                    .stream_fd = STDIN_FILENO,
+                    .tty = true,
+                    .disposition = stagezero::Stream::Disposition::kClient,
+                },
+                {
+                    .stream_fd = STDOUT_FILENO,
+                    .tty = true,
+                    .disposition = stagezero::Stream::Disposition::kClient,
+                },
+                {
+                    .stream_fd = STDERR_FILENO,
+                    .tty = true,
+                    .disposition = stagezero::Stream::Disposition::kClient,
+                    .direction = stagezero::Stream::Direction::kOutput,
+                }},
+           .interactive = true,
+       }}});
+  ASSERT_TRUE(status.ok());
+
+  // echo4 has a stream without a direction set.
+  status = client.AddSubsystem(
+      "echo4",
+      {.static_processes = {{
+           .name = "echo4",
+           .executable = "${runfiles_dir}/__main__/testdata/echo",
+           .notify = true,
+           .streams =
+               {
+                   {
+                       .stream_fd = 4,
+                       .tty = true,
+                       .disposition = stagezero::Stream::Disposition::kClient,
+                   },
+               },
+           .interactive = true,
+       }}});
+  ASSERT_FALSE(status.ok());
+
+  status = client.RemoveSubsystem("echo3", false);
   ASSERT_TRUE(status.ok());
 }
 

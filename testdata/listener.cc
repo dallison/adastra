@@ -13,8 +13,8 @@ using Message = stagezero::module::Message<T>;
 
 class Listener : public stagezero::module::ProtobufModule {
  public:
-  Listener(const std::string &name, const std::string &subspace_socket)
-      : ProtobufModule(name, subspace_socket) {}
+  Listener(stagezero::SymbolTable symbols)
+      : ProtobufModule(std::move(symbols)) {}
 
   absl::Status Init(int argc, char **argv) override {
     auto pub = RegisterPublisher<chat::Answer>("answer", 256, 10);

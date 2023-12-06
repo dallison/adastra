@@ -13,10 +13,11 @@ using Message = stagezero::module::Message<T>;
 
 class Talker : public stagezero::module::ProtobufModule {
  public:
-  Talker(const std::string &name, const std::string &subspace_server)
-      : ProtobufModule(name, subspace_server) {}
+  Talker(stagezero::SymbolTable symbols)
+      : ProtobufModule(std::move(symbols)) {}
 
   absl::Status Init(int argc, char **argv) override {
+    std::cout << "Running on " << LookupSymbol("compute") << std::endl;
     auto pub = RegisterPublisher<chat::Question>(
         "question", 256, 10,
         [this](const Publisher<chat::Question> &pub, chat::Question &msg,

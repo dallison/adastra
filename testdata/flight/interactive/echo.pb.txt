@@ -1,0 +1,15 @@
+subsystem {
+ name: "echoraw"
+
+ static_process {
+  name: "echoraw"
+  executable: "${runfiles_dir}/__main__/testdata/${name}"
+  interactive: true
+  options {
+    notify: true
+    startup_timeout_secs: 2
+  }
+ }
+}
+
+interface: "echoraw"

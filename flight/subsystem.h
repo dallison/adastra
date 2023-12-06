@@ -26,11 +26,12 @@ struct Process {
   int32_t startup_timeout_secs;
   int32_t sigint_shutdown_timeout_secs;
   int32_t sigterm_shutdown_timeout_secs;
-  bool notify;
+  bool notify = false;
   std::string compute;
   std::vector<Stream> streams;
   std::string user;
   std::string group;
+  bool interactive = false;
 
   virtual ~Process() = default;
   virtual ProcessType Type() const = 0;

@@ -3,7 +3,6 @@
 // See LICENSE file for licensing information.
 #pragma once
 
-#include <variant>
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "common/alarm.h"
@@ -17,6 +16,7 @@
 #include "proto/capcom.pb.h"
 #include "proto/config.pb.h"
 #include "toolbelt/sockets.h"
+#include <variant>
 
 namespace stagezero::capcom::client {
 
@@ -33,7 +33,7 @@ struct StaticProcess {
   std::string name;
   std::string description;
   std::string executable;
-  std::string compute;  // Where to run.  Empty is localhost.
+  std::string compute; // Where to run.  Empty is localhost.
   std::vector<Variable> vars;
   std::vector<std::string> args;
   int32_t startup_timeout_secs = kDefaultStartupTimeout;
@@ -43,13 +43,14 @@ struct StaticProcess {
   std::vector<Stream> streams;
   std::string user;
   std::string group;
+  bool interactive = false;
 };
 
 struct Zygote {
   std::string name;
   std::string description;
   std::string executable;
-  std::string compute;  // Where to run.  Empty is localhost.
+  std::string compute; // Where to run.  Empty is localhost.
   std::vector<Variable> vars;
   std::vector<std::string> args;
   int32_t startup_timeout_secs = kDefaultStartupTimeout;
@@ -66,7 +67,7 @@ struct VirtualProcess {
   std::string zygote;
   std::string dso;
   std::string main_func;
-  std::string compute;  // Where to run.  Empty is localhost.
+  std::string compute; // Where to run.  Empty is localhost.
   std::vector<Variable> vars;
   std::vector<std::string> args;
   int32_t startup_timeout_secs = kDefaultStartupTimeout;
@@ -75,6 +76,7 @@ struct VirtualProcess {
   std::vector<Stream> streams;
   std::string user;
   std::string group;
+  bool interactive = false;
 };
 
 struct SubsystemOptions {
@@ -83,13 +85,19 @@ struct SubsystemOptions {
   std::vector<VirtualProcess> virtual_processes;
 
   std::vector<Variable> vars;
+  std::vector<Stream> streams;
   std::vector<std::string> args;
   std::vector<std::string> children;
 };
 
+enum class RunMode {
+  kNoninteractive,
+  kInteractive,
+};
+
 class Client : public TCPClient<capcom::proto::Request, capcom::proto::Response,
                                 stagezero::proto::Event> {
- public:
+public:
   Client(ClientMode mode = ClientMode::kBlocking, co::Coroutine *co = nullptr)
       : TCPClient<capcom::proto::Request, capcom::proto::Response,
                   stagezero::proto::Event>(co),
@@ -114,6 +122,7 @@ class Client : public TCPClient<capcom::proto::Request, capcom::proto::Response,
                                co::Coroutine *c = nullptr);
 
   absl::Status StartSubsystem(const std::string &name,
+            RunMode mode = RunMode::kNoninteractive,
                               co::Coroutine *c = nullptr);
   absl::Status StopSubsystem(const std::string &name,
                              co::Coroutine *c = nullptr);
@@ -121,22 +130,28 @@ class Client : public TCPClient<capcom::proto::Request, capcom::proto::Response,
   absl::Status AddGlobalVariable(const Variable &var,
                                  co::Coroutine *c = nullptr);
 
-  absl::StatusOr<std::vector<SubsystemStatus>> GetSubsystems(
-      co::Coroutine *c = nullptr);
+  absl::StatusOr<std::vector<SubsystemStatus>>
+  GetSubsystems(co::Coroutine *c = nullptr);
 
- absl::StatusOr<std::vector<Alarm>> GetAlarms(
-      co::Coroutine *c = nullptr);
+  absl::StatusOr<std::vector<Alarm>> GetAlarms(co::Coroutine *c = nullptr);
 
   // Wait for an incoming event.
-  absl::StatusOr<std::shared_ptr<Event>> WaitForEvent(
-      co::Coroutine *c = nullptr) {
+  absl::StatusOr<std::shared_ptr<Event>>
+  WaitForEvent(co::Coroutine *c = nullptr) {
     return ReadEvent(c);
   }
   absl::StatusOr<std::shared_ptr<Event>> ReadEvent(co::Coroutine *c = nullptr);
 
   absl::Status Abort(const std::string &reason, co::Coroutine *c = nullptr);
 
- private:
+  absl::Status SendInput(const std::string &subsystem,
+                         const std::string &process, int fd,
+                         const std::string &data, co::Coroutine *c = nullptr);
+
+  absl::Status CloseFd(const std::string &subsystem, const std::string &process,
+                       int fd, co::Coroutine *c = nullptr);
+
+private:
   absl::Status WaitForSubsystemState(const std::string &subsystem,
                                      AdminState admin_state,
                                      OperState oper_state,
@@ -144,4 +159,4 @@ class Client : public TCPClient<capcom::proto::Request, capcom::proto::Response,
   ClientMode mode_;
 };
 
-}  // namespace stagezero::capcom::client
+} // namespace stagezero::capcom::client

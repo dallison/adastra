@@ -71,6 +71,16 @@ class ClientHandler : public common::TCPClientHandler<flight::proto::Request,
   void HandleAbort(const flight::proto::AbortRequest &req,
                    flight::proto::AbortResponse *response, co::Coroutine *c);
 
+  void HandleAddGlobalVariable(const flight::proto::AddGlobalVariableRequest &req,
+                               flight::proto::AddGlobalVariableResponse *response,
+                               co::Coroutine *c);
+
+  void HandleInput(const flight::proto::InputRequest &req,
+                   flight::proto::InputResponse *response, co::Coroutine *c);
+  
+    void HandleCloseFd(const flight::proto::CloseFdRequest &req,
+                   flight::proto::CloseFdResponse *response, co::Coroutine *c);
+
   FlightDirector &flight_;
 };
 }  // namespace stagezero::flight

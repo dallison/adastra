@@ -244,9 +244,9 @@ void ZygoteCore::InvokeMainAfterSpawn(const control::SpawnRequest &&req,
   setpgrp();
 
   // Convert to a function pointer and call main.
-  using Ptr = int (*)(int, const char **, const char **);
+  using Ptr = int (*)(SymbolTable &&local_symbols, int, const char **, const char **);
   Ptr main = reinterpret_cast<Ptr>(main_func);
-  exit(main(argv.size(), argv.data(), environ));
+  exit(main(std::move(local_symbols), argv.size(), argv.data(), environ));
 }
 
 }  // namespace stagezero

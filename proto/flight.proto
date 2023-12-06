@@ -7,7 +7,6 @@ syntax = "proto3";
 package stagezero.flight.proto;
 
 import "proto/config.proto";
-import "proto/capcom.proto";
 import "proto/event.proto";
 import "proto/subsystem_status.proto";
 
@@ -19,7 +18,8 @@ message Stream {
     CLOSE = 3;     // Close the stream.
   }
   Disposition where = 1;
-  oneof opts { string filename = 2; }
+  bool tty = 2;
+  oneof opts { string filename = 3; }
 }
 
 message ModuleOptions {
@@ -76,7 +76,8 @@ message Module {
   Stream stdin = 6;
   Stream stdout = 7;
   Stream stderr = 8;
-  string main_func = 9;   // ModuleMain if omitted.
+  string main_func = 9; // ModuleMain if omitted.
+  bool interactive = 10;
 }
 
 message StaticProcess {
@@ -87,6 +88,7 @@ message StaticProcess {
   Stream stdin = 5;
   Stream stdout = 6;
   Stream stderr = 7;
+  bool interactive = 8;
 }
 
 message Subsystem {
@@ -123,7 +125,10 @@ message InitResponse {
   int32 event_port = 2;
 }
 
-message StartSubsystemRequest { string subsystem = 1; }
+message StartSubsystemRequest {
+  string subsystem = 1;
+  bool interactive = 2;
+}
 
 message StartSubsystemResponse { string error = 1; }
 
@@ -151,6 +156,25 @@ message AbortRequest {
 
 message AbortResponse { string error = 1; }
 
+message AddGlobalVariableRequest { config.Variable var = 1; }
+
+message AddGlobalVariableResponse { string error = 1; }
+
+message InputRequest {
+  string subsystem = 1;
+  bytes data = 2;
+  int32 fd = 3;
+}
+
+message InputResponse { string error = 1; }
+
+message CloseFdRequest {
+  string subsystem = 1;
+  int32 fd = 2;
+}
+
+message CloseFdResponse { string error = 1; }
+
 message Request {
   oneof request {
     InitRequest init = 1;
@@ -159,6 +183,9 @@ message Request {
     GetSubsystemsRequest get_subsystems = 4;
     GetAlarmsRequest get_alarms = 5;
     AbortRequest abort = 6;
+    AddGlobalVariableRequest add_global_variable = 7;
+    InputRequest input = 8;
+    CloseFdRequest close_fd = 9;
   }
 }
 
@@ -170,5 +197,8 @@ message Response {
     GetSubsystemsResponse get_subsystems = 4;
     GetAlarmsResponse get_alarms = 5;
     AbortResponse abort = 6;
+    AddGlobalVariableResponse add_global_variable = 7;
+    InputResponse input = 8;
+    CloseFdResponse close_fd = 9;
   }
 }

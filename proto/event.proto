@@ -43,9 +43,16 @@ message Alarm {
   string details = 7;
 }
 
+message OutputEvent {
+  string process_id = 1;
+  bytes data = 2;
+  int32 fd = 3; // What fd sent it
+}
+
 message Event {
   oneof event {
     SubsystemStatus subsystem_status = 1;
     Alarm alarm = 2;
+    OutputEvent output = 3;
   }
 }

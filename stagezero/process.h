@@ -26,6 +26,8 @@ struct StreamInfo {
   toolbelt::FileDescriptor read_fd;   // Read end of pipe or tty.
   toolbelt::FileDescriptor write_fd;  // Write end.
   int fd;                             // Process fd to map to.
+  std::string term_name;
+  bool tty;
 };
 
 // Ownership of processes is complex due to the fact that the
@@ -102,6 +104,9 @@ class Process : public std::enable_shared_from_this<Process> {
   int sigterm_timeout_secs_ = 0;
   std::string user_;
   std::string group_;
+  bool interactive_ = false;
+  toolbelt::FileDescriptor interactive_this_end_;
+  toolbelt::FileDescriptor interactive_proc_end_;
 };
 
 class StaticProcess : public Process {

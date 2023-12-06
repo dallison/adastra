@@ -39,6 +39,10 @@ class ClientHandler
 
   void AddCoroutine(std::unique_ptr<co::Coroutine> c) override;
 
+  absl::Status SendOutputEvent(const std::string& process, int fd, const char* data, size_t size);
+
+  void Shutdown() override;
+  
  private:
   std::shared_ptr<ClientHandler> shared_from_this() {
     return std::static_pointer_cast<ClientHandler>(
@@ -87,6 +91,11 @@ class ClientHandler
                                proto::AddGlobalVariableResponse *response,
                                co::Coroutine *c);
 
+  void HandleInput(const proto::InputRequest &req,
+                   proto::InputResponse *response, co::Coroutine *c);
+  
+    void HandleCloseFd(const proto::CloseFdRequest &req,
+                   proto::CloseFdResponse *response, co::Coroutine *c);
   Capcom &capcom_;
   uint32_t id_;
 };

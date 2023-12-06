@@ -5,6 +5,7 @@
 #include "capcom/client_handler.h"
 #include "absl/strings/str_format.h"
 #include "capcom/capcom.h"
+#include "common/stream.h"
 #include "toolbelt/hexdump.h"
 
 #include <iostream>
@@ -16,6 +17,8 @@ ClientHandler::~ClientHandler() {}
 co::CoroutineScheduler &ClientHandler::GetScheduler() const {
   return capcom_.co_scheduler_;
 }
+
+void ClientHandler::Shutdown() {}
 
 toolbelt::Logger &ClientHandler::GetLogger() const { return capcom_.logger_; }
 
@@ -41,53 +44,58 @@ absl::Status ClientHandler::HandleMessage(const proto::Request &req,
                                           proto::Response &resp,
                                           co::Coroutine *c) {
   switch (req.request_case()) {
-    case proto::Request::kInit:
-      HandleInit(req.init(), resp.mutable_init(), c);
-      break;
-    case proto::Request::kAddCompute:
-      HandleAddCompute(req.add_compute(), resp.mutable_add_compute(), c);
-      break;
+  case proto::Request::kInit:
+    HandleInit(req.init(), resp.mutable_init(), c);
+    break;
+  case proto::Request::kAddCompute:
+    HandleAddCompute(req.add_compute(), resp.mutable_add_compute(), c);
+    break;
 
-    case proto::Request::kRemoveCompute:
-      HandleRemoveCompute(req.remove_compute(), resp.mutable_remove_compute(),
-                          c);
-      break;
+  case proto::Request::kRemoveCompute:
+    HandleRemoveCompute(req.remove_compute(), resp.mutable_remove_compute(), c);
+    break;
 
-    case proto::Request::kAddSubsystem:
-      HandleAddSubsystem(req.add_subsystem(), resp.mutable_add_subsystem(), c);
-      break;
+  case proto::Request::kAddSubsystem:
+    HandleAddSubsystem(req.add_subsystem(), resp.mutable_add_subsystem(), c);
+    break;
 
-    case proto::Request::kRemoveSubsystem:
-      HandleRemoveSubsystem(req.remove_subsystem(),
-                            resp.mutable_remove_subsystem(), c);
-      break;
-    case proto::Request::kStartSubsystem:
-      HandleStartSubsystem(req.start_subsystem(),
-                           resp.mutable_start_subsystem(), c);
-      break;
-    case proto::Request::kStopSubsystem:
-      HandleStopSubsystem(req.stop_subsystem(), resp.mutable_stop_subsystem(),
-                          c);
-      break;
-    case proto::Request::kGetSubsystems:
-      HandleGetSubsystems(req.get_subsystems(), resp.mutable_get_subsystems(),
-                          c);
-      break;
-    case proto::Request::kGetAlarms:
-      HandleGetAlarms(req.get_alarms(), resp.mutable_get_alarms(), c);
-      break;
+  case proto::Request::kRemoveSubsystem:
+    HandleRemoveSubsystem(req.remove_subsystem(),
+                          resp.mutable_remove_subsystem(), c);
+    break;
+  case proto::Request::kStartSubsystem:
+    HandleStartSubsystem(req.start_subsystem(), resp.mutable_start_subsystem(),
+                         c);
+    break;
+  case proto::Request::kStopSubsystem:
+    HandleStopSubsystem(req.stop_subsystem(), resp.mutable_stop_subsystem(), c);
+    break;
+  case proto::Request::kGetSubsystems:
+    HandleGetSubsystems(req.get_subsystems(), resp.mutable_get_subsystems(), c);
+    break;
+  case proto::Request::kGetAlarms:
+    HandleGetAlarms(req.get_alarms(), resp.mutable_get_alarms(), c);
+    break;
 
-    case proto::Request::kAbort:
-      HandleAbort(req.abort(), resp.mutable_abort(), c);
-      break;
+  case proto::Request::kAbort:
+    HandleAbort(req.abort(), resp.mutable_abort(), c);
+    break;
 
-    case proto::Request::kAddGlobalVariable:
-      HandleAddGlobalVariable(req.add_global_variable(),
-                              resp.mutable_add_global_variable(), c);
-      break;
+  case proto::Request::kInput:
+    HandleInput(req.input(), resp.mutable_input(), c);
+    break;
 
-    case proto::Request::REQUEST_NOT_SET:
-      return absl::InternalError("Protocol error: unknown request");
+  case proto::Request::kCloseFd:
+    HandleCloseFd(req.close_fd(), resp.mutable_close_fd(), c);
+    break;
+
+  case proto::Request::kAddGlobalVariable:
+    HandleAddGlobalVariable(req.add_global_variable(),
+                            resp.mutable_add_global_variable(), c);
+    break;
+
+  case proto::Request::REQUEST_NOT_SET:
+    return absl::InternalError("Protocol error: unknown request");
   }
   return absl::OkStatus();
 }
@@ -166,7 +174,22 @@ void ClientHandler::HandleAddSubsystem(const proto::AddSubsystemRequest &req,
     children.push_back(child);
   }
 
-  auto subsystem = std::make_shared<Subsystem>(req.name(), capcom_);
+  std::vector<Variable> vars;
+  for (auto &var : req.vars()) {
+    vars.push_back(
+        {.name = var.name(), .value = var.value(), .exported = var.exported()});
+  }
+  std::vector<Stream> streams;
+  for (auto &s : req.streams()) {
+    Stream stream;
+    if (absl::Status status = stream.FromProto(s); !status.ok()) {
+      response->set_error(status.ToString());
+      return;
+    }
+    streams.push_back(stream);
+  }
+  auto subsystem = std::make_shared<Subsystem>(
+      req.name(), capcom_, std::move(vars), std::move(streams));
 
   // Add the processes to the subsystem.
   for (auto &proc : req.processes()) {
@@ -178,41 +201,46 @@ void ClientHandler::HandleAddSubsystem(const proto::AddSubsystemRequest &req,
       return;
     }
 
+    if (absl::Status status = ValidateStreams(proc.streams()); !status.ok()) {
+      response->set_error(status.ToString());
+      return;
+    }
+
     switch (proc.proc_case()) {
-      case proto::Process::kStaticProcess:
-        if (absl::Status status = subsystem->AddStaticProcess(
-                proc.static_process(), proc.options(), proc.streams(), compute,
-                c);
-            !status.ok()) {
-          response->set_error(
-              absl::StrFormat("Failed to add static process %s: %s",
-                              proc.options().name(), status.ToString()));
-          return;
-        }
-        break;
-      case proto::Process::kZygote:
-        if (absl::Status status = subsystem->AddZygote(
-                proc.zygote(), proc.options(), proc.streams(), compute, c);
-            !status.ok()) {
-          response->set_error(absl::StrFormat("Failed to add zygote %s: %s",
-                                              proc.options().name(),
-                                              status.ToString()));
-          return;
-        }
-        break;
-      case proto::Process::kVirtualProcess:
-        if (absl::Status status = subsystem->AddVirtualProcess(
-                proc.virtual_process(), proc.options(), proc.streams(), compute,
-                c);
-            !status.ok()) {
-          response->set_error(
-              absl::StrFormat("Failed to add virtual process %s: %s",
-                              proc.options().name(), status.ToString()));
-          return;
-        }
-        break;
-      case proto::Process::PROC_NOT_SET:
-        break;
+    case proto::Process::kStaticProcess:
+      if (absl::Status status =
+              subsystem->AddStaticProcess(proc.static_process(), proc.options(),
+                                          proc.streams(), compute, c);
+          !status.ok()) {
+        response->set_error(
+            absl::StrFormat("Failed to add static process %s: %s",
+                            proc.options().name(), status.ToString()));
+        return;
+      }
+      break;
+    case proto::Process::kZygote:
+      if (absl::Status status = subsystem->AddZygote(
+              proc.zygote(), proc.options(), proc.streams(), compute, c);
+          !status.ok()) {
+        response->set_error(absl::StrFormat("Failed to add zygote %s: %s",
+                                            proc.options().name(),
+                                            status.ToString()));
+        return;
+      }
+      break;
+    case proto::Process::kVirtualProcess:
+      if (absl::Status status = subsystem->AddVirtualProcess(
+              proc.virtual_process(), proc.options(), proc.streams(), compute,
+              c);
+          !status.ok()) {
+        response->set_error(
+            absl::StrFormat("Failed to add virtual process %s: %s",
+                            proc.options().name(), status.ToString()));
+        return;
+      }
+      break;
+    case proto::Process::PROC_NOT_SET:
+      break;
     }
   }
 
@@ -253,6 +281,15 @@ void ClientHandler::HandleRemoveSubsystem(
   }
 }
 
+static absl::StatusOr<std::pair<int, int>> BuildPipe() {
+  int pipes[2];
+  if (::pipe(pipes) == -1) {
+    return absl::InternalError(
+        absl::StrFormat("Failed to create stream pipe: %s", strerror(errno)));
+  }
+  return std::make_pair(pipes[0], pipes[1]);
+}
+
 void ClientHandler::HandleStartSubsystem(
     const proto::StartSubsystemRequest &req,
     proto::StartSubsystemResponse *response, co::Coroutine *c) {
@@ -262,13 +299,47 @@ void ClientHandler::HandleStartSubsystem(
         absl::StrFormat("No such subsystem %s", req.subsystem()));
     return;
   }
+
   Message message = {.code = Message::kChangeAdmin,
                      .state.admin = AdminState::kOnline,
-                     .client_id = id_};
+                     .client_id = id_,
+                     .interactive = req.interactive()};
+
+  if (message.interactive) {
+    absl::StatusOr<std::pair<int, int>> stdout = BuildPipe();
+    if (!stdout.ok()) {
+      response->set_error(stdout.status().ToString());
+      return;
+    }
+    // Put write end into message.
+    message.output_fd = stdout->second;
+
+    // Spawn coroutine to read from the stdout pipe
+    // and send as output events.
+    AddCoroutine(std::make_unique<co::Coroutine>(
+        GetScheduler(), [ client = shared_from_this(),
+                          stdout = stdout->first ](co::Coroutine * c) {
+          for (;;) {
+            char buffer[4096];
+            c->Wait(stdout);
+            ssize_t n = ::read(stdout, buffer, sizeof(buffer));
+            if (n <= 0) {
+              break;
+            }
+            if (absl::Status status =
+                    client->SendOutputEvent("", STDOUT_FILENO, buffer, n);
+                !status.ok()) {
+              break;
+            }
+          }
+          close(stdout);
+          client->Stop();
+        }));
+  }
+
   if (absl::Status status = subsystem->SendMessage(message); !status.ok()) {
     response->set_error(absl::StrFormat("Failed to start subsystem %s: %s",
                                         req.subsystem(), status.ToString()));
-    return;
   }
 }
 
@@ -305,7 +376,7 @@ void ClientHandler::HandleGetAlarms(const proto::GetAlarmsRequest &req,
                                     proto::GetAlarmsResponse *response,
                                     co::Coroutine *c) {
   std::vector<Alarm> alarms = capcom_.GetAlarms();
-  for (auto& alarm : alarms) {
+  for (auto &alarm : alarms) {
     auto *a = response->add_alarms();
     alarm.ToProto(a);
   }
@@ -319,6 +390,16 @@ void ClientHandler::HandleAbort(const proto::AbortRequest &req,
   }
 }
 
+absl::Status ClientHandler::SendOutputEvent(const std::string &process, int fd,
+                                            const char *data, size_t len) {
+  auto event = std::make_shared<stagezero::proto::Event>();
+  auto output = event->mutable_output();
+  output->set_process_id(process);
+  output->set_data(data, len);
+  output->set_fd(fd);
+  return QueueEvent(std::move(event));
+}
+
 void ClientHandler::HandleAddGlobalVariable(
     const proto::AddGlobalVariableRequest &req,
     proto::AddGlobalVariableResponse *response, co::Coroutine *c) {
@@ -330,4 +411,35 @@ void ClientHandler::HandleAddGlobalVariable(
     response->set_error(status.ToString());
   }
 }
-}  // namespace stagezero::capcom
+
+void ClientHandler::HandleInput(const proto::InputRequest &req,
+                                proto::InputResponse *response,
+                                co::Coroutine *c) {
+  auto subsystem = capcom_.FindSubsystem(req.subsystem());
+  if (subsystem == nullptr) {
+    response->set_error(
+        absl::StrFormat("No such subsystem %s", req.subsystem()));
+    return;
+  }
+  if (absl::Status status =
+          subsystem->SendInput(req.process(), req.fd(), req.data(), c);
+      !status.ok()) {
+    response->set_error(status.ToString());
+  }
+}
+
+void ClientHandler::HandleCloseFd(const proto::CloseFdRequest &req,
+                                  proto::CloseFdResponse *response,
+                                  co::Coroutine *c) {
+  auto subsystem = capcom_.FindSubsystem(req.subsystem());
+  if (subsystem == nullptr) {
+    response->set_error(
+        absl::StrFormat("No such subsystem %s", req.subsystem()));
+    return;
+  }
+  if (absl::Status status = subsystem->CloseFd(req.process(), req.fd(), c);
+      !status.ok()) {
+    response->set_error(status.ToString());
+  }
+}
+} // namespace stagezero::capcom

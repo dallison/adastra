@@ -42,6 +42,8 @@ message ProcessOptions {
   // User and group for owner of the process.
   string user = 9;
   string group = 10;
+
+  bool interactive = 11;
 }
 
 message StaticProcess {
