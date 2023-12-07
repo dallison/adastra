@@ -123,6 +123,7 @@ public:
 
   absl::Status StartSubsystem(const std::string &name,
             RunMode mode = RunMode::kNoninteractive,
+            Terminal* terminal = nullptr,
                               co::Coroutine *c = nullptr);
   absl::Status StopSubsystem(const std::string &name,
                              co::Coroutine *c = nullptr);

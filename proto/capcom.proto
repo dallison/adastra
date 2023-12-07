@@ -73,6 +73,7 @@ message RemoveSubsystemResponse { string error = 1; }
 message StartSubsystemRequest {
   string subsystem = 1;
   bool interactive = 2;
+  stagezero.proto.Terminal terminal = 3;
 }
 
 message StartSubsystemResponse { string error = 1; }

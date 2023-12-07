@@ -51,6 +51,9 @@ struct Message {
   // Information for interactive.
   bool interactive;
   int output_fd;
+  int cols;
+  int rows;
+  char term_name[64];
 };
 
 class Process {
@@ -246,6 +249,8 @@ public:
   const std::vector<Variable> &Vars() const { return vars_; }
   const std::vector<Stream> &Streams() const { return streams_; }
 
+  const Terminal& InteractiveTerminal() const { return interactive_terminal_; }
+
 private:
   enum class EventSource {
     kUnknown,
@@ -417,6 +422,7 @@ private:
 
   bool interactive_ = false;
   toolbelt::FileDescriptor interactive_output_;
+  Terminal interactive_terminal_;
 };
 
 } // namespace stagezero::capcom

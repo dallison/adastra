@@ -244,7 +244,7 @@ absl::Status Client::RemoveSubsystem(const std::string &name, bool recursive,
   return absl::OkStatus();
 }
 
-absl::Status Client::StartSubsystem(const std::string &name, RunMode mode, co::Coroutine *c) {
+absl::Status Client::StartSubsystem(const std::string &name, RunMode mode, Terminal* terminal, co::Coroutine *c) {
   if (c == nullptr) {
     c = co_;
   }
@@ -252,7 +252,10 @@ absl::Status Client::StartSubsystem(const std::string &name, RunMode mode, co::C
   auto s = req.mutable_start_subsystem();
   s->set_subsystem(name);
   s->set_interactive(mode == RunMode::kInteractive);
-
+  if (terminal != nullptr) {
+    auto* t = s->mutable_terminal();
+    terminal->ToProto(t);
+  }
   stagezero::capcom::proto::Response resp;
   absl::Status status = SendRequestReceiveResponse(req, resp, c);
   if (!status.ok()) {

@@ -32,6 +32,7 @@ struct ProcessOptions {
   int32_t sigterm_shutdown_timeout_secs = kDefaultSigTermShutdownTimeout;
   bool notify = false;
   bool interactive = false;
+  Terminal interactive_terminal;
 };
 
 class Client

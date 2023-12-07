@@ -8,6 +8,7 @@ package stagezero.flight.proto;
 
 import "proto/config.proto";
 import "proto/event.proto";
+import "proto/stream.proto";
 import "proto/subsystem_status.proto";
 
 message Stream {
@@ -128,6 +129,7 @@ message InitResponse {
 message StartSubsystemRequest {
   string subsystem = 1;
   bool interactive = 2;
+  stagezero.proto.Terminal interactive_terminal = 3;
 }
 
 message StartSubsystemResponse { string error = 1; }

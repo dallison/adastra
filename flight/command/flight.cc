@@ -7,11 +7,13 @@
 #include "absl/flags/parse.h"
 #include "flight/client/client.h"
 #include "toolbelt/sockets.h"
+#include "common/stream.h"
 
 #include <cstdlib>
 #include <iostream>
 #include <string>
 #include <termios.h>
+#include <sys/ioctl.h>
 
 ABSL_FLAG(std::string, hostname, "localhost",
           "Flight Director hostname (or IP address)");
@@ -145,8 +147,12 @@ absl::Status RunCommand::Execute(flight::client::Client *client, int argc,
   }
   std::string subsystem = argv[2];
 
+  struct winsize win;
+  ioctl(0, TIOCGWINSZ, &win); // Might fail.
+  Terminal term = {.name = getenv("TERM"), .rows = win.ws_row, .cols = win.ws_col};
+
   if (absl::Status status =
-          client->StartSubsystem(subsystem, client::RunMode::kInteractive);
+          client->StartSubsystem(subsystem, client::RunMode::kInteractive, &term);
       !status.ok()) {
     return status;
   }

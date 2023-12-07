@@ -93,6 +93,9 @@ StaticProcess::StaticProcess(
                     req.opts().sigterm_shutdown_timeout_secs());
   SetUserAndGroup(req.opts().user(), req.opts().group());
   interactive_ = req.opts().interactive();
+  if (req.opts().has_interactive_terminal()) {
+    interactive_terminal_.FromProto(req.opts().interactive_terminal());
+  }
 }
 
 absl::Status StaticProcess::Start(co::Coroutine *c) {
@@ -183,7 +186,7 @@ StaticProcess::StartInternal(const std::vector<std::string> extra_env_vars,
 // Returns a pair of open file descriptors.  The first is the stagezero end
 // and the second is the process end.
 static absl::StatusOr<std::pair<int, int>>
-MakeFileDescriptors(bool istty, const proto::StreamControl::Terminal *term) {
+MakeFileDescriptors(bool istty, const proto::Terminal *term) {
   if (istty) {
     int this_end, proc_end;
 
@@ -308,7 +311,20 @@ absl::Status Process::BuildStreams(
   if (interactive_) {
     int this_end, proc_end;
 
-    int e = openpty(&this_end, &proc_end, nullptr, nullptr, nullptr);
+    struct winsize win = {};
+    ioctl(STDOUT_FILENO, TIOCGWINSZ, &win); // Might fail.
+
+    if (interactive_terminal_.IsPresent()) {
+      win.ws_col = interactive_terminal_.cols;
+      win.ws_row = interactive_terminal_.rows;
+    }
+    if (win.ws_col == 0) {
+      win.ws_col = 80;
+    }
+    if (win.ws_row == 0) {
+      win.ws_row = 24;
+    }
+    int e = openpty(&this_end, &proc_end, nullptr, nullptr, &win);
     if (e == -1) {
       return absl::InternalError(absl::StrFormat(
           "Failed to open pty for interactive stream: %s", strerror(errno)));
@@ -317,20 +333,21 @@ absl::Status Process::BuildStreams(
     interactive_proc_end_.SetFd(proc_end);
 
     // Spawn coroutine to read from the pty and send output events.
-    client_->AddCoroutine(std::make_unique<co::Coroutine>(scheduler_, [
-      proc = shared_from_this(), client = client_, this_end
-    ](co::Coroutine * c) {
-      std::cerr << "streaming from fd " << this_end << std::endl;
-      absl::Status status = StreamFromFileDescriptor(
-          this_end,
-          [proc, client](const char *buf,
-                                   size_t len) -> absl::Status {
-            // Write to client using an event.
-            std::cerr << "output data available: " << std::string(buf, len) << std::endl;
-            return client->SendOutputEvent(proc->GetId(), STDOUT_FILENO, buf, len);
-          },
-          c);
-    }));
+    client_->AddCoroutine(std::make_unique<co::Coroutine>(
+        scheduler_, [ proc = shared_from_this(), client = client_,
+                      this_end ](co::Coroutine * c) {
+          std::cerr << "streaming from fd " << this_end << std::endl;
+          absl::Status status = StreamFromFileDescriptor(
+              this_end,
+              [proc, client](const char *buf, size_t len) -> absl::Status {
+                // Write to client using an event.
+                std::cerr << "output data available: " << std::string(buf, len)
+                          << std::endl;
+                return client->SendOutputEvent(proc->GetId(), STDOUT_FILENO,
+                                               buf, len);
+              },
+              c);
+        }));
   }
 
   for (const proto::StreamControl &s : streams) {
@@ -489,7 +506,8 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
 
     // Redirect the streams.
     if (interactive_) {
-      std::cerr << "interactive, redirecting streams " << interactive_proc_end_.Fd() << "\n";
+      std::cerr << "interactive, redirecting streams "
+                << interactive_proc_end_.Fd() << "\n";
       setsid();
       int e = ioctl(interactive_proc_end_.Fd(), TIOCSCTTY, 0);
       if (e != 0) {
@@ -501,8 +519,8 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
         ::close(i);
         int e = dup2(interactive_proc_end_.Fd(), i);
         if (e == -1) {
-          std::cerr << "Failed to redirect interactive file descriptor: " << i << " "
-                    << strerror(errno) << std::endl;
+          std::cerr << "Failed to redirect interactive file descriptor: " << i
+                    << " " << strerror(errno) << std::endl;
           exit(1);
         }
       }
@@ -696,7 +714,6 @@ absl::Status Process::Stop(co::Coroutine *c) {
 absl::Status Process::SendInput(int fd, const std::string &data,
                                 co::Coroutine *c) {
   if (interactive_) {
-    std::cerr << "interactive input\n";
     return WriteToProcess(interactive_this_end_.Fd(), data.data(), data.size(),
                           c);
   }
@@ -891,6 +908,9 @@ VirtualProcess::VirtualProcess(
                     req.opts().sigterm_shutdown_timeout_secs());
   SetUserAndGroup(req.opts().user(), req.opts().group());
   interactive_ = req.opts().interactive();
+  if (req.opts().has_interactive_terminal()) {
+    interactive_terminal_.FromProto(req.opts().interactive_terminal());
+  }
 }
 
 absl::Status VirtualProcess::Start(co::Coroutine *c) {

@@ -313,6 +313,16 @@ void ClientHandler::HandleStartSubsystem(
     }
     // Put write end into message.
     message.output_fd = stdout->second;
+    if (req.has_terminal()) {
+      message.rows = req.terminal().rows();
+      message.cols = req.terminal().cols();
+      if (req.terminal().name().size() > sizeof(message.term_name) - 1) {
+        response->set_error(absl::StrFormat("Terminal name '%d' is too long",
+                                            req.terminal().name().size()));
+        return;
+      }
+      strcpy(message.term_name, req.terminal().name().c_str());
+    }
 
     // Spawn coroutine to read from the stdout pipe
     // and send as output events.

@@ -6,6 +6,18 @@
 
 namespace stagezero {
 
+void Terminal::ToProto(proto::Terminal *dest) const {
+  dest->set_name(name);
+  dest->set_rows(rows);
+  dest->set_cols(cols);
+}
+
+void Terminal::FromProto(const proto::Terminal &src) {
+  rows = src.rows();
+  cols = src.cols();
+  name = src.name();
+}
+
 absl::Status ValidateStreams(
     google::protobuf::RepeatedPtrField<proto::StreamControl> streams) {
   for (auto &stream : streams) {
@@ -40,8 +52,8 @@ absl::Status ValidateStreams(
   return absl::OkStatus();
 }
 
-void AddStream(std::vector<Stream>& streams, const Stream& stream) {
-  for (auto& s : streams) {
+void AddStream(std::vector<Stream> &streams, const Stream &stream) {
+  for (auto &s : streams) {
     if (s.stream_fd == stream.stream_fd) {
       s = stream;
       return;
@@ -49,7 +61,6 @@ void AddStream(std::vector<Stream>& streams, const Stream& stream) {
   }
   streams.push_back(stream);
 }
-
 
 absl::Status Stream::FromProto(const proto::StreamControl &src) {
   stream_fd = src.stream_fd();
@@ -99,10 +110,8 @@ absl::Status Stream::FromProto(const proto::StreamControl &src) {
     }
 
     if (src.has_terminal()) {
-      auto& t = src.terminal();
-      window_size.rows = t.rows();
-      window_size.cols = t.cols();
-      term_name = t.name();
+      auto &t = src.terminal();
+      terminal.FromProto(t);
     }
   }
 
@@ -142,8 +151,8 @@ void Stream::ToProto(stagezero::proto::StreamControl *dest) const {
     switch (direction) {
     case Stream::Direction::kDefault:
       dest->set_direction(stagezero::proto::StreamControl::DEFAULT);
-      break;  
-       case Stream::Direction::kInput:
+      break;
+    case Stream::Direction::kInput:
       dest->set_direction(stagezero::proto::StreamControl::INPUT);
       break;
     case Stream::Direction::kOutput:
@@ -152,11 +161,9 @@ void Stream::ToProto(stagezero::proto::StreamControl *dest) const {
     }
   }
 
-  if (window_size.cols != 0 || window_size.rows != 0 || !term_name.empty()) {
+  if (terminal.cols != 0 || terminal.rows != 0 || !terminal.name.empty()) {
     auto t = dest->mutable_terminal();
-    t->set_name(term_name);
-    t->set_rows(window_size.rows);
-    t->set_cols(window_size.cols);
+    terminal.ToProto(t);
   }
 }
 

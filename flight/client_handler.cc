@@ -87,11 +87,16 @@ void ClientHandler::HandleStartSubsystem(
         "Cannot start non-interface subsystem %s", req.subsystem()));
     return;
   }
+  Terminal terminal;
+  if (req.has_interactive_terminal()) {
+    terminal.FromProto(req.interactive_terminal());
+  }
   if (absl::Status status = flight_.capcom_client_.StartSubsystem(
           req.subsystem(),
           req.interactive()
               ? stagezero::capcom::client::RunMode::kInteractive
               : stagezero::capcom::client::RunMode::kNoninteractive,
+              terminal.IsPresent() ? &terminal : nullptr,
           c);
       !status.ok()) {
     response->set_error(status.ToString());

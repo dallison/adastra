@@ -9,6 +9,7 @@
 #include "common/alarm.h"
 #include "common/event.h"
 #include "common/states.h"
+#include "common/stream.h"
 #include "common/subsystem_status.h"
 #include "common/tcp_client.h"
 #include "common/vars.h"
@@ -55,6 +56,7 @@ public:
 
   absl::Status StartSubsystem(const std::string &name,
                               RunMode mode = RunMode::kNonInteractive,
+                              Terminal* terminal = nullptr,
                               co::Coroutine *c = nullptr);
   absl::Status StopSubsystem(const std::string &name,
                              co::Coroutine *c = nullptr);

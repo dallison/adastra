@@ -41,7 +41,7 @@ absl::StatusOr<std::shared_ptr<Event>> Client::ReadEvent(co::Coroutine *c) {
 }
 
 absl::Status Client::StartSubsystem(const std::string &name, RunMode mode,
-                                    co::Coroutine *c) {
+                                    Terminal *terminal, co::Coroutine *c) {
   if (c == nullptr) {
     c = co_;
   }
@@ -54,7 +54,9 @@ absl::Status Client::StartSubsystem(const std::string &name, RunMode mode,
   auto s = req.mutable_start_subsystem();
   s->set_subsystem(name);
   s->set_interactive(mode == RunMode::kInteractive);
-
+  if (terminal != nullptr) {
+    terminal->ToProto(s->mutable_interactive_terminal());
+  }
   stagezero::flight::proto::Response resp;
   absl::Status status = SendRequestReceiveResponse(req, resp, c);
   if (!status.ok()) {
@@ -128,7 +130,7 @@ absl::Status Client::WaitForSubsystemState(const std::string &subsystem,
         }
       }
     } else if (event->type == EventType::kOutput) {
-      auto& output = std::get<2>(event->event);
+      auto &output = std::get<2>(event->event);
       ::write(output.fd, output.data.data(), output.data.size());
     }
   }
@@ -236,7 +238,7 @@ absl::Status Client::SendInput(const std::string &subsystem, int fd,
 }
 
 absl::Status Client::AddGlobalVariable(const Variable &var, co::Coroutine *c) {
- if (c == nullptr) {
+  if (c == nullptr) {
     c = co_;
   }
   stagezero::flight::proto::Request req;
@@ -256,11 +258,11 @@ absl::Status Client::AddGlobalVariable(const Variable &var, co::Coroutine *c) {
         absl::StrFormat("Failed to add global variable: %s", var_resp.error()));
   }
   return absl::OkStatus();
-  }
+}
 
 absl::Status Client::CloseFd(const std::string &subsystem, int fd,
                              co::Coroutine *c) {
- if (c == nullptr) {
+  if (c == nullptr) {
     c = co_;
   }
   stagezero::flight::proto::Request req;
@@ -279,5 +281,5 @@ absl::Status Client::CloseFd(const std::string &subsystem, int fd,
         absl::StrFormat("Failed to close fd: %s", close_resp.error()));
   }
   return absl::OkStatus();
-  }
+}
 } // namespace stagezero::flight::client

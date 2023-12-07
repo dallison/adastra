@@ -4,13 +4,23 @@
 
 #pragma once
 
-#include <variant>
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_format.h"
 #include "proto/stream.pb.h"
+#include <variant>
 
 namespace stagezero {
+
+struct Terminal {
+  std::string name;
+  int rows = 0;
+  int cols = 0;
+
+  bool IsPresent() const { return rows != 0 || cols != 0 || !name.empty();}
+  void ToProto(proto::Terminal *dest) const;
+  void FromProto(const proto::Terminal &src);
+};
 
 struct Stream {
   enum class Disposition {
@@ -28,18 +38,12 @@ struct Stream {
     kOutput,
   };
 
-  struct WindowSize {
-    int rows = 0;
-    int cols = 0;
-  };
-
   int stream_fd;
   bool tty = false;
   Disposition disposition = Disposition::kStageZero;
   Direction direction = Direction::kDefault;
   std::variant<std::string, int> data;
-  WindowSize window_size;
-  std::string term_name;
+  Terminal terminal;
 
   void ToProto(proto::StreamControl *dest) const;
   absl::Status FromProto(const proto::StreamControl &src);
@@ -48,6 +52,6 @@ struct Stream {
 absl::Status ValidateStreams(
     google::protobuf::RepeatedPtrField<proto::StreamControl> streams);
 
-void AddStream(std::vector<Stream>& streams, const Stream& stream);
+void AddStream(std::vector<Stream> &streams, const Stream &stream);
 
-}  // namespace stagezero
+} // namespace stagezero

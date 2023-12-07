@@ -2,6 +2,15 @@ syntax = "proto3";
 
 package stagezero.proto;
 
+// Terminal parameters.  This this is omitted, or the fields are
+// omitted (or zero), the same values as the controlling terminal
+// for stagezero will be used.  This is only used if tty=true.
+message Terminal {
+  string name = 1; // Value of TERM environment variable.
+  int32 rows = 2;  // Number of rows.
+  int32 cols = 3;  // Number of columns.)
+};
+
 message StreamControl {
   enum Disposition {
     INVALID = 0;
@@ -16,18 +25,9 @@ message StreamControl {
 
   // Direction is as seen from the point of view of the process.
   enum Direction {
-    DEFAULT = 0;    // Default for 0, 1, and 2.  Not valid for others
-    INPUT = 1;  // Input stream.
-    OUTPUT = 2; // Output stream.
-  };
-
-  // Terminal parameters.  This this is omitted, or the fields are
-  // omitted (or zero), the same values as the controlling terminal
-  // for stagezero will be used.  This is only used if tty=true.
-  message Terminal {
-    string name = 1;    // Value of TERM environment variable.
-    int32 rows = 2;     // Number of rows.
-    int32 cols = 3;     // Number of columns.)
+    DEFAULT = 0; // Default for 0, 1, and 2.  Not valid for others
+    INPUT = 1;   // Input stream.
+    OUTPUT = 2;  // Output stream.
   };
 
   int32 stream_fd = 1;         // File descriptor for stream.
@@ -39,5 +39,5 @@ message StreamControl {
     string filename = 5; // File name for FILENAME (use $var for expressions)
     int32 fd = 6;        // File descriptor for FD.
   }
-  Terminal terminal = 7;    // Terminal info for tty=true
+  Terminal terminal = 7; // Terminal info for tty=true
 }

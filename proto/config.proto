@@ -6,6 +6,8 @@ syntax = "proto3";
 
 package stagezero.config;
 
+import "proto/stream.proto";
+
 message Compute {
   string name = 1;
   bytes ip_addr = 2;  // Host byte order.
@@ -44,6 +46,9 @@ message ProcessOptions {
   string group = 10;
 
   bool interactive = 11;
+
+  // Interactive terminal parameters.
+  stagezero.proto.Terminal interactive_terminal = 12;
 }
 
 message StaticProcess {

@@ -403,6 +403,9 @@ void Subsystem::Offline(uint32_t client_id, co::Coroutine *c) {
                    subsystem->interactive_ = message->interactive;
                    if (message->interactive) {
                      subsystem->interactive_output_.SetFd(message->output_fd);
+                     subsystem->interactive_terminal_.rows = message->rows;
+                     subsystem->interactive_terminal_.cols = message->cols;
+                     subsystem->interactive_terminal_.name = std::string(message->term_name);
                    } else {
                      subsystem->interactive_output_.Close();
                    }
@@ -1517,6 +1520,7 @@ absl::Status StaticProcess::Launch(Subsystem *subsystem, co::Coroutine *c) {
       .sigterm_shutdown_timeout_secs = sigterm_shutdown_timeout_secs_,
       .notify = notify_,
       .interactive = interactive_,
+      .interactive_terminal = subsystem->InteractiveTerminal(),
   };
   // Subsystem vars.
   for (auto &var : subsystem->Vars()) {

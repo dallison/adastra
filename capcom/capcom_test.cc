@@ -833,36 +833,19 @@ TEST_F(CapcomTest, TalkAndListen) {
   ASSERT_TRUE(status.ok());
 }
 
-TEST_F(CapcomTest, Echo) {
+TEST_F(CapcomTest, InteractiveEcho) {
   stagezero::capcom::client::Client client(ClientMode::kNonBlocking);
   InitClient(client, "foobar1");
 
   absl::Status status = client.AddSubsystem(
-      "echo",
-      {.static_processes = {{
-           .name = "echo",
-           .executable = "${runfiles_dir}/__main__/testdata/echo",
-           .notify = true,
-           .interactive = true,
-       }},
-      .streams = {{
-                      .stream_fd = STDIN_FILENO,
-                      .tty = true,
-                      .disposition = stagezero::Stream::Disposition::kClient,
-                      .direction = stagezero::Stream::Direction::kInput,
-                  },
-                  {
-                      .stream_fd = STDOUT_FILENO,
-                      .tty = true,
-                      .disposition = stagezero::Stream::Disposition::kClient,
-                      .direction = stagezero::Stream::Direction::kOutput,
-                  },
-                  {
-                      .stream_fd = STDERR_FILENO,
-                      .tty = true,
-                      .disposition = stagezero::Stream::Disposition::kClient,
-                      .direction = stagezero::Stream::Direction::kOutput,
-                  }}});
+      "echo", {
+                  .static_processes = {{
+                      .name = "echo",
+                      .executable = "${runfiles_dir}/__main__/testdata/echo",
+                      .notify = true,
+                      .interactive = true,
+                  }},
+              });
   ASSERT_TRUE(status.ok());
 
   status = client.StartSubsystem(
@@ -924,7 +907,6 @@ TEST_F(CapcomTest, BadStreams) {
                     .disposition = stagezero::Stream::Disposition::kClient,
                     .direction = stagezero::Stream::Direction::kOutput,
                 }},
-           .interactive = true,
        }}});
   ASSERT_FALSE(status.ok());
 
@@ -954,7 +936,6 @@ TEST_F(CapcomTest, BadStreams) {
                     .disposition = stagezero::Stream::Disposition::kClient,
                     .direction = stagezero::Stream::Direction::kOutput,
                 }},
-           .interactive = true,
        }}});
   ASSERT_FALSE(status.ok());
 
@@ -982,7 +963,6 @@ TEST_F(CapcomTest, BadStreams) {
                     .disposition = stagezero::Stream::Disposition::kClient,
                     .direction = stagezero::Stream::Direction::kOutput,
                 }},
-           .interactive = true,
        }}});
   ASSERT_TRUE(status.ok());
 
@@ -1001,7 +981,6 @@ TEST_F(CapcomTest, BadStreams) {
                        .disposition = stagezero::Stream::Disposition::kClient,
                    },
                },
-           .interactive = true,
        }}});
   ASSERT_FALSE(status.ok());
 

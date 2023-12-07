@@ -112,6 +112,9 @@ void Client::BuildProcessOptions(const std::string &name,
       opts.sigterm_shutdown_timeout_secs);
   options->set_notify(opts.notify);
   options->set_interactive(opts.interactive);
+  if (opts.interactive_terminal.IsPresent()) {
+    opts.interactive_terminal.ToProto(options->mutable_interactive_terminal());
+  }
 }
 
 absl::Status Client::StopProcess(const std::string &process_id,
@@ -197,8 +200,8 @@ absl::Status Client::SetGlobalVariable(std::string name, std::string value,
   return absl::OkStatus();
 }
 
-absl::StatusOr<std::pair<std::string, bool>> Client::GetGlobalVariable(
-    std::string name, co::Coroutine *co) {
+absl::StatusOr<std::pair<std::string, bool>>
+Client::GetGlobalVariable(std::string name, co::Coroutine *co) {
   if (co == nullptr) {
     co = co_;
   }
@@ -238,4 +241,4 @@ absl::Status Client::Abort(const std::string &reason, co::Coroutine *co) {
   }
   return absl::OkStatus();
 }
-}  // namespace stagezero
+} // namespace stagezero

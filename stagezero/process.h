@@ -12,7 +12,7 @@
 #include "stagezero/symbols.h"
 #include "toolbelt/fd.h"
 #include "toolbelt/sockets.h"
-
+#include "common/stream.h"
 #include <memory>
 #include <string>
 
@@ -105,6 +105,7 @@ class Process : public std::enable_shared_from_this<Process> {
   std::string user_;
   std::string group_;
   bool interactive_ = false;
+  Terminal interactive_terminal_;
   toolbelt::FileDescriptor interactive_this_end_;
   toolbelt::FileDescriptor interactive_proc_end_;
 };

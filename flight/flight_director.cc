@@ -732,7 +732,7 @@ absl::Status FlightDirector::RegisterSubsystemGraph(Subsystem *root,
 absl::Status FlightDirector::AutostartSubsystem(Subsystem *subsystem,
                                                 co::Coroutine *c) {
   return autostart_capcom_client_.StartSubsystem(
-      subsystem->name, stagezero::capcom::client::RunMode::kNoninteractive, c);
+      subsystem->name, stagezero::capcom::client::RunMode::kNoninteractive, nullptr, c);
 }
 
 void FlightDirector::EventMonitorCoroutine(co::Coroutine *c) {
