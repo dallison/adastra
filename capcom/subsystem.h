@@ -20,6 +20,7 @@
 #include "proto/stream.pb.h"
 #include "stagezero/client/client.h"
 #include "toolbelt/fd.h"
+#include "toolbelt/pipe.h"
 #include "toolbelt/logging.h"
 #include "toolbelt/triggerfd.h"
 
@@ -194,7 +195,7 @@ public:
   void Run();
   void Stop();
 
-  absl::Status SendMessage(const Message &message) const;
+  absl::Status SendMessage(const Message &message);
 
   const std::string &Name() const { return name_; }
 
@@ -270,7 +271,7 @@ private:
       state_funcs_[];
 
   absl::Status BuildMessagePipe();
-  absl::StatusOr<Message> ReadMessage() const;
+  absl::StatusOr<Message> ReadMessage();
 
   // TODO: remove parent function.
 
@@ -345,8 +346,6 @@ private:
 
   void Abort();
 
-  toolbelt::Logger &GetLogger() const;
-
   void EnterState(OperState state, uint32_t client_id);
 
   absl::Status LaunchProcesses(co::Coroutine *c);
@@ -389,12 +388,10 @@ private:
 
   toolbelt::TriggerFd interrupt_;
 
-  // The command pipe is a pipe connected to this subsystem. The
-  // incoming_command_ fd is the read end and command_ is the
-  // write end.  Commands are send to the write end and we
-  // receive them through incoming_command_.
-  toolbelt::FileDescriptor incoming_message_;
-  toolbelt::FileDescriptor message_;
+  // The command pipe is a pipe connected to this subsystem.
+  // Commands are send to the write end and we
+  // receive them through the read end.
+  toolbelt::Pipe message_pipe_;
 
   std::vector<std::unique_ptr<Process>> processes_;
   absl::flat_hash_map<std::string, Process *> process_map_;

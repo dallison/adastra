@@ -9,10 +9,13 @@
 #include "capcom/bitset.h"
 #include "capcom/client_handler.h"
 #include "capcom/subsystem.h"
+#include "common/event.h"
 #include "common/vars.h"
 #include "stagezero/client/client.h"
 #include "toolbelt/logging.h"
 #include "toolbelt/sockets.h"
+#include "toolbelt/pipe.h"
+#include "proto/log.pb.h"
 
 #include <map>
 #include <memory>
@@ -20,6 +23,7 @@
 
 namespace stagezero::capcom {
 
+// Values sent to notification pipe.
 constexpr int64_t kReady = 1;
 constexpr int64_t kStopped = 2;
 
@@ -52,7 +56,7 @@ class Capcom {
     coroutines_.insert(std::move(c));
   }
 
-  void Log(const stagezero::control::LogMessage &msg);
+  void Log(const stagezero::proto::LogMessage &msg);
 
   void CloseHandler(std::shared_ptr<ClientHandler> handler);
   void ListenerCoroutine(toolbelt::TCPSocket &listen_socket, co::Coroutine *c);
@@ -141,6 +145,8 @@ class Capcom {
   absl::Status Abort(const std::string &reason, co::Coroutine *c);
   absl::Status AddGlobalVariable(const Variable &var, co::Coroutine *c);
 
+  void Log(const std::string &source, toolbelt::LogLevel level, const char *fmt, ...);
+
  private:
   co::CoroutineScheduler &co_scheduler_;
   toolbelt::InetAddress addr_;
@@ -163,9 +169,8 @@ class Capcom {
   BitSet client_ids_;
 
   // Pipe for the logger messages.  Carries serialized log message messages.
-  toolbelt::FileDescriptor log_message_;
-  toolbelt::FileDescriptor incoming_log_message_;
-  std::map<uint64_t, std::unique_ptr<control::LogMessage>> log_buffer_;
+  toolbelt::Pipe log_pipe_;
+  std::map<uint64_t, std::shared_ptr<stagezero::proto::LogMessage>> log_buffer_;
   toolbelt::FileDescriptor log_file_;
 };
 }  // namespace stagezero::capcom

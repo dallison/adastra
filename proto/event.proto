@@ -7,6 +7,7 @@ syntax = "proto3";
 package stagezero.proto;
 
 import "proto/subsystem_status.proto";
+import "proto/log.proto";
 
 message Alarm {
   enum Type {
@@ -54,5 +55,6 @@ message Event {
     SubsystemStatus subsystem_status = 1;
     Alarm alarm = 2;
     OutputEvent output = 3;
+    LogMessage log = 4;
   }
 }

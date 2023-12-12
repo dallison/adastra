@@ -31,6 +31,11 @@ void Event::ToProto(proto::Event *dest) const {
     o->set_fd(output.fd);
     break;
   }
+    case EventType::kLog: {
+    LogMessage log = std::get<3>(event);
+    log.ToProto(dest->mutable_log());
+    break;
+  }
   }
 }
 
@@ -64,6 +69,13 @@ absl::Status Event::FromProto(const proto::Event &src) {
     break;
   }
 
+  case stagezero::proto::Event::kLog: {
+    LogMessage log;
+    log.FromProto(src.log());
+    this->event = log;
+    this->type = EventType::kLog;
+    break;
+  }
   default:
     // Unknown event type.
     return absl::InternalError(

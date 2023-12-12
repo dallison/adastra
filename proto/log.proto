@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package stagezero.proto;
+
+message LogMessage {
+  enum LogLevel {
+    UNKNOWN = 0;
+    VERBOSE = 1;
+    DBG = 2;
+    INFO = 3;
+    WARNING = 4;
+    ERR = 5;
+  }
+  string source = 1;
+  LogLevel level = 2;
+  string text = 3;
+  int64 timestamp = 4;
+}
+

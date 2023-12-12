@@ -71,7 +71,7 @@ absl::Status ClientHandler::HandleMessage(const flight::proto::Request &req,
 void ClientHandler::HandleInit(const flight::proto::InitRequest &req,
                                flight::proto::InitResponse *response,
                                co::Coroutine *c) {
-  absl::StatusOr<int> s = Init(req.client_name(), c);
+  absl::StatusOr<int> s = Init(req.client_name(), req.event_mask(), c);
   if (!s.ok()) {
     response->set_error(s.status().ToString());
     return;

@@ -8,10 +8,12 @@
 namespace stagezero::flight::client {
 
 absl::Status Client::Init(toolbelt::InetAddress addr, const std::string &name,
+int event_mask,
                           co::Coroutine *co) {
-  auto fill_init = [name](flight::proto::Request &req) {
+  auto fill_init = [name, event_mask](flight::proto::Request &req) {
     auto init = req.mutable_init();
     init->set_client_name(name);
+    init->set_event_mask(event_mask);
   };
 
   auto parse_init =

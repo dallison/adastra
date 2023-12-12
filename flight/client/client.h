@@ -10,6 +10,7 @@
 #include "common/event.h"
 #include "common/states.h"
 #include "common/stream.h"
+#include "common/log.h"
 #include "common/subsystem_status.h"
 #include "common/tcp_client.h"
 #include "common/vars.h"
@@ -42,6 +43,7 @@ public:
   ~Client() = default;
 
   absl::Status Init(toolbelt::InetAddress addr, const std::string &name,
+  int event_mask = kAllEvents,
                     co::Coroutine *c = nullptr);
 
   // Wait for an incoming event.

@@ -18,6 +18,7 @@ cc_library(
         "//proto:capcom_cc_proto",
         "//proto:config_cc_proto",
         "//proto:event_cc_proto",
+        "//proto:log_cc_proto",
         "//proto:stream_cc_proto",
         "//stagezero/client",
         "@com_google_absl//absl/container:flat_hash_map",

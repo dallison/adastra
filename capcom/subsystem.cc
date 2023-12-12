@@ -12,14 +12,14 @@ Subsystem::Subsystem(std::string name, Capcom &capcom,
                      std::vector<Variable> vars, std::vector<Stream> streams)
     : name_(std::move(name)), capcom_(capcom), vars_(std::move(vars)),
       streams_(std::move(streams)) {
-  // Build the command pipe.
+  // Build the message pipe.
   if (absl::Status status = BuildMessagePipe(); !status.ok()) {
-    capcom_.logger_.Log(toolbelt::LogLevel::kError, "%s",
+    capcom_.Log(Name(),toolbelt::LogLevel::kError, "%s",
                         status.ToString().c_str());
   }
   // Open the interrupt trigger.
   if (absl::Status status = interrupt_.Open(); !status.ok()) {
-    capcom_.logger_.Log(toolbelt::LogLevel::kError,
+    capcom_.Log(Name(),toolbelt::LogLevel::kError,
                         "Failed to open triggerfd: %s",
                         status.ToString().c_str());
   }
@@ -27,7 +27,6 @@ Subsystem::Subsystem(std::string name, Capcom &capcom,
 
 co::CoroutineScheduler &Subsystem::Scheduler() { return capcom_.co_scheduler_; }
 
-toolbelt::Logger &Subsystem::GetLogger() const { return capcom_.logger_; }
 
 absl::StatusOr<std::shared_ptr<stagezero::Client>>
 Subsystem::ConnectToStageZero(const Compute *compute, co::Coroutine *c) {
@@ -35,7 +34,7 @@ Subsystem::ConnectToStageZero(const Compute *compute, co::Coroutine *c) {
   if (sc == nullptr) {
     auto client = std::make_shared<stagezero::Client>();
     if (absl::Status status =
-            client->Init(compute->addr, name_, compute->name, c);
+            client->Init(compute->addr, name_, kAllEvents, compute->name, c);
         !status.ok()) {
       return status;
     }
@@ -49,7 +48,7 @@ void Subsystem::Run() {
   running_ = true;
   admin_state_ = AdminState::kOffline;
   EnterState(OperState::kOffline, kNoClient);
-  capcom_.logger_.Log(toolbelt::LogLevel::kInfo, "Subsystem %s is now active",
+  capcom_.Log(Name(),toolbelt::LogLevel::kInfo, "Subsystem %s is now active",
                       Name().c_str());
 }
 
@@ -110,20 +109,16 @@ absl::Status Subsystem::Remove(bool recursive) {
 }
 
 absl::Status Subsystem::BuildMessagePipe() {
-  int pipes[2];
-  int e = ::pipe(pipes);
-  if (e == -1) {
-    return absl::InternalError(
-        absl::StrFormat("Failed to open message pipe for subsystem %s: %s",
-                        name_, strerror(errno)));
+  absl::StatusOr<toolbelt::Pipe> p = toolbelt::Pipe::Create();
+  if (!p.ok()) {
+    return p.status();
   }
-  incoming_message_.SetFd(pipes[0]);
-  message_.SetFd(pipes[1]);
+  message_pipe_ = std::move(*p);
   return absl::OkStatus();
 }
 
-absl::Status Subsystem::SendMessage(const Message &message) const {
-  ssize_t n = ::write(message_.Fd(), &message, sizeof(message));
+absl::Status Subsystem::SendMessage(const Message &message) {
+  ssize_t n = ::write(message_pipe_.WriteFd().Fd(), &message, sizeof(message));
   if (n != sizeof(message)) {
     return absl::InternalError(absl::StrFormat(
         "Failed to send message to subsystem %s: %s", name_, strerror(errno)));
@@ -136,7 +131,7 @@ void Subsystem::NotifyParents() {
       .code = Message::kReportOper, .sender = this, .state.oper = oper_state_};
   for (auto &parent : parents_) {
     if (absl::Status status = parent->SendMessage(message); !status.ok()) {
-      GetLogger().Log(toolbelt::LogLevel::kError,
+      capcom_.Log(Name(),toolbelt::LogLevel::kError,
                       "Unable to notify parent %s of oper state change for "
                       "subsystem %s: %s",
                       parent->Name().c_str(), Name().c_str(),
@@ -170,7 +165,7 @@ void Subsystem::SendToChildren(AdminState state, uint32_t client_id) {
                      .client_id = client_id};
   for (auto &child : children_) {
     if (absl::Status status = child->SendMessage(message); !status.ok()) {
-      GetLogger().Log(toolbelt::LogLevel::kError,
+      capcom_.Log(Name(),toolbelt::LogLevel::kError,
                       "Unable to send admin state to %s for "
                       "subsystem %s: %s",
                       child->Name().c_str(), Name().c_str(),
@@ -179,9 +174,9 @@ void Subsystem::SendToChildren(AdminState state, uint32_t client_id) {
   }
 }
 
-absl::StatusOr<Message> Subsystem::ReadMessage() const {
+absl::StatusOr<Message> Subsystem::ReadMessage() {
   Message message;
-  ssize_t n = ::read(incoming_message_.Fd(), &message, sizeof(message));
+  ssize_t n = ::read(message_pipe_.ReadFd().Fd(), &message, sizeof(message));
   if (n != sizeof(message)) {
     return absl::InternalError(absl::StrFormat(
         "Failed to read message in subsystem %s: %s", name_, strerror(errno)));
@@ -205,7 +200,7 @@ void Subsystem::StopProcesses(co::Coroutine *c) {
   for (auto &proc : processes_) {
     absl::Status status = proc->Stop(c);
     if (!status.ok()) {
-      capcom_.logger_.Log(toolbelt::LogLevel::kError,
+      capcom_.Log(Name(),toolbelt::LogLevel::kError,
                           "Failed to stop process %s: %s", proc->Name().c_str(),
                           status.ToString().c_str());
       continue;
@@ -225,9 +220,10 @@ std::function<void(std::shared_ptr<Subsystem>, uint32_t, co::Coroutine *)>
 void Subsystem::EnterState(OperState state, uint32_t client_id) {
   std::string coroutine_name =
       absl::StrFormat("%s/%s", Name(), OperStateName(state));
-  capcom_.logger_.Log(toolbelt::LogLevel::kInfo,
+  capcom_.Log(Name(),toolbelt::LogLevel::kInfo,
                       "Subsystem %s entering state %s", Name().c_str(),
                       OperStateName(state));
+  oper_state_ = state;
   co::Coroutine *coroutine = new co::Coroutine(
       Scheduler(),
       [ subsystem = shared_from_this(), state, client_id ](co::Coroutine * c) {
@@ -250,13 +246,13 @@ void Subsystem::RunSubsystemInState(
     fds.push_back({client->GetEventFd().Fd(), POLLIN});
   }
   fds.push_back({subsystem->interrupt_.GetPollFd().Fd(), POLLIN});
-  fds.push_back({subsystem->incoming_message_.Fd(), POLLIN});
+  fds.push_back({subsystem->message_pipe_.ReadFd().Fd(), POLLIN});
 
   while (subsystem->running_) {
     int fd = c->Wait(fds);
     if (fd == subsystem->interrupt_.GetPollFd().Fd()) {
       // Interrupt.
-      subsystem->capcom_.logger_.Log(toolbelt::LogLevel::kInfo,
+      subsystem->capcom_.Log(subsystem->Name(),toolbelt::LogLevel::kInfo,
                                      "Subsystem %s interrupt",
                                      subsystem->Name().c_str());
       subsystem->interrupt_.Clear();
@@ -264,7 +260,7 @@ void Subsystem::RunSubsystemInState(
     }
     EventSource event_source = EventSource::kUnknown;
     std::shared_ptr<stagezero::Client> found_client;
-    if (fd == subsystem->incoming_message_.Fd()) {
+    if (fd == subsystem->message_pipe_.ReadFd().Fd()) {
       event_source = EventSource::kMessage;
     } else {
       // Find the client associated with the fd.  There will be about
@@ -284,7 +280,7 @@ void Subsystem::RunSubsystemInState(
         break;
       }
     } else {
-      subsystem->capcom_.logger_.Log(
+      subsystem->capcom_.Log(subsystem->Name(),
           toolbelt::LogLevel::kError,
           "Event from unknown source in subsystem %s",
           subsystem->Name().c_str());
@@ -296,7 +292,7 @@ void Subsystem::SendOutput(int fd, const std::string &data, co::Coroutine *c) {
   c->Wait(interactive_output_.Fd(), POLLOUT);
   int e = ::write(interactive_output_.Fd(), data.data(), data.size());
   if (e <= 0) {
-    capcom_.logger_.Log(toolbelt::LogLevel::kDebug,
+    capcom_.Log(Name(),toolbelt::LogLevel::kDebug,
                         "Failed to send process output: %s", strerror(errno));
   }
 }
@@ -308,7 +304,7 @@ Subsystem::HandleAdminCommand(const Message &message,
                               OperState next_state_active_clients,
                               OperState next_state_no_active_clients) {
   auto subsystem = shared_from_this();
-  capcom_.logger_.Log(toolbelt::LogLevel::kDebug,
+  capcom_.Log(subsystem->Name(),toolbelt::LogLevel::kDebug,
                       "Subsystem %s is in admin state %s/%s and got a command "
                       "to change admin state to %s from client %d",
                       Name().c_str(), AdminStateName(subsystem->admin_state_),
@@ -343,7 +339,6 @@ Subsystem::HandleAdminCommand(const Message &message,
 }
 
 void Subsystem::Offline(uint32_t client_id, co::Coroutine *c) {
-  oper_state_ = OperState::kOffline;
   NotifyParents();
   capcom_.SendSubsystemStatusEvent(this);
 
@@ -360,7 +355,7 @@ void Subsystem::Offline(uint32_t client_id, co::Coroutine *c) {
                  absl::StatusOr<std::shared_ptr<stagezero::control::Event>> e =
                      stagezero_client->ReadEvent(c);
                  if (!e.ok()) {
-                   subsystem->capcom_.logger_.Log(
+                   subsystem->capcom_.Log(subsystem->Name(),
                        toolbelt::LogLevel::kError, "Failed to read event %s",
                        e.status().ToString().c_str());
                  }
@@ -388,7 +383,7 @@ void Subsystem::Offline(uint32_t client_id, co::Coroutine *c) {
                  // Incoming message.
                  absl::StatusOr<Message> message = subsystem->ReadMessage();
                  if (!message.ok()) {
-                   subsystem->capcom_.logger_.Log(
+                   subsystem->capcom_.Log(subsystem->Name(),
                        toolbelt::LogLevel::kError, "%s",
                        message.status().ToString().c_str());
                  }
@@ -413,7 +408,8 @@ void Subsystem::Offline(uint32_t client_id, co::Coroutine *c) {
                    break;
 
                  case Message::kReportOper:
-                   subsystem->GetLogger().Log(
+                   subsystem->capcom_.Log(
+                    subsystem->Name(),
                        toolbelt::LogLevel::kInfo,
                        "Subsystem %s has reported oper state change to %s",
                        message->sender->Name().c_str(),
@@ -442,7 +438,6 @@ void Subsystem::StartingChildren(uint32_t client_id, co::Coroutine *c) {
     EnterState(OperState::kStartingProcesses, client_id);
     return;
   }
-  oper_state_ = OperState::kStartingChildren;
   SendToChildren(AdminState::kOnline, client_id);
   NotifyParents();
 
@@ -468,7 +463,7 @@ void Subsystem::StartingChildren(uint32_t client_id, co::Coroutine *c) {
               absl::StatusOr<std::shared_ptr<stagezero::control::Event>> e =
                   stagezero_client->ReadEvent(c);
               if (!e.ok()) {
-                subsystem->capcom_.logger_.Log(toolbelt::LogLevel::kError,
+                subsystem->capcom_.Log(subsystem->Name(),toolbelt::LogLevel::kError,
                                                "Failed to read event %s",
                                                e.status().ToString().c_str());
               }
@@ -500,7 +495,7 @@ void Subsystem::StartingChildren(uint32_t client_id, co::Coroutine *c) {
               // Incoming message.
               absl::StatusOr<Message> message = subsystem->ReadMessage();
               if (!message.ok()) {
-                subsystem->capcom_.logger_.Log(
+                subsystem->capcom_.Log(subsystem->Name(),
                     toolbelt::LogLevel::kError, "%s",
                     message.status().ToString().c_str());
               }
@@ -515,7 +510,7 @@ void Subsystem::StartingChildren(uint32_t client_id, co::Coroutine *c) {
                 }
                 break;
               case Message::kReportOper:
-                subsystem->GetLogger().Log(
+                subsystem->capcom_.Log(subsystem->Name(),
                     toolbelt::LogLevel::kInfo,
                     "Subsystem %s has reported oper state change to %s",
                     message->sender->Name().c_str(),
@@ -587,7 +582,7 @@ void Subsystem::StartingProcesses(uint32_t client_id, co::Coroutine *c) {
               absl::StatusOr<std::shared_ptr<stagezero::control::Event>> e =
                   stagezero_client->ReadEvent(c);
               if (!e.ok()) {
-                subsystem->capcom_.logger_.Log(toolbelt::LogLevel::kError,
+                subsystem->capcom_.Log(subsystem->Name(),toolbelt::LogLevel::kError,
                                                "Failed to read event %s",
                                                e.status().ToString().c_str());
               }
@@ -604,7 +599,7 @@ void Subsystem::StartingProcesses(uint32_t client_id, co::Coroutine *c) {
               }
               case stagezero::control::Event::kStop:
                 // Process failed to start.
-                subsystem->GetLogger().Log(toolbelt::LogLevel::kInfo,
+                subsystem->capcom_.Log(subsystem->Name(),toolbelt::LogLevel::kInfo,
                                            "Process %s has crashed, restarting",
                                            event->stop().process_id().c_str());
                 subsystem->RestartIfPossibleAfterProcessCrash(
@@ -627,7 +622,7 @@ void Subsystem::StartingProcesses(uint32_t client_id, co::Coroutine *c) {
               // Incoming message.
               absl::StatusOr<Message> message = subsystem->ReadMessage();
               if (!message.ok()) {
-                subsystem->capcom_.logger_.Log(
+                subsystem->capcom_.Log(subsystem->Name(),
                     toolbelt::LogLevel::kError, "%s",
                     message.status().ToString().c_str());
               }
@@ -642,7 +637,7 @@ void Subsystem::StartingProcesses(uint32_t client_id, co::Coroutine *c) {
                 }
                 break;
               case Message::kReportOper:
-                subsystem->GetLogger().Log(
+                subsystem->capcom_.Log(subsystem->Name(),
                     toolbelt::LogLevel::kInfo,
                     "Subsystem %s has reported oper state change to %s",
                     message->sender->Name().c_str(),
@@ -669,7 +664,6 @@ void Subsystem::StartingProcesses(uint32_t client_id, co::Coroutine *c) {
 }
 
 void Subsystem::Online(uint32_t client_id, co::Coroutine *c) {
-  oper_state_ = OperState::kOnline;
   NotifyParents();
   capcom_.SendSubsystemStatusEvent(this);
 
@@ -687,7 +681,7 @@ void Subsystem::Online(uint32_t client_id, co::Coroutine *c) {
               absl::StatusOr<std::shared_ptr<stagezero::control::Event>> e =
                   stagezero_client->ReadEvent(c);
               if (!e.ok()) {
-                subsystem->capcom_.logger_.Log(toolbelt::LogLevel::kError,
+                subsystem->capcom_.Log(subsystem->Name(),toolbelt::LogLevel::kError,
                                                "Failed to read event %s",
                                                e.status().ToString().c_str());
               }
@@ -703,19 +697,23 @@ void Subsystem::Online(uint32_t client_id, co::Coroutine *c) {
                   Process *proc =
                       subsystem->FindProcess(event->stop().process_id());
                   if (proc != nullptr) {
-                    subsystem->capcom_.logger_.Log(
+                    subsystem->capcom_.Log(subsystem->Name(),
                         toolbelt::LogLevel::kInfo,
                         "Interactive process %s stopped", proc->Name().c_str());
                     proc->SetStopped();
                     subsystem->DeleteProcessId(proc->GetProcessId());
                     subsystem->interactive_output_.Reset();
+
+                    // When an interacive process goes offline, its subsystem
+                    // also goes offline, both admin and oper.
+                    subsystem->admin_state_ = AdminState::kOffline;
                     subsystem->EnterState(OperState::kOffline, kNoClient);
                     return StateTransition::kLeave;
                   }
                 }
 
                 // Non-interative process crashed.  Restart.
-                subsystem->GetLogger().Log(toolbelt::LogLevel::kInfo,
+                subsystem->capcom_.Log(subsystem->Name(),toolbelt::LogLevel::kInfo,
                                            "Process %s has crashed, restarting",
                                            event->stop().process_id().c_str());
                 subsystem->RestartIfPossibleAfterProcessCrash(
@@ -738,7 +736,7 @@ void Subsystem::Online(uint32_t client_id, co::Coroutine *c) {
               // Incoming message.
               absl::StatusOr<Message> message = subsystem->ReadMessage();
               if (!message.ok()) {
-                subsystem->capcom_.logger_.Log(
+                subsystem->capcom_.Log(subsystem->Name(),
                     toolbelt::LogLevel::kError, "%s",
                     message.status().ToString().c_str());
               }
@@ -753,7 +751,7 @@ void Subsystem::Online(uint32_t client_id, co::Coroutine *c) {
                 }
                 break;
               case Message::kReportOper:
-                subsystem->GetLogger().Log(
+                subsystem->capcom_.Log(subsystem->Name(),
                     toolbelt::LogLevel::kInfo,
                     "Subsystem %s has reported oper state change to %s",
                     message->sender->Name().c_str(),
@@ -788,7 +786,6 @@ void Subsystem::StoppingProcesses(uint32_t client_id, co::Coroutine *c) {
     EnterState(OperState::kStoppingChildren, client_id);
     return;
   }
-  oper_state_ = OperState::kStoppingProcesses;
   StopProcesses(c);
   NotifyParents();
   capcom_.SendSubsystemStatusEvent(this);
@@ -806,7 +803,7 @@ void Subsystem::StoppingProcesses(uint32_t client_id, co::Coroutine *c) {
                  absl::StatusOr<std::shared_ptr<stagezero::control::Event>> e =
                      stagezero_client->ReadEvent(c);
                  if (!e.ok()) {
-                   subsystem->capcom_.logger_.Log(
+                   subsystem->capcom_.Log(subsystem->Name(),
                        toolbelt::LogLevel::kError, "Failed to read event %s",
                        e.status().ToString().c_str());
                  }
@@ -822,7 +819,7 @@ void Subsystem::StoppingProcesses(uint32_t client_id, co::Coroutine *c) {
                    Process *proc =
                        subsystem->FindProcess(event->stop().process_id());
                    if (proc != nullptr) {
-                     subsystem->capcom_.logger_.Log(toolbelt::LogLevel::kInfo,
+                     subsystem->capcom_.Log(subsystem->Name(),toolbelt::LogLevel::kInfo,
                                                     "Process %s stopped",
                                                     proc->Name().c_str());
                      proc->SetStopped();
@@ -849,7 +846,7 @@ void Subsystem::StoppingProcesses(uint32_t client_id, co::Coroutine *c) {
                  // Incoming message.
                  absl::StatusOr<Message> message = subsystem->ReadMessage();
                  if (!message.ok()) {
-                   subsystem->capcom_.logger_.Log(
+                   subsystem->capcom_.Log(subsystem->Name(),
                        toolbelt::LogLevel::kError, "%s",
                        message.status().ToString().c_str());
                  }
@@ -860,7 +857,7 @@ void Subsystem::StoppingProcesses(uint32_t client_id, co::Coroutine *c) {
                        OperState::kStoppingChildren);
                    break;
                  case Message::kReportOper:
-                   subsystem->GetLogger().Log(
+                   subsystem->capcom_.Log(subsystem->Name(),
                        toolbelt::LogLevel::kInfo,
                        "Subsystem %s has reported oper state change to %s",
                        message->sender->Name().c_str(),
@@ -893,7 +890,6 @@ void Subsystem::StoppingChildren(uint32_t client_id, co::Coroutine *c) {
     EnterState(OperState::kOffline, client_id);
     return;
   }
-  oper_state_ = OperState::kStoppingChildren;
   SendToChildren(AdminState::kOffline, client_id);
   NotifyParents();
 
@@ -923,7 +919,7 @@ void Subsystem::StoppingChildren(uint32_t client_id, co::Coroutine *c) {
               absl::StatusOr<std::shared_ptr<stagezero::control::Event>> e =
                   stagezero_client->ReadEvent(c);
               if (!e.ok()) {
-                subsystem->capcom_.logger_.Log(toolbelt::LogLevel::kError,
+                subsystem->capcom_.Log(subsystem->Name(),toolbelt::LogLevel::kError,
                                                "Failed to read event %s",
                                                e.status().ToString().c_str());
               }
@@ -955,7 +951,7 @@ void Subsystem::StoppingChildren(uint32_t client_id, co::Coroutine *c) {
               // Incoming message.
               absl::StatusOr<Message> message = subsystem->ReadMessage();
               if (!message.ok()) {
-                subsystem->capcom_.logger_.Log(
+                subsystem->capcom_.Log(subsystem->Name(),
                     toolbelt::LogLevel::kError, "%s",
                     message.status().ToString().c_str());
               }
@@ -978,7 +974,7 @@ void Subsystem::StoppingChildren(uint32_t client_id, co::Coroutine *c) {
                 }
                 break;
               case Message::kReportOper:
-                subsystem->GetLogger().Log(
+                subsystem->capcom_.Log(subsystem->Name(),
                     toolbelt::LogLevel::kInfo,
                     "Subsystem %s has reported oper state change to %s",
                     message->sender->Name().c_str(),
@@ -1040,7 +1036,7 @@ void Subsystem::RestartIfPossibleAfterProcessCrash(std::string process_id,
                                                    co::Coroutine *c) {
   Process *proc = FindProcess(process_id);
   if (proc == nullptr) {
-    GetLogger().Log(toolbelt::LogLevel::kError,
+    capcom_.Log(Name(),toolbelt::LogLevel::kError,
                     "Cannot find process %s for restart", process_id.c_str());
     return;
   }
@@ -1101,7 +1097,6 @@ void Subsystem::Abort() {
 }
 
 void Subsystem::Restarting(uint32_t client_id, co::Coroutine *c) {
-  oper_state_ = OperState::kRestarting;
   capcom_.SendSubsystemStatusEvent(this);
   if (AllProcessesStopped()) {
     if (parents_.empty()) {
@@ -1131,7 +1126,7 @@ void Subsystem::Restarting(uint32_t client_id, co::Coroutine *c) {
                  absl::StatusOr<std::shared_ptr<stagezero::control::Event>> e =
                      stagezero_client->ReadEvent(c);
                  if (!e.ok()) {
-                   subsystem->capcom_.logger_.Log(
+                   subsystem->capcom_.Log(subsystem->Name(),
                        toolbelt::LogLevel::kError, "Failed to read event %s",
                        e.status().ToString().c_str());
                  }
@@ -1168,7 +1163,7 @@ void Subsystem::Restarting(uint32_t client_id, co::Coroutine *c) {
                  // Incoming message.
                  absl::StatusOr<Message> message = subsystem->ReadMessage();
                  if (!message.ok()) {
-                   subsystem->capcom_.logger_.Log(
+                   subsystem->capcom_.Log(subsystem->Name(),
                        toolbelt::LogLevel::kError, "%s",
                        message.status().ToString().c_str());
                  }
@@ -1184,7 +1179,7 @@ void Subsystem::Restarting(uint32_t client_id, co::Coroutine *c) {
                  case Message::kReportOper:
                    // Notification from a child while in restarting state.  We
                    // shouldn't get this.
-                   subsystem->GetLogger().Log(
+                   subsystem->capcom_.Log(subsystem->Name(),
                        toolbelt::LogLevel::kError,
                        "Subsystem %s has reported oper state "
                        "change to %s while in restarting state",
@@ -1220,7 +1215,6 @@ void Subsystem::Restarting(uint32_t client_id, co::Coroutine *c) {
 }
 
 void Subsystem::Broken(uint32_t client_id, co::Coroutine *c) {
-  oper_state_ = OperState::kBroken;
   NotifyParents();
   capcom_.SendSubsystemStatusEvent(this);
   RunSubsystemInState(
@@ -1233,7 +1227,7 @@ void Subsystem::Broken(uint32_t client_id, co::Coroutine *c) {
                  // Incoming message.
                  absl::StatusOr<Message> message = subsystem->ReadMessage();
                  if (!message.ok()) {
-                   subsystem->capcom_.logger_.Log(
+                   subsystem->capcom_.Log(subsystem->Name(),
                        toolbelt::LogLevel::kError, "%s",
                        message.status().ToString().c_str());
                  }
@@ -1252,7 +1246,7 @@ void Subsystem::Broken(uint32_t client_id, co::Coroutine *c) {
                    }
                    return StateTransition::kLeave;
                  case Message::kReportOper:
-                   subsystem->GetLogger().Log(
+                   subsystem->capcom_.Log(subsystem->Name(),
                        toolbelt::LogLevel::kInfo,
                        "Subsystem %s has reported oper state "
                        "change to %s while it is broken",
@@ -1471,7 +1465,7 @@ void Process::ParseStreams(
   for (auto &s : streams) {
     Stream stream;
     if (absl::Status status = stream.FromProto(s); !status.ok()) {
-      capcom_.logger_.Log(toolbelt::LogLevel::kError,
+      capcom_.Log(Name(),toolbelt::LogLevel::kError,
                           "Failed to parse stream control: %s",
                           status.ToString().c_str());
       continue;

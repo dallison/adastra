@@ -5,15 +5,17 @@
 #include "flight/command/flight.h"
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
+#include "common/stream.h"
 #include "flight/client/client.h"
 #include "toolbelt/sockets.h"
-#include "common/stream.h"
+#include "toolbelt/table.h"
+#include "toolbelt/color.h"
 
 #include <cstdlib>
 #include <iostream>
 #include <string>
-#include <termios.h>
 #include <sys/ioctl.h>
+#include <termios.h>
 
 ABSL_FLAG(std::string, hostname, "localhost",
           "Flight Director hostname (or IP address)");
@@ -26,9 +28,9 @@ FlightCommand::FlightCommand(toolbelt::InetAddress flight_addr)
   InitCommands();
 }
 
-void FlightCommand::Connect(flight::client::ClientMode mode) {
+void FlightCommand::Connect(flight::client::ClientMode mode, int event_mask) {
   client_ = std::make_unique<flight::client::Client>(mode);
-  if (absl::Status status = client_->Init(flight_addr_, "FlightCommand");
+  if (absl::Status status = client_->Init(flight_addr_, "FlightCommand",  event_mask);
       !status.ok()) {
     std::cerr << "Can't connect to FlightDirector at address "
               << flight_addr_.ToString() << ": " << status.ToString()
@@ -64,8 +66,10 @@ void FlightCommand::Run(int argc, char **argv) {
     exit(1);
   }
   if (it->first != "help") {
-    Connect(it->first == "run" ? flight::client::ClientMode::kNonBlocking
-                               : flight::client::ClientMode::kBlocking);
+    bool is_run = it->first == "run";
+    Connect(is_run ? flight::client::ClientMode::kNonBlocking
+                               : flight::client::ClientMode::kBlocking,
+                               is_run ? kOutputEvents : kNoEvents);
   }
   if (absl::Status status = it->second->Execute(client_.get(), argc, argv);
       !status.ok()) {
@@ -78,6 +82,7 @@ absl::Status HelpCommand::Execute(flight::client::Client *client, int argc,
                                   char **argv) const {
   std::cout << "Control Flight Director\n";
   std::cout << "  flight start <subsystem> - start a subsystem running\n";
+  std::cout << "  flight run <subsystem> - run a subsystem interactively\n";
   std::cout << "  flight stop <subsystem> - stop a subsystem\n";
   std::cout << "  flight status - show status of all subsystems\n";
   std::cout << "  flight abort <subsystem> - abort all subsystems\n";
@@ -110,11 +115,54 @@ absl::Status StatusCommand::Execute(flight::client::Client *client, int argc,
   if (!subsystems.ok()) {
     return subsystems.status();
   }
+  struct winsize win;
+  int cols = 80;
+  if (ioctl(0, TIOCGWINSZ, &win) == 0) {
+    cols = win.ws_col;
+  };
+
+  toolbelt::Table table({"subsystem", "admin", "oper", "processes"});
   for (auto &subsystem : *subsystems) {
-    std::cout << "Subsystem " << subsystem.subsystem << " "
-              << AdminStateName(subsystem.admin_state) << "/"
-              << OperStateName(subsystem.oper_state) << std::endl;
+    table.AddRow();
+    toolbelt::color::Color admin_color;
+    toolbelt::color::Color oper_color;
+
+    switch (subsystem.admin_state) {
+    case AdminState::kOffline:
+      admin_color = toolbelt::color::BoldMagenta();
+      break;
+    case AdminState::kOnline:
+      admin_color = toolbelt::color::BoldGreen();
+      break;
+    }
+
+    switch (subsystem.oper_state) {
+    case OperState::kOffline:
+      oper_color = toolbelt::color::BoldMagenta();
+      break;
+    case OperState::kBroken:
+      oper_color = toolbelt::color::BoldRed();
+      break;
+    case OperState::kOnline:
+      oper_color = toolbelt::color::BoldGreen();
+      break;
+    case OperState::kRestarting:
+    case OperState::kStartingChildren:
+    case OperState::kStartingProcesses:
+    case OperState::kStoppingChildren:
+    case OperState::kStoppingProcesses:
+      oper_color = toolbelt::color::BoldYellow();
+      break;
+    }
+    table.SetCell(0, toolbelt::Table::MakeCell(subsystem.subsystem));
+    table.SetCell(1, toolbelt::Table::MakeCell(
+                         AdminStateName(subsystem.admin_state), admin_color));
+    table.SetCell(2, toolbelt::Table::MakeCell(
+                         OperStateName(subsystem.oper_state), oper_color));
+    table.SetCell(3, toolbelt::Table::MakeCell(
+                         absl::StrFormat("%d", subsystem.processes.size())));
   }
+  table.Print(cols, std::cout);
   return absl::OkStatus();
 }
 
@@ -149,10 +197,11 @@ absl::Status RunCommand::Execute(flight::client::Client *client, int argc,
 
   struct winsize win;
   ioctl(0, TIOCGWINSZ, &win); // Might fail.
-  Terminal term = {.name = getenv("TERM"), .rows = win.ws_row, .cols = win.ws_col};
+  Terminal term = {
+      .name = getenv("TERM"), .rows = win.ws_row, .cols = win.ws_col};
 
-  if (absl::Status status =
-          client->StartSubsystem(subsystem, client::RunMode::kInteractive, &term);
+  if (absl::Status status = client->StartSubsystem(
+          subsystem, client::RunMode::kInteractive, &term);
       !status.ok()) {
     return status;
   }
@@ -168,12 +217,12 @@ absl::Status RunCommand::Execute(flight::client::Client *client, int argc,
   struct termios raw = cooked; /// Raw mode terminal state.
 
 #if defined(__APPLE__)
-raw.c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP
-                | /*INLCR | */ IGNCR | /* ICRNL |*/ IXON);
-raw.c_oflag &= ~OPOST;
-raw.c_lflag &= ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
-raw.c_cflag &= ~(CSIZE | PARENB);
-raw.c_cflag |= CS8;
+  raw.c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP | /*INLCR | */ IGNCR |
+                   /* ICRNL |*/ IXON);
+  raw.c_oflag &= ~OPOST;
+  raw.c_lflag &= ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
+  raw.c_cflag &= ~(CSIZE | PARENB);
+  raw.c_cflag |= CS8;
 #else
   raw.c_oflag &= ~(OLCUC | OCRNL | ONLRET | XTABS);
   raw.c_iflag &= ~(ICRNL | IGNCR | INLCR);

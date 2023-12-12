@@ -95,6 +95,8 @@ enum class RunMode {
   kInteractive,
 };
 
+
+
 class Client : public TCPClient<capcom::proto::Request, capcom::proto::Response,
                                 stagezero::proto::Event> {
 public:
@@ -105,6 +107,7 @@ public:
   ~Client() = default;
 
   absl::Status Init(toolbelt::InetAddress addr, const std::string &name,
+                    int event_mask = kAllEvents,
                     co::Coroutine *c = nullptr);
 
   absl::Status AddCompute(const std::string &name,

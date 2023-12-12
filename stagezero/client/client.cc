@@ -9,11 +9,13 @@
 namespace stagezero {
 
 absl::Status Client::Init(toolbelt::InetAddress addr, const std::string &name,
+int event_mask,
                           const std::string &compute, co::Coroutine *co) {
-  auto fill_init = [name, compute](control::Request &req) {
+  auto fill_init = [name, compute, event_mask](control::Request &req) {
     auto init = req.mutable_init();
     init->set_client_name(name);
     init->set_compute(compute);
+    init->set_event_mask(event_mask);
   };
 
   auto parse_init = [](const control::Response &resp) -> absl::StatusOr<int> {

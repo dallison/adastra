@@ -147,7 +147,6 @@ public:
               << admin_state << " " << oper_state << std::endl;
     for (int retry = 0; retry < 10; retry++) {
       absl::StatusOr<std::shared_ptr<Event>> e = client.WaitForEvent();
-      EXPECT_TRUE(e.ok());
       if (!e.ok()) {
         std::cerr << e.status().ToString() << std::endl;
         return {};
@@ -860,20 +859,22 @@ TEST_F(CapcomTest, InteractiveEcho) {
   data = WaitForOutput(client, "testing");
   std::cout << "output: " << data;
 
-  // Close stdin for the process.  This will cause the process to exit.
-  absl::Status close_status = client.CloseFd("echo", "echo", STDIN_FILENO);
-  ASSERT_TRUE(close_status.ok());
+  // Send a ^C to the process.
+  SendInput(client, "echo", "echo", STDIN_FILENO, "\03");
 
   // The echo program prints "done" when it is exiting.
-  data = WaitForOutput(client, "done");
+  data = WaitForOutput(client, "signal 2");
   std::cout << "output: " << data;
-
-  status = client.StopSubsystem("echo");
-  ASSERT_TRUE(status.ok());
 
   WaitForState(client, "echo", AdminState::kOffline, OperState::kOffline);
 
-  status = client.RemoveSubsystem("echo", false);
+  // When an interactive process ends it will close the client
+  // socket, so we need to make a new one to remove the subsystem.
+
+  stagezero::capcom::client::Client client2(ClientMode::kNonBlocking);
+  InitClient(client2, "foobar1");
+  status = client2.RemoveSubsystem("echo", false);
+  std::cerr << "remove " << status << std::endl;
   ASSERT_TRUE(status.ok());
 }
 

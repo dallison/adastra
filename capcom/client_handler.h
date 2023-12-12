@@ -12,8 +12,8 @@
 #include "toolbelt/sockets.h"
 #include "toolbelt/triggerfd.h"
 
-#include <list>
 #include "absl/container/flat_hash_map.h"
+#include <list>
 
 #include "coroutine.h"
 
@@ -24,10 +24,9 @@ class Capcom;
 class ClientHandler
     : public common::TCPClientHandler<proto::Request, proto::Response,
                                       stagezero::proto::Event> {
- public:
+public:
   ClientHandler(Capcom &capcom, toolbelt::TCPSocket socket, uint32_t id)
-      : TCPClientHandler(std::move(socket)), capcom_(capcom), id_(id) {
-  }
+      : TCPClientHandler(std::move(socket)), capcom_(capcom), id_(id) {}
   ~ClientHandler();
 
   absl::Status SendSubsystemStatusEvent(Subsystem *subsystem);
@@ -39,11 +38,14 @@ class ClientHandler
 
   void AddCoroutine(std::unique_ptr<co::Coroutine> c) override;
 
-  absl::Status SendOutputEvent(const std::string& process, int fd, const char* data, size_t size);
+  absl::Status SendOutputEvent(const std::string &process, int fd,
+                               const char *data, size_t size);
+
+  absl::Status SendLogEvent(std::shared_ptr<stagezero::proto::LogMessage> msg);
 
   void Shutdown() override;
-  
- private:
+
+private:
   std::shared_ptr<ClientHandler> shared_from_this() {
     return std::static_pointer_cast<ClientHandler>(
         TCPClientHandler<proto::Request, proto::Response,
@@ -93,10 +95,10 @@ class ClientHandler
 
   void HandleInput(const proto::InputRequest &req,
                    proto::InputResponse *response, co::Coroutine *c);
-  
-    void HandleCloseFd(const proto::CloseFdRequest &req,
-                   proto::CloseFdResponse *response, co::Coroutine *c);
+
+  void HandleCloseFd(const proto::CloseFdRequest &req,
+                     proto::CloseFdResponse *response, co::Coroutine *c);
   Capcom &capcom_;
   uint32_t id_;
 };
-}  // namespace stagezero::capcom
+} // namespace stagezero::capcom

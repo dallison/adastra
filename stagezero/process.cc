@@ -121,13 +121,13 @@ StaticProcess::StartInternal(const std::vector<std::string> extra_env_vars,
         if (proc->WillNotify()) {
           std::shared_ptr<StreamInfo> s = proc->FindNotifyStream();
           if (s != nullptr) {
-            int notify_fd = s->read_fd.Fd();
+            int notify_fd = s->pipe.ReadFd().Fd();
             uint64_t timeout_ns = proc->StartupTimeoutSecs() * 1000000000LL;
             int wait_fd = c->Wait(notify_fd, POLLIN, timeout_ns);
             if (wait_fd == -1) {
               // Timeout waiting for notification.
-              client->GetLogger().Log(
-                  toolbelt::LogLevel::kError,
+              client->Log(
+                  proc->Name(), toolbelt::LogLevel::kError,
                   "Process %s failed to notify us of startup after %d seconds",
                   proc->Name().c_str(), proc->StartupTimeoutSecs());
 
@@ -140,9 +140,9 @@ StaticProcess::StartInternal(const std::vector<std::string> extra_env_vars,
             (void)read(notify_fd, &val, 8);
             // Nothing to interpret from this (yet?)
 
-            client->GetLogger().Log(toolbelt::LogLevel::kInfo,
-                                    "Process %s notified us of startup",
-                                    proc->Name().c_str());
+            client->Log(proc->Name(), toolbelt::LogLevel::kInfo,
+                        "Process %s notified us of startup",
+                        proc->Name().c_str());
           }
         }
         // Send start event to client.
@@ -150,15 +150,15 @@ StaticProcess::StartInternal(const std::vector<std::string> extra_env_vars,
           absl::Status eventStatus =
               client->SendProcessStartEvent(proc->GetId());
           if (!eventStatus.ok()) {
-            client->GetLogger().Log(toolbelt::LogLevel::kError, "%s\n",
-                                    eventStatus.ToString().c_str());
+            client->Log(proc->Name(), toolbelt::LogLevel::kError, "%s\n",
+                        eventStatus.ToString().c_str());
             return;
           }
         }
         int status = proc->WaitLoop(c, -1);
-        client->GetLogger().Log(toolbelt::LogLevel::kInfo,
-                                "static process %s exited with status %d",
-                                proc->Name().c_str(), status);
+        client->Log(proc->Name(), toolbelt::LogLevel::kInfo,
+                    "static process %s exited with status %d",
+                    proc->Name().c_str(), status);
 
         // The process might have died due to an external signal.  If we didn't
         // kill it, we won't have removed it from the maps.  We try to do this
@@ -174,8 +174,8 @@ StaticProcess::StartInternal(const std::vector<std::string> extra_env_vars,
           eventStatus = client->SendProcessStopEvent(proc->GetId(), true, 0, 0);
         }
         if (!eventStatus.ok()) {
-          client->GetLogger().Log(toolbelt::LogLevel::kError, "%s\n",
-                                  eventStatus.ToString().c_str());
+          client->Log(proc->Name(), toolbelt::LogLevel::kError, "%s\n",
+                      eventStatus.ToString().c_str());
           return;
         }
       },
@@ -185,7 +185,7 @@ StaticProcess::StartInternal(const std::vector<std::string> extra_env_vars,
 
 // Returns a pair of open file descriptors.  The first is the stagezero end
 // and the second is the process end.
-static absl::StatusOr<std::pair<int, int>>
+static absl::StatusOr<toolbelt::Pipe>
 MakeFileDescriptors(bool istty, const proto::Terminal *term) {
   if (istty) {
     int this_end, proc_end;
@@ -210,17 +210,18 @@ MakeFileDescriptors(bool istty, const proto::Terminal *term) {
           "Failed to open pty for stream: %s", strerror(errno)));
     }
 
-    return std::make_pair(this_end, proc_end);
+    absl::StatusOr<toolbelt::Pipe> p =
+        toolbelt::Pipe::Create(this_end, proc_end);
+    if (!p.ok()) {
+      return p.status();
+    }
+    return p;
   }
-
-  // Use pipe.
-  int pipes[2];
-  int e = pipe(pipes);
-  if (e == -1) {
-    return absl::InternalError(
-        absl::StrFormat("Failed to open pipe for stream: %s", strerror(errno)));
+  absl::StatusOr<toolbelt::Pipe> p = toolbelt::Pipe::Create();
+  if (!p.ok()) {
+    return p.status();
   }
-  return std::make_pair(pipes[0], pipes[1]);
+  return p;
 }
 
 absl::Status StreamFromFileDescriptor(
@@ -298,13 +299,11 @@ absl::Status Process::BuildStreams(
     auto stream = std::make_shared<StreamInfo>();
     stream->disposition = proto::StreamControl::NOTIFY;
     stream->direction = proto::StreamControl::OUTPUT;
-    absl::StatusOr<std::pair<int, int>> fds =
-        MakeFileDescriptors(false, nullptr);
-    if (!fds.ok()) {
-      return fds.status();
+    absl::StatusOr<toolbelt::Pipe> pipe = MakeFileDescriptors(false, nullptr);
+    if (!pipe.ok()) {
+      return pipe.status();
     }
-    stream->read_fd.SetFd(fds->first);
-    stream->write_fd.SetFd(fds->second);
+    stream->pipe = std::move(*pipe);
     streams_.push_back(stream);
   }
 
@@ -336,13 +335,10 @@ absl::Status Process::BuildStreams(
     client_->AddCoroutine(std::make_unique<co::Coroutine>(
         scheduler_, [ proc = shared_from_this(), client = client_,
                       this_end ](co::Coroutine * c) {
-          std::cerr << "streaming from fd " << this_end << std::endl;
           absl::Status status = StreamFromFileDescriptor(
               this_end,
               [proc, client](const char *buf, size_t len) -> absl::Status {
                 // Write to client using an event.
-                std::cerr << "output data available: " << std::string(buf, len)
-                          << std::endl;
                 return client->SendOutputEvent(proc->GetId(), STDOUT_FILENO,
                                                buf, len);
               },
@@ -366,13 +362,12 @@ absl::Status Process::BuildStreams(
     case proto::StreamControl::STAGEZERO:
       break;
     case proto::StreamControl::CLIENT: {
-      absl::StatusOr<std::pair<int, int>> fds = MakeFileDescriptors(
+      absl::StatusOr<toolbelt::Pipe> pipe = MakeFileDescriptors(
           s.tty(), s.has_terminal() ? &s.terminal() : nullptr);
-      if (!fds.ok()) {
-        return fds.status();
+      if (!pipe.ok()) {
+        return pipe.status();
       }
-      stream->read_fd.SetFd(fds->first);
-      stream->write_fd.SetFd(fds->second);
+      stream->pipe = std::move(*pipe);
 
       if (s.has_terminal()) {
         stream->term_name = s.terminal().name();
@@ -387,7 +382,7 @@ absl::Status Process::BuildStreams(
             scheduler_, [ proc = shared_from_this(), stream,
                           client = client_ ](co::Coroutine * c) {
               absl::Status status = StreamFromFileDescriptor(
-                  stream->read_fd.Fd(),
+                  stream->pipe.ReadFd().Fd(),
                   [proc, stream, client](const char *buf,
                                          size_t len) -> absl::Status {
                     // Write to client using an event.
@@ -401,13 +396,12 @@ absl::Status Process::BuildStreams(
     }
 
     case proto::StreamControl::LOGGER: {
-      absl::StatusOr<std::pair<int, int>> fds = MakeFileDescriptors(
+      absl::StatusOr<toolbelt::Pipe> pipe = MakeFileDescriptors(
           s.tty(), s.has_terminal() ? &s.terminal() : nullptr);
-      if (!fds.ok()) {
-        return fds.status();
+      if (!pipe.ok()) {
+        return pipe.status();
       }
-      stream->read_fd.SetFd(fds->first);
-      stream->write_fd.SetFd(fds->second);
+      stream->pipe = std::move(*pipe);
 
       if (s.has_terminal()) {
         stream->term_name = s.terminal().name();
@@ -416,7 +410,7 @@ absl::Status Process::BuildStreams(
           scheduler_, [ proc = shared_from_this(), stream,
                         client = client_ ](co::Coroutine * c) {
             absl::Status status = StreamFromFileDescriptor(
-                stream->read_fd.Fd(),
+                stream->pipe.ReadFd().Fd(),
                 [proc, stream, client](const char *buf,
                                        size_t len) -> absl::Status {
                   // Write a log message to the client using an event.
@@ -444,9 +438,9 @@ absl::Status Process::BuildStreams(
       // Set the process end of the stream (the fd that will be redirected)
       // to the file's open fd.
       if (stream->direction == proto::StreamControl::OUTPUT) {
-        stream->write_fd.SetFd(file_fd);
+        stream->pipe.SetWriteFd(file_fd);
       } else {
-        stream->read_fd.SetFd(file_fd);
+        stream->pipe.SetReadFd(file_fd);
       }
       break;
     }
@@ -454,9 +448,9 @@ absl::Status Process::BuildStreams(
       // Set the process end of the stream (the fd that will be redirected)
       // to the fd specified by the user.
       if (stream->direction == proto::StreamControl::OUTPUT) {
-        stream->write_fd.SetFd(s.fd());
+        stream->pipe.SetWriteFd(s.fd());
       } else {
-        stream->read_fd.SetFd(s.fd());
+        stream->pipe.SetReadFd(s.fd());
       }
       break;
     default:
@@ -537,8 +531,8 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
         if (stream->disposition != proto::StreamControl::NOTIFY) {
           toolbelt::FileDescriptor &fd =
               stream->direction == proto::StreamControl::OUTPUT
-                  ? stream->write_fd
-                  : stream->read_fd;
+                  ? stream->pipe.WriteFd()
+                  : stream->pipe.ReadFd();
           (void)close(stream->fd);
 
           int e = dup2(fd.Fd(), stream->fd);
@@ -562,8 +556,8 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
           // Close the duplicated other end of the pipes.
           toolbelt::FileDescriptor &fd =
               stream->direction == proto::StreamControl::OUTPUT
-                  ? stream->read_fd
-                  : stream->write_fd;
+                  ? stream->pipe.ReadFd()
+                  : stream->pipe.WriteFd();
           fd.Reset();
         }
       }
@@ -583,8 +577,7 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
     // Build the argv array for execve.
     std::vector<const char *> argv;
     std::string exe = local_symbols_.ReplaceSymbols(req_.proc().executable());
-    client_->GetLogger().Log(toolbelt::LogLevel::kInfo, "Starting %s",
-                             exe.c_str());
+    client_->Log(Name(), toolbelt::LogLevel::kInfo, "Starting %s", exe.c_str());
     argv.push_back(exe.c_str());
     for (auto &arg : args) {
       argv.push_back(arg.c_str());
@@ -599,8 +592,8 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
       // to tell us that it has started.
       std::shared_ptr<StreamInfo> notify_stream = FindNotifyStream();
       if (notify_stream != nullptr) {
-        env_strings.push_back(absl::StrFormat("STAGEZERO_NOTIFY_FD=%d",
-                                              notify_stream->write_fd.Fd()));
+        env_strings.push_back(absl::StrFormat(
+            "STAGEZERO_NOTIFY_FD=%d", notify_stream->pipe.WriteFd().Fd()));
       }
     }
     absl::flat_hash_map<std::string, Symbol *> env_vars =
@@ -647,8 +640,9 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
         stream->disposition != proto::StreamControl::STAGEZERO &&
         stream->disposition != proto::StreamControl::NOTIFY) {
       toolbelt::FileDescriptor &fd =
-          stream->direction == proto::StreamControl::OUTPUT ? stream->write_fd
-                                                            : stream->read_fd;
+          stream->direction == proto::StreamControl::OUTPUT
+              ? stream->pipe.WriteFd()
+              : stream->pipe.ReadFd();
       fd.Reset();
     }
   }
@@ -679,10 +673,9 @@ absl::Status Process::Stop(co::Coroutine *c) {
         }
         int timeout = proc->SigIntTimeoutSecs();
         if (timeout > 0) {
-          client->GetLogger().Log(
-              toolbelt::LogLevel::kInfo,
-              "Killing process %s with SIGINT (timeout %d seconds)",
-              proc->Name().c_str(), timeout);
+          client->Log(proc->Name(), toolbelt::LogLevel::kInfo,
+                      "Killing process %s with SIGINT (timeout %d seconds)",
+                      proc->Name().c_str(), timeout);
           kill(-proc->GetPid(), SIGINT);
           (void)proc->WaitLoop(c2, timeout);
           if (!proc->IsRunning()) {
@@ -692,18 +685,16 @@ absl::Status Process::Stop(co::Coroutine *c) {
         timeout = proc->SigTermTimeoutSecs();
         if (timeout > 0) {
           kill(-proc->GetPid(), SIGTERM);
-          client->GetLogger().Log(
-              toolbelt::LogLevel::kInfo,
-              "Killing process %s with SIGTERM (timeout %d seconds)",
-              proc->Name().c_str(), timeout);
+          client->Log(proc->Name(), toolbelt::LogLevel::kInfo,
+                      "Killing process %s with SIGTERM (timeout %d seconds)",
+                      proc->Name().c_str(), timeout);
           (void)proc->WaitLoop(c2, timeout);
         }
 
         // Always send SIGKILL if it's still running.  It can't ignore this.
         if (proc->IsRunning()) {
-          client->GetLogger().Log(toolbelt::LogLevel::kInfo,
-                                  "Killing process %s with SIGKILL",
-                                  proc->Name().c_str());
+          client->Log(proc->Name(), toolbelt::LogLevel::kInfo,
+                      "Killing process %s with SIGKILL", proc->Name().c_str());
 
           kill(-proc->GetPid(), SIGKILL);
         }
@@ -721,7 +712,8 @@ absl::Status Process::SendInput(int fd, const std::string &data,
     if (stream->fd == fd &&
         stream->disposition == proto::StreamControl::CLIENT &&
         stream->direction == proto::StreamControl::INPUT) {
-      return WriteToProcess(stream->write_fd.Fd(), data.data(), data.size(), c);
+      return WriteToProcess(stream->pipe.WriteFd().Fd(), data.data(),
+                            data.size(), c);
     }
   }
   return absl::InternalError(absl::StrFormat("Unknown stream fd %d", fd));
@@ -733,8 +725,8 @@ absl::Status Process::CloseFileDescriptor(int fd) {
         stream->disposition == proto::StreamControl::CLIENT &&
         stream->direction == proto::StreamControl::INPUT) {
       int stream_fd = stream->direction == proto::StreamControl::INPUT
-                          ? stream->write_fd.Fd()
-                          : stream->read_fd.Fd();
+                          ? stream->pipe.WriteFd().Fd()
+                          : stream->pipe.ReadFd().Fd();
       int e = close(stream_fd);
       if (e == -1) {
         return absl::InternalError(
@@ -776,20 +768,19 @@ absl::Status Zygote::Start(co::Coroutine *c) {
   ](co::Coroutine * c) mutable {
     absl::StatusOr<toolbelt::UnixSocket> s = listen_socket.Accept(c);
     if (!s.ok()) {
-      client->GetLogger().Log(toolbelt::LogLevel::kError,
-                              "Unable to accept connection from zygote %s: %s",
-                              proc->Name().c_str(),
-                              s.status().ToString().c_str());
+      client->Log(proc->Name(), toolbelt::LogLevel::kError,
+                  "Unable to accept connection from zygote %s: %s",
+                  proc->Name().c_str(), s.status().ToString().c_str());
       return;
     }
     auto *zygote = static_cast<Zygote *>(proc.get());
     zygote->SetControlSocket(std::move(*s));
-    client->GetLogger().Log(toolbelt::LogLevel::kInfo,
-                            "Zygote control socket open");
+    client->Log(proc->Name(), toolbelt::LogLevel::kInfo,
+                "Zygote control socket open");
     absl::Status eventStatus = client->SendProcessStartEvent(proc->GetId());
     if (!eventStatus.ok()) {
-      client->GetLogger().Log(toolbelt::LogLevel::kError, "%s\n",
-                              eventStatus.ToString().c_str());
+      client->Log(proc->Name(), toolbelt::LogLevel::kError, "%s\n",
+                  eventStatus.ToString().c_str());
       return;
     }
   }));
@@ -820,8 +811,9 @@ Zygote::Spawn(const stagezero::control::LaunchVirtualProcessRequest &req,
     if (stream->disposition != proto::StreamControl::CLOSE &&
         stream->disposition != proto::StreamControl::STAGEZERO) {
       const toolbelt::FileDescriptor &fd =
-          stream->direction == proto::StreamControl::OUTPUT ? stream->write_fd
-                                                            : stream->read_fd;
+          stream->direction == proto::StreamControl::OUTPUT
+              ? stream->pipe.WriteFd()
+              : stream->pipe.ReadFd();
       s->set_fd(stream->fd);
       fds.push_back(fd);
       s->set_index(index++);
@@ -942,15 +934,15 @@ absl::Status VirtualProcess::Start(co::Coroutine *c) {
         // Send start event to client->
         absl::Status eventStatus = client->SendProcessStartEvent(proc->GetId());
         if (!eventStatus.ok()) {
-          client->GetLogger().Log(toolbelt::LogLevel::kError, "%s",
-                                  eventStatus.ToString().c_str());
+          client->Log(proc->Name(), toolbelt::LogLevel::kError, "%s",
+                      eventStatus.ToString().c_str());
           return;
         }
 
         int status = proc->WaitLoop(c2, -1);
-        client->GetLogger().Log(toolbelt::LogLevel::kInfo,
-                                "virtual process %s exited with status %d",
-                                proc->Name().c_str(), status);
+        client->Log(proc->Name(), toolbelt::LogLevel::kInfo,
+                    "virtual process %s exited with status %d",
+                    proc->Name().c_str(), status);
         if (proc->IsStopping()) {
           // Intentionally stopped.
           eventStatus = client->SendProcessStopEvent(proc->GetId(), true, 0, 0);
@@ -959,8 +951,8 @@ absl::Status VirtualProcess::Start(co::Coroutine *c) {
           eventStatus = client->SendProcessStopEvent(proc->GetId(), true, 0, 0);
         }
         if (!eventStatus.ok()) {
-          client->GetLogger().Log(toolbelt::LogLevel::kError, "%s\n",
-                                  eventStatus.ToString().c_str());
+          client->Log(proc->Name(), toolbelt::LogLevel::kError, "%s\n",
+                      eventStatus.ToString().c_str());
           return;
         }
       }));

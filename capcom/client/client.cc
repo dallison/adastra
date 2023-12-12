@@ -7,10 +7,12 @@
 namespace stagezero::capcom::client {
 
 absl::Status Client::Init(toolbelt::InetAddress addr, const std::string &name,
+int event_mask,
                           co::Coroutine *co) {
-  auto fill_init = [name](capcom::proto::Request &req) {
+  auto fill_init = [name, event_mask](capcom::proto::Request &req) {
     auto init = req.mutable_init();
     init->set_client_name(name);
+    init->set_event_mask(event_mask);
   };
 
   auto parse_init =
@@ -445,7 +447,6 @@ absl::Status Client::SendInput(const std::string &subsystem,
   input->set_fd(fd);
   input->set_data(data);
 
-  std::cerr << "Client sending input " << subsystem << " " << process << " " << fd << std::endl;
   stagezero::capcom::proto::Response resp;
   if (absl::Status status = SendRequestReceiveResponse(req, resp, c);
       !status.ok()) {

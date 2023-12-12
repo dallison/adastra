@@ -9,8 +9,10 @@
 #include "toolbelt/logging.h"
 #include "toolbelt/sockets.h"
 #include "toolbelt/triggerfd.h"
+#include "common/event.h"
 #include <list>
 #include <memory>
+#include <stdarg.h>
 
 #include "coroutine.h"
 
@@ -50,6 +52,17 @@ public:
   // event will be sent asychrnonously by a coroutine.
   absl::Status QueueEvent(std::shared_ptr<Event> event);
 
+  void Log(const std::string &source, toolbelt::LogLevel level, const char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    VLog(source, level, fmt, ap);
+  }
+  void VLog(const std::string &source, toolbelt::LogLevel level, const char *fmt, va_list ap);
+
+  absl::Status SendLogMessage(toolbelt::LogLevel level,
+                              const std::string &source,
+                              const std::string &text);
+
 protected:
   static constexpr size_t kMaxMessageSize = 4096;
 
@@ -57,7 +70,8 @@ protected:
                                      co::Coroutine *c) = 0;
 
   // Init the client and return the port number for the event channel.
-  absl::StatusOr<int> Init(const std::string &client_name, co::Coroutine *c);
+  absl::StatusOr<int> Init(const std::string &client_name, int event_mask,
+                           co::Coroutine *c);
 
   // Coroutine spawned by Init to send events in the order queued by
   // QueueEvent.
@@ -73,6 +87,7 @@ protected:
   std::list<std::shared_ptr<Event>> events_;
   toolbelt::TriggerFd stop_trigger_;
   toolbelt::TriggerFd event_trigger_;
+  int event_mask_;
 };
 
 template <typename Request, typename Response, typename Event>
@@ -129,10 +144,10 @@ inline void TCPClientHandler<Request, Response, Event>::Run(co::Coroutine *c) {
 }
 
 template <typename Request, typename Response, typename Event>
-inline absl::StatusOr<int>
-TCPClientHandler<Request, Response, Event>::Init(const std::string &client_name,
-                                                 co::Coroutine *c) {
+inline absl::StatusOr<int> TCPClientHandler<Request, Response, Event>::Init(
+    const std::string &client_name, int event_mask, co::Coroutine *c) {
   client_name_ = client_name;
+  event_mask_ = event_mask;
 
   // Event channel is an ephemeral port.
   toolbelt::InetAddress event_channel_addr = command_socket_.BoundAddress();
@@ -248,5 +263,62 @@ inline void TCPClientHandler<Request, Response, Event>::EventSenderCoroutine(
       }
     }
   }
+}
+
+template <typename Request, typename Response, typename Event>
+inline void TCPClientHandler<Request, Response, Event>::VLog(
+    const std::string &source, toolbelt::LogLevel level, const char *fmt, va_list ap) {
+  // Send as log message if the user has asked for it.
+  if ((event_mask_ & kLogMessageEvents) != 0) {
+    constexpr size_t kMaxMessageSize = 256;
+    char buffer[kMaxMessageSize];
+    vsnprintf(buffer, sizeof(buffer), fmt, ap);
+    if (absl::Status status = SendLogMessage(level, source, buffer);
+        status.ok()) {
+      return;
+    }
+  }
+  // Log using the stagezero local logger.
+  GetLogger().VLog(level, fmt, ap);
+}
+
+template <typename Request, typename Response, typename Event>
+absl::Status TCPClientHandler<Request, Response, Event>::SendLogMessage(
+    toolbelt::LogLevel level, const std::string &source,
+    const std::string &text) {
+  if ((event_mask_ & kLogMessageEvents) == 0) {
+    return absl::OkStatus();
+  }
+  auto event = std::make_shared<Event>();
+  auto log = event->mutable_log();
+  log->set_source(source);
+  log->set_text(text);
+
+  struct timespec now_ts;
+  clock_gettime(CLOCK_REALTIME, &now_ts);
+  uint64_t now_ns = now_ts.tv_sec * 1000000000LL + now_ts.tv_nsec;
+  log->set_timestamp(now_ns);
+
+  switch (level) {
+  case toolbelt::LogLevel::kVerboseDebug:
+    log->set_level(proto::LogMessage::VERBOSE);
+    break;
+  case toolbelt::LogLevel::kDebug:
+    log->set_level(proto::LogMessage::DBG);
+    break;
+  case toolbelt::LogLevel::kInfo:
+    log->set_level(proto::LogMessage::INFO);
+    break;
+  case toolbelt::LogLevel::kWarning:
+    log->set_level(proto::LogMessage::WARNING);
+    break;
+  case toolbelt::LogLevel::kError:
+    log->set_level(proto::LogMessage::ERR);
+    break;
+  case toolbelt::LogLevel::kFatal:
+    // Fatal not supported here.
+    return absl::OkStatus();
+  }
+  return QueueEvent(std::move(event));
 }
 } // namespace stagezero::common

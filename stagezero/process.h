@@ -12,6 +12,7 @@
 #include "stagezero/symbols.h"
 #include "toolbelt/fd.h"
 #include "toolbelt/sockets.h"
+#include "toolbelt/pipe.h"
 #include "common/stream.h"
 #include <memory>
 #include <string>
@@ -23,8 +24,7 @@ class ClientHandler;
 struct StreamInfo {
   proto::StreamControl::Direction direction;
   proto::StreamControl::Disposition disposition;
-  toolbelt::FileDescriptor read_fd;   // Read end of pipe or tty.
-  toolbelt::FileDescriptor write_fd;  // Write end.
+  toolbelt::Pipe pipe;
   int fd;                             // Process fd to map to.
   std::string term_name;
   bool tty;

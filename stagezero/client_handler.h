@@ -7,6 +7,7 @@
 #include "common/tcp_client_handler.h"
 #include "proto/config.pb.h"
 #include "proto/control.pb.h"
+#include "proto/log.pb.h"
 #include "stagezero/process.h"
 #include "stagezero/symbols.h"
 #include "toolbelt/logging.h"
@@ -35,9 +36,6 @@ class ClientHandler
                                     int exit_status, int term_signal);
   absl::Status SendOutputEvent(const std::string &process_id, int fd,
                                const char *data, size_t len);
-  absl::Status SendLogMessage(toolbelt::LogLevel level,
-                              const std::string &process,
-                              const std::string &text);
 
   toolbelt::Logger &GetLogger() const override;
 

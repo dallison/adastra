@@ -77,7 +77,7 @@ class ClientTest : public ::testing::Test {
   void TearDown() override {}
 
   void InitClient(stagezero::Client &client, const std::string &name) {
-    absl::Status s = client.Init(Addr(), name);
+    absl::Status s = client.Init(Addr(), name, stagezero::kAllEvents);
     std::cout << "Init status: " << s << std::endl;
     ASSERT_TRUE(s.ok());
   }

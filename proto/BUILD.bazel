@@ -19,6 +19,7 @@ proto_library(
     deps = [
         ":config_proto",
         ":stream_proto",
+        ":log_proto",
     ],
 )
 
@@ -35,6 +36,7 @@ proto_library(
         ":event_proto",
         ":subsystem_status_proto",
         ":stream_proto",
+        ":log_proto",
     ],
 )
 
@@ -51,6 +53,7 @@ proto_library(
         ":config_proto",
         ":event_proto",
         ":stream_proto",
+        ":log_proto",
         ":subsystem_status_proto",
     ],
 )
@@ -65,6 +68,7 @@ proto_library(
     srcs = ["event.proto"],
     deps = [
         ":subsystem_status_proto",
+        ":log_proto",
     ],
 )
 
@@ -83,6 +87,15 @@ cc_proto_library(
     deps = [":stream_proto"],
 )
 
+proto_library(
+    name = "log_proto",
+    srcs = ["log.proto"],
+)
+
+cc_proto_library(
+    name = "log_cc_proto",
+    deps = [":log_proto"],
+)
 proto_library(
     name = "subsystem_status_proto",
     srcs = ["subsystem_status.proto"],

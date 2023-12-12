@@ -3,6 +3,7 @@
 // See LICENSE file for licensing information.
 
 #include "capcom/capcom.h"
+#include "toolbelt/clock.h"
 
 namespace stagezero::capcom {
 
@@ -14,15 +15,13 @@ Capcom::Capcom(co::CoroutineScheduler &scheduler, toolbelt::InetAddress addr,
                     .addr = toolbelt::InetAddress("localhost", 6522)};
 
   // Create the log message pipe.
-  int pipes[2];
-  int e = ::pipe(pipes);
-  if (e == -1) {
+  absl::StatusOr<toolbelt::Pipe> p = toolbelt::Pipe::Create();
+  if (!p.ok()) {
     std::cerr << "Failed to create logging pipe: " << strerror(errno)
               << std::endl;
     abort();
   }
-  incoming_log_message_.SetFd(pipes[0]);
-  log_message_.SetFd(pipes[1]);
+  log_pipe_ = std::move(*p);
 
   if (!log_file_name.empty()) {
     log_file_.SetFd(
@@ -51,8 +50,9 @@ void Capcom::CloseHandler(std::shared_ptr<ClientHandler> handler) {
   }
 }
 
-absl::Status Capcom::HandleIncomingConnection(
-    toolbelt::TCPSocket &listen_socket, co::Coroutine *c) {
+absl::Status
+Capcom::HandleIncomingConnection(toolbelt::TCPSocket &listen_socket,
+                                 co::Coroutine *c) {
   absl::StatusOr<toolbelt::TCPSocket> s = listen_socket.Accept(c);
   if (!s.ok()) {
     return s.status();
@@ -97,16 +97,16 @@ void Capcom::ListenerCoroutine(toolbelt::TCPSocket &listen_socket,
   }
 }
 
-void Capcom::Log(const stagezero::control::LogMessage &msg) {
+void Capcom::Log(const stagezero::proto::LogMessage &msg) {
   uint64_t size = msg.ByteSizeLong();
   // Write length prefix.
-  ssize_t n = ::write(log_message_.Fd(), &size, sizeof(size));
+  ssize_t n = ::write(log_pipe_.WriteFd().Fd(), &size, sizeof(size));
   if (n <= 0) {
     logger_.Log(toolbelt::LogLevel::kError,
                 "Failed to write to logger pipe: %s", strerror(errno));
     return;
   }
-  if (!msg.SerializeToFileDescriptor(log_message_.Fd())) {
+  if (!msg.SerializeToFileDescriptor(log_pipe_.WriteFd().Fd())) {
     logger_.Log(toolbelt::LogLevel::kError,
                 "Failed to serialize to logger pipe: %s", strerror(errno));
   }
@@ -114,17 +114,17 @@ void Capcom::Log(const stagezero::control::LogMessage &msg) {
 
 void Capcom::LoggerCoroutine(co::Coroutine *c) {
   for (;;) {
-    c->Wait(incoming_log_message_.Fd());
+    c->Wait(log_pipe_.ReadFd().Fd());
     uint64_t size;
-    ssize_t n = ::read(incoming_log_message_.Fd(), &size, sizeof(uint64_t));
+    ssize_t n = ::read(log_pipe_.ReadFd().Fd(), &size, sizeof(uint64_t));
     if (n <= 0) {
       std::cerr << "Failed to read log message: " << strerror(errno)
                 << std::endl;
       return;
     }
-    auto msg = std::make_unique<control::LogMessage>();
+    auto msg = std::make_shared<stagezero::proto::LogMessage>();
     std::vector<char> buffer(size);
-    n = ::read(incoming_log_message_.Fd(), buffer.data(), buffer.size());
+    n = ::read(log_pipe_.ReadFd().Fd(), buffer.data(), buffer.size());
     if (n <= 0) {
       std::cerr << "Failed to parse log message: " << strerror(errno)
                 << std::endl;
@@ -143,29 +143,29 @@ void Capcom::LoggerCoroutine(co::Coroutine *c) {
 
 void Capcom::LoggerFlushCoroutine(co::Coroutine *c) {
   for (;;) {
-    c->Millisleep(500);  // Flush the log buffer every 500ms.
+    c->Millisleep(500); // Flush the log buffer every 500ms.
     for (auto & [ timestamp, msg ] : log_buffer_) {
       toolbelt::LogLevel level;
       switch (msg->level()) {
-        case control::LogMessage::VERBOSE:
-          level = toolbelt::LogLevel::kVerboseDebug;
-          break;
-        case control::LogMessage::DBG:
-          level = toolbelt::LogLevel::kDebug;
-          break;
-        case control::LogMessage::INFO:
-          level = toolbelt::LogLevel::kInfo;
-          break;
-        case control::LogMessage::WARNING:
-          level = toolbelt::LogLevel::kWarning;
-          break;
-        case control::LogMessage::ERR:
-          level = toolbelt::LogLevel::kError;
-          break;
-        default:
-          continue;
+      case stagezero::proto::LogMessage::VERBOSE:
+        level = toolbelt::LogLevel::kVerboseDebug;
+        break;
+      case stagezero::proto::LogMessage::DBG:
+        level = toolbelt::LogLevel::kDebug;
+        break;
+      case stagezero::proto::LogMessage::INFO:
+        level = toolbelt::LogLevel::kInfo;
+        break;
+      case stagezero::proto::LogMessage::WARNING:
+        level = toolbelt::LogLevel::kWarning;
+        break;
+      case stagezero::proto::LogMessage::ERR:
+        level = toolbelt::LogLevel::kError;
+        break;
+      default:
+        continue;
       }
-      logger_.Log(level, timestamp, msg->process_name(), msg->text());
+      logger_.Log(level, timestamp, msg->source(), msg->text());
 
       if (log_file_.Valid()) {
         // Serialize into the log file.
@@ -184,13 +184,22 @@ void Capcom::LoggerFlushCoroutine(co::Coroutine *c) {
           }
         }
       }
+
+      // Send as log events to the clients.
+      for (auto &handler : client_handlers_) {
+        if (absl::Status status = handler->SendLogEvent(msg); !status.ok()) {
+          logger_.Log(toolbelt::LogLevel::kError,
+                      "Failed to send log event: %s", strerror(errno));
+        }
+      }
     }
     log_buffer_.clear();
   }
 }
 
 absl::Status Capcom::Run() {
-  logger_.Log(toolbelt::LogLevel::kInfo, "Capcom running on address %s", addr_.ToString().c_str());
+  logger_.Log(toolbelt::LogLevel::kInfo, "Capcom running on address %s",
+              addr_.ToString().c_str());
 
   toolbelt::TCPSocket listen_socket;
 
@@ -377,4 +386,16 @@ absl::Status Capcom::AddGlobalVariable(const Variable &var, co::Coroutine *c) {
   return result;
 }
 
-}  // namespace stagezero::capcom
+void Capcom::Log(const std::string &source, toolbelt::LogLevel level,
+                 const char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  char buffer[256];
+  vsnprintf(buffer, sizeof(buffer), fmt, ap);
+  LogMessage msg = {.level = ToLevel(level), .source = source, .text = buffer, .timestamp = toolbelt::Now()};
+  stagezero::proto::LogMessage proto_msg;
+  msg.ToProto(&proto_msg);
+  Log(proto_msg);
+}
+
+} // namespace stagezero::capcom

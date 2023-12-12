@@ -195,7 +195,7 @@ absl::Status StageZero::Run() {
 
 void StageZero::KillAllProcesses() {
   logger_.Log(toolbelt::LogLevel::kInfo,
-              "Kill all processes on StageZero exit");
+              "Killing all processes on StageZero exit");
   // Copy all processes out of the processes_ map as we will
   // be removing them as they are killed.
   std::vector<std::shared_ptr<Process>> procs;

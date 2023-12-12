@@ -7,6 +7,7 @@
 #include "capcom/capcom.h"
 #include "common/stream.h"
 #include "toolbelt/hexdump.h"
+#include "toolbelt/pipe.h"
 
 #include <iostream>
 
@@ -27,6 +28,9 @@ void ClientHandler::AddCoroutine(std::unique_ptr<co::Coroutine> c) {
 }
 
 absl::Status ClientHandler::SendSubsystemStatusEvent(Subsystem *subsystem) {
+  if ((event_mask_ & kSubsystemStatusEvents) == 0) {
+    return absl::OkStatus();
+  }
   auto event = std::make_shared<stagezero::proto::Event>();
   auto s = event->mutable_subsystem_status();
   subsystem->BuildStatus(s);
@@ -34,9 +38,23 @@ absl::Status ClientHandler::SendSubsystemStatusEvent(Subsystem *subsystem) {
 }
 
 absl::Status ClientHandler::SendAlarm(const Alarm &alarm) {
+  if ((event_mask_ & kAlarmEvents) == 0) {
+    return absl::OkStatus();
+  }
   auto event = std::make_shared<stagezero::proto::Event>();
   auto a = event->mutable_alarm();
   alarm.ToProto(a);
+  return QueueEvent(std::move(event));
+}
+
+absl::Status
+ClientHandler::SendLogEvent(std::shared_ptr<stagezero::proto::LogMessage> msg) {
+  if ((event_mask_ & kLogMessageEvents) == 0) {
+    return absl::OkStatus();
+  }
+  auto event = std::make_shared<stagezero::proto::Event>();
+  auto log = event->mutable_log();
+  *log = *msg; // This is a copy.
   return QueueEvent(std::move(event));
 }
 
@@ -103,7 +121,7 @@ absl::Status ClientHandler::HandleMessage(const proto::Request &req,
 void ClientHandler::HandleInit(const proto::InitRequest &req,
                                proto::InitResponse *response,
                                co::Coroutine *c) {
-  absl::StatusOr<int> s = Init(req.client_name(), c);
+  absl::StatusOr<int> s = Init(req.client_name(), req.event_mask(), c);
   if (!s.ok()) {
     response->set_error(s.status().ToString());
     return;
@@ -133,7 +151,7 @@ void ClientHandler::HandleAddCompute(const proto::AddComputeRequest &req,
   // there.
   stagezero::Client sclient;
   if (absl::Status status =
-          sclient.Init(stagezero_addr, "<capcom probe>", compute.name(), c);
+          sclient.Init(stagezero_addr, "<capcom probe>",  kNoEvents, compute.name(), c);
       !status.ok()) {
     response->set_error(absl::StrFormat(
         "Cannot connect to StageZero on compute %s at address %s",
@@ -281,15 +299,6 @@ void ClientHandler::HandleRemoveSubsystem(
   }
 }
 
-static absl::StatusOr<std::pair<int, int>> BuildPipe() {
-  int pipes[2];
-  if (::pipe(pipes) == -1) {
-    return absl::InternalError(
-        absl::StrFormat("Failed to create stream pipe: %s", strerror(errno)));
-  }
-  return std::make_pair(pipes[0], pipes[1]);
-}
-
 void ClientHandler::HandleStartSubsystem(
     const proto::StartSubsystemRequest &req,
     proto::StartSubsystemResponse *response, co::Coroutine *c) {
@@ -306,19 +315,24 @@ void ClientHandler::HandleStartSubsystem(
                      .interactive = req.interactive()};
 
   if (message.interactive) {
-    absl::StatusOr<std::pair<int, int>> stdout = BuildPipe();
+    absl::StatusOr<toolbelt::Pipe> stdout = toolbelt::Pipe::Create();
     if (!stdout.ok()) {
       response->set_error(stdout.status().ToString());
       return;
     }
     // Put write end into message.
-    message.output_fd = stdout->second;
+    message.output_fd = stdout->WriteFd().Fd();
+    // Keep the write end of the pipe open as it will be passed to the subsystem
+    // as a raw fd.  The subsystem will take ownership of the fd when it
+    // receives the message from its message pipe.
+    stdout->WriteFd().Release();
+
     if (req.has_terminal()) {
       message.rows = req.terminal().rows();
       message.cols = req.terminal().cols();
       if (req.terminal().name().size() > sizeof(message.term_name) - 1) {
-        response->set_error(absl::StrFormat("Terminal name '%d' is too long",
-                                            req.terminal().name().size()));
+        response->set_error(absl::StrFormat("Terminal name '%s' is too long",
+                                            req.terminal().name()));
         return;
       }
       strcpy(message.term_name, req.terminal().name().c_str());
@@ -326,25 +340,24 @@ void ClientHandler::HandleStartSubsystem(
 
     // Spawn coroutine to read from the stdout pipe
     // and send as output events.
-    AddCoroutine(std::make_unique<co::Coroutine>(
-        GetScheduler(), [ client = shared_from_this(),
-                          stdout = stdout->first ](co::Coroutine * c) {
-          for (;;) {
-            char buffer[4096];
-            c->Wait(stdout);
-            ssize_t n = ::read(stdout, buffer, sizeof(buffer));
-            if (n <= 0) {
-              break;
-            }
-            if (absl::Status status =
-                    client->SendOutputEvent("", STDOUT_FILENO, buffer, n);
-                !status.ok()) {
-              break;
-            }
-          }
-          close(stdout);
-          client->Stop();
-        }));
+    AddCoroutine(std::make_unique<co::Coroutine>(GetScheduler(), [
+      client = shared_from_this(), stdout = stdout->ReadFd()
+    ](co::Coroutine * c) {
+      for (;;) {
+        char buffer[4096];
+        c->Wait(stdout.Fd());
+        ssize_t n = ::read(stdout.Fd(), buffer, sizeof(buffer));
+        if (n <= 0) {
+          break;
+        }
+        if (absl::Status status =
+                client->SendOutputEvent("", STDOUT_FILENO, buffer, n);
+            !status.ok()) {
+          break;
+        }
+      }
+      client->Stop();
+    }));
   }
 
   if (absl::Status status = subsystem->SendMessage(message); !status.ok()) {
@@ -402,6 +415,9 @@ void ClientHandler::HandleAbort(const proto::AbortRequest &req,
 
 absl::Status ClientHandler::SendOutputEvent(const std::string &process, int fd,
                                             const char *data, size_t len) {
+  if ((event_mask_ & kOutputEvents) == 0) {
+    return absl::OkStatus();
+  }
   auto event = std::make_shared<stagezero::proto::Event>();
   auto output = event->mutable_output();
   output->set_process_id(process);

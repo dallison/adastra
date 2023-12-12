@@ -72,7 +72,7 @@ class FlightCommand {
  public:
   FlightCommand(toolbelt::InetAddress flight_addr);
 
-  void Connect(flight::client::ClientMode mode);
+  void Connect(flight::client::ClientMode mode, int event_mask);
   void Run(int argc, char **argv);
 
  private:
