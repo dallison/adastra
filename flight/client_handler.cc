@@ -71,7 +71,8 @@ absl::Status ClientHandler::HandleMessage(const flight::proto::Request &req,
 void ClientHandler::HandleInit(const flight::proto::InitRequest &req,
                                flight::proto::InitResponse *response,
                                co::Coroutine *c) {
-  absl::StatusOr<int> s = Init(req.client_name(), req.event_mask(), c);
+  absl::StatusOr<int> s = Init(req.client_name(), req.event_mask(),
+                               [this] { flight_.DumpEventCache(this); }, c);
   if (!s.ok()) {
     response->set_error(s.status().ToString());
     return;
@@ -96,8 +97,7 @@ void ClientHandler::HandleStartSubsystem(
           req.interactive()
               ? stagezero::capcom::client::RunMode::kInteractive
               : stagezero::capcom::client::RunMode::kNoninteractive,
-              terminal.IsPresent() ? &terminal : nullptr,
-          c);
+          terminal.IsPresent() ? &terminal : nullptr, c);
       !status.ok()) {
     response->set_error(status.ToString());
   }
@@ -212,5 +212,15 @@ void ClientHandler::HandleCloseFd(const proto::CloseFdRequest &req,
       !status.ok()) {
     response->set_error(status.ToString());
   }
+}
+
+absl::Status
+ClientHandler::SendEvent(std::shared_ptr<stagezero::Event> event) {
+  if (!event->IsMaskedIn(event_mask_)) {
+    return absl::OkStatus();
+  }
+  auto proto_event = std::make_shared<stagezero::proto::Event>();
+  event->ToProto(proto_event.get());
+  return QueueEvent(std::move(proto_event));
 }
 } // namespace stagezero::flight

@@ -24,6 +24,7 @@ class ClientHandler;
 class StageZero {
  public:
   StageZero(co::CoroutineScheduler &scheduler, toolbelt::InetAddress addr,
+          bool log_to_output,
             int notify_fd = -1);
   ~StageZero();
   absl::Status Run();

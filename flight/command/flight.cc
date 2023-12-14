@@ -7,9 +7,10 @@
 #include "absl/flags/parse.h"
 #include "common/stream.h"
 #include "flight/client/client.h"
+#include "toolbelt/color.h"
 #include "toolbelt/sockets.h"
 #include "toolbelt/table.h"
-#include "toolbelt/color.h"
+#include "toolbelt/logging.h"
 
 #include <cstdlib>
 #include <iostream>
@@ -30,7 +31,8 @@ FlightCommand::FlightCommand(toolbelt::InetAddress flight_addr)
 
 void FlightCommand::Connect(flight::client::ClientMode mode, int event_mask) {
   client_ = std::make_unique<flight::client::Client>(mode);
-  if (absl::Status status = client_->Init(flight_addr_, "FlightCommand",  event_mask);
+  if (absl::Status status =
+          client_->Init(flight_addr_, "FlightCommand", event_mask);
       !status.ok()) {
     std::cerr << "Can't connect to FlightDirector at address "
               << flight_addr_.ToString() << ": " << status.ToString()
@@ -47,6 +49,7 @@ void FlightCommand::InitCommands() {
   AddCommand(std::make_unique<HelpCommand>());
   AddCommand(std::make_unique<AlarmsCommand>());
   AddCommand(std::make_unique<RunCommand>());
+  AddCommand(std::make_unique<LogCommand>());
 }
 
 void FlightCommand::AddCommand(std::unique_ptr<Command> cmd) {
@@ -67,9 +70,15 @@ void FlightCommand::Run(int argc, char **argv) {
   }
   if (it->first != "help") {
     bool is_run = it->first == "run";
+    int event_mask = kSubsystemStatusEvents;
+    if (is_run) {
+      event_mask |= kOutputEvents;
+    } else if (it->first == "log") {
+      event_mask = kLogMessageEvents;
+    }
     Connect(is_run ? flight::client::ClientMode::kNonBlocking
-                               : flight::client::ClientMode::kBlocking,
-                               is_run ? kOutputEvents : kNoEvents);
+                   : flight::client::ClientMode::kBlocking,
+            event_mask);
   }
   if (absl::Status status = it->second->Execute(client_.get(), argc, argv);
       !status.ok()) {
@@ -87,6 +96,7 @@ absl::Status HelpCommand::Execute(flight::client::Client *client, int argc,
   std::cout << "  flight status - show status of all subsystems\n";
   std::cout << "  flight abort <subsystem> - abort all subsystems\n";
   std::cout << "  flight alarms - show all alarms\n";
+  std::cout << "  flight log - show text log\n";
   return absl::OkStatus();
 }
 
@@ -186,6 +196,23 @@ absl::Status AbortCommand::Execute(flight::client::Client *client, int argc,
   std::string reason = argv[2];
 
   return client->Abort(reason);
+}
+
+absl::Status LogCommand::Execute(flight::client::Client *client, int argc,
+                                 char **argv) const {
+  toolbelt::Logger logger("flight");
+  for (;;) {
+    absl::StatusOr<std::shared_ptr<Event>> e = client->ReadEvent();
+    if (!e.ok()) {
+      return e.status();
+    }
+    auto event = *e;
+    if (event->type == EventType::kLog) {
+      LogMessage log = std::get<3>(event->event);
+      logger.Log(log.level, log.timestamp, log.source, log.text);
+    }
+  }
+  return absl::OkStatus();
 }
 
 absl::Status RunCommand::Execute(flight::client::Client *client, int argc,

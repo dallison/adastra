@@ -8,11 +8,13 @@
 namespace stagezero::capcom {
 
 Capcom::Capcom(co::CoroutineScheduler &scheduler, toolbelt::InetAddress addr,
+               bool log_to_output, int local_stagezero_port,
                const std::string &log_file_name, int notify_fd)
-    : co_scheduler_(scheduler), addr_(std::move(addr)), notify_fd_(notify_fd) {
-  // TODO: how to get the port for stagezero.
-  local_compute_ = {.name = "<localhost>",
-                    .addr = toolbelt::InetAddress("localhost", 6522)};
+    : co_scheduler_(scheduler), addr_(std::move(addr)),
+      log_to_output_(log_to_output), notify_fd_(notify_fd), logger_("capcom", log_to_output) {
+  local_compute_ = {
+      .name = "<localhost>",
+      .addr = toolbelt::InetAddress("localhost", local_stagezero_port)};
 
   // Create the log message pipe.
   absl::StatusOr<toolbelt::Pipe> p = toolbelt::Pipe::Create();
@@ -144,6 +146,16 @@ void Capcom::LoggerCoroutine(co::Coroutine *c) {
 void Capcom::LoggerFlushCoroutine(co::Coroutine *c) {
   for (;;) {
     c->Millisleep(500); // Flush the log buffer every 500ms.
+
+    // If there is no client wants log events, log it to the local logger.
+    bool client_wants_events = false;
+    for (auto &handler : client_handlers_) {
+      if (handler->WantsLogEvents()) {
+        client_wants_events = true;
+        break;
+      }
+    }
+
     for (auto & [ timestamp, msg ] : log_buffer_) {
       toolbelt::LogLevel level;
       switch (msg->level()) {
@@ -165,7 +177,6 @@ void Capcom::LoggerFlushCoroutine(co::Coroutine *c) {
       default:
         continue;
       }
-      logger_.Log(level, timestamp, msg->source(), msg->text());
 
       if (log_file_.Valid()) {
         // Serialize into the log file.
@@ -185,11 +196,15 @@ void Capcom::LoggerFlushCoroutine(co::Coroutine *c) {
         }
       }
 
-      // Send as log events to the clients.
-      for (auto &handler : client_handlers_) {
-        if (absl::Status status = handler->SendLogEvent(msg); !status.ok()) {
-          logger_.Log(toolbelt::LogLevel::kError,
-                      "Failed to send log event: %s", strerror(errno));
+      if (!client_wants_events) {
+        logger_.Log(level, timestamp, msg->source(), msg->text());
+      } else {
+        // Send as log events to the clients.
+        for (auto &handler : client_handlers_) {
+          if (absl::Status status = handler->SendLogEvent(msg); !status.ok()) {
+            logger_.Log(toolbelt::LogLevel::kError,
+                        "Failed to send log event: %s", strerror(errno));
+          }
         }
       }
     }
@@ -392,9 +407,15 @@ void Capcom::Log(const std::string &source, toolbelt::LogLevel level,
   va_start(ap, fmt);
   char buffer[256];
   vsnprintf(buffer, sizeof(buffer), fmt, ap);
-  LogMessage msg = {.level = ToLevel(level), .source = source, .text = buffer, .timestamp = toolbelt::Now()};
+  LogMessage log = {.source = source, .level = level, .text = buffer};
+
+  struct timespec now_ts;
+  clock_gettime(CLOCK_REALTIME, &now_ts);
+  uint64_t now_ns = now_ts.tv_sec * 1000000000LL + now_ts.tv_nsec;
+  log.timestamp = now_ns;
+
   stagezero::proto::LogMessage proto_msg;
-  msg.ToProto(&proto_msg);
+  log.ToProto(&proto_msg);
   Log(proto_msg);
 }
 

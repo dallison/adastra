@@ -14,8 +14,8 @@
 #include "toolbelt/sockets.h"
 #include "toolbelt/triggerfd.h"
 
-#include <list>
 #include "absl/container/flat_hash_map.h"
+#include <list>
 
 #include "coroutine.h"
 
@@ -26,7 +26,7 @@ class FlightDirector;
 class ClientHandler : public common::TCPClientHandler<flight::proto::Request,
                                                       flight::proto::Response,
                                                       stagezero::proto::Event> {
- public:
+public:
   ClientHandler(FlightDirector &flight, toolbelt::TCPSocket socket)
       : TCPClientHandler(std::move(socket)), flight_(flight) {}
   ~ClientHandler();
@@ -40,7 +40,9 @@ class ClientHandler : public common::TCPClientHandler<flight::proto::Request,
 
   void AddCoroutine(std::unique_ptr<co::Coroutine> c) override;
 
- private:
+  absl::Status SendEvent(std::shared_ptr<stagezero::Event> event);
+
+private:
   std::shared_ptr<ClientHandler> shared_from_this() {
     return std::static_pointer_cast<ClientHandler>(
         TCPClientHandler<flight::proto::Request, flight::proto::Response,
@@ -71,16 +73,18 @@ class ClientHandler : public common::TCPClientHandler<flight::proto::Request,
   void HandleAbort(const flight::proto::AbortRequest &req,
                    flight::proto::AbortResponse *response, co::Coroutine *c);
 
-  void HandleAddGlobalVariable(const flight::proto::AddGlobalVariableRequest &req,
-                               flight::proto::AddGlobalVariableResponse *response,
-                               co::Coroutine *c);
+  void
+  HandleAddGlobalVariable(const flight::proto::AddGlobalVariableRequest &req,
+                          flight::proto::AddGlobalVariableResponse *response,
+                          co::Coroutine *c);
 
   void HandleInput(const flight::proto::InputRequest &req,
                    flight::proto::InputResponse *response, co::Coroutine *c);
-  
-    void HandleCloseFd(const flight::proto::CloseFdRequest &req,
-                   flight::proto::CloseFdResponse *response, co::Coroutine *c);
+
+  void HandleCloseFd(const flight::proto::CloseFdRequest &req,
+                     flight::proto::CloseFdResponse *response,
+                     co::Coroutine *c);
 
   FlightDirector &flight_;
 };
-}  // namespace stagezero::flight
+} // namespace stagezero::flight

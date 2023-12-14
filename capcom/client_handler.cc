@@ -121,7 +121,7 @@ absl::Status ClientHandler::HandleMessage(const proto::Request &req,
 void ClientHandler::HandleInit(const proto::InitRequest &req,
                                proto::InitResponse *response,
                                co::Coroutine *c) {
-  absl::StatusOr<int> s = Init(req.client_name(), req.event_mask(), c);
+  absl::StatusOr<int> s = Init(req.client_name(), req.event_mask(), []{}, c);
   if (!s.ok()) {
     response->set_error(s.status().ToString());
     return;

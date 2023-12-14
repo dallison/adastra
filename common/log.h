@@ -9,16 +9,8 @@
 namespace stagezero {
 
 struct LogMessage {
-  enum class Level {
-    kUnknown,
-    kVerbose,
-    kDebug,
-    kInfo,
-    kWarning,
-    kError,
-  };
   std::string source;
-  Level level;
+  toolbelt::LogLevel level;
   std::string text;
   uint64_t timestamp;
 
@@ -27,23 +19,21 @@ struct LogMessage {
     dest->set_text(text);
     dest->set_timestamp(timestamp);
     switch (level) {
-    case Level::kDebug:
+    case toolbelt::LogLevel::kDebug:
       dest->set_level(stagezero::proto::LogMessage::DBG);
       break;
-    case Level::kVerbose:
+    case toolbelt::LogLevel::kVerboseDebug:
       dest->set_level(stagezero::proto::LogMessage::VERBOSE);
       break;
-    case Level::kInfo:
+    case toolbelt::LogLevel::kInfo:
       dest->set_level(stagezero::proto::LogMessage::INFO);
       break;
-    case Level::kWarning:
+    case toolbelt::LogLevel::kWarning:
       dest->set_level(stagezero::proto::LogMessage::WARNING);
       break;
-    case Level::kError:
+    case toolbelt::LogLevel::kError:
+    case toolbelt::LogLevel::kFatal:
       dest->set_level(stagezero::proto::LogMessage::ERR);
-      break;
-    case Level::kUnknown:
-      dest->set_level(stagezero::proto::LogMessage::UNKNOWN);
       break;
     }
   }
@@ -54,45 +44,26 @@ struct LogMessage {
     timestamp = src.timestamp();
     switch (src.level()) {
     case stagezero::proto::LogMessage::DBG:
-      level = Level::kDebug;
+      level = toolbelt::LogLevel::kDebug;
       break;
     case stagezero::proto::LogMessage::VERBOSE:
-      level = Level::kVerbose;
+      level = toolbelt::LogLevel::kVerboseDebug;
       break;
     case stagezero::proto::LogMessage::INFO:
-      level = Level::kInfo;
+      level = toolbelt::LogLevel::kInfo;
       break;
     case stagezero::proto::LogMessage::WARNING:
-      level = Level::kWarning;
+      level = toolbelt::LogLevel::kWarning;
       break;
     case stagezero::proto::LogMessage::ERR:
-      level = Level::kError;
+      level = toolbelt::LogLevel::kError;
       break;
     default:
     case stagezero::proto::LogMessage::UNKNOWN:
-      level = Level::kUnknown;
+      level = toolbelt::LogLevel::kVerboseDebug;
       break;
     }
   }
 };
-
-inline LogMessage::Level ToLevel(toolbelt::LogLevel level) {
-  switch (level) {
-  case toolbelt::LogLevel::kVerboseDebug:
-    return LogMessage::Level::kVerbose;
-  case toolbelt::LogLevel::kDebug:
-    return LogMessage::Level::kDebug;
-  case toolbelt::LogLevel::kInfo:
-    return LogMessage::Level::kInfo;
-  case toolbelt::LogLevel::kWarning:
-    return LogMessage::Level::kWarning;
-  case toolbelt::LogLevel::kError:
-    return LogMessage::Level::kError;
-  case toolbelt::LogLevel::kFatal:
-    // Fatal not supported here.
-    return LogMessage::Level::kVerbose;
-  }
-}
-
 
 } // namespace stagezero

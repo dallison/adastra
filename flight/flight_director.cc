@@ -16,12 +16,15 @@ namespace stagezero::flight {
 FlightDirector::FlightDirector(co::CoroutineScheduler &scheduler,
                                toolbelt::InetAddress addr,
                                toolbelt::InetAddress capcom_addr,
-                               const std::string &root_dir, int notify_fd)
+                               const std::string &root_dir, bool log_to_output,
+                               int notify_fd)
     : co_scheduler_(scheduler), addr_(std::move(addr)),
-      capcom_addr_(capcom_addr), root_dir_(root_dir), notify_fd_(notify_fd),
+      capcom_addr_(capcom_addr), root_dir_(root_dir),
+      log_to_output_(log_to_output), notify_fd_(notify_fd),
       capcom_client_(stagezero::capcom::client::ClientMode::kNonBlocking),
       autostart_capcom_client_(
-          stagezero::capcom::client::ClientMode::kNonBlocking) {}
+          std::make_unique<stagezero::capcom::client::Client>(
+              stagezero::capcom::client::ClientMode::kNonBlocking)), logger_("flight") {}
 
 FlightDirector::~FlightDirector() {
   // Clear this before other data members get destroyed.
@@ -101,13 +104,14 @@ absl::Status FlightDirector::Run() {
   // Connect to capcom.
   // We have two capcom clients, one for autostart subsystems that need to
   // continue running, and the other for regular subsystems.
-  if (absl::Status status =
-          autostart_capcom_client_.Init(capcom_addr_, "FlightDirector");
+  if (absl::Status status = autostart_capcom_client_->Init(
+          capcom_addr_, "FlightDirector", kLogMessageEvents);
       !status.ok()) {
     return status;
   }
 
-  if (absl::Status status = capcom_client_.Init(capcom_addr_, "FlightDirector");
+  if (absl::Status status =
+          capcom_client_.Init(capcom_addr_, "FlightDirector", kAllEvents);
       !status.ok()) {
     return status;
   }
@@ -178,6 +182,8 @@ absl::Status FlightDirector::Run() {
                       << status.ToString() << std::endl;
           }
         }
+        // Don't need the autostart client now.
+        autostart_capcom_client_.reset();
       }));
 
   // Run the coroutine main loop.
@@ -731,8 +737,9 @@ absl::Status FlightDirector::RegisterSubsystemGraph(Subsystem *root,
 
 absl::Status FlightDirector::AutostartSubsystem(Subsystem *subsystem,
                                                 co::Coroutine *c) {
-  return autostart_capcom_client_.StartSubsystem(
-      subsystem->name, stagezero::capcom::client::RunMode::kNoninteractive, nullptr, c);
+  return autostart_capcom_client_->StartSubsystem(
+      subsystem->name, stagezero::capcom::client::RunMode::kNoninteractive,
+      nullptr, c);
 }
 
 void FlightDirector::EventMonitorCoroutine(co::Coroutine *c) {
@@ -749,15 +756,50 @@ void FlightDirector::EventMonitorCoroutine(co::Coroutine *c) {
 
       return;
     }
-    auto proto_event = std::make_shared<stagezero::proto::Event>();
-    (*event)->ToProto(proto_event.get());
+    bool send_event_to_client = false;
     for (auto &handler : client_handlers_) {
-      if (absl::Status status = handler->QueueEvent(proto_event);
-          !status.ok()) {
-        logger_.Log(toolbelt::LogLevel::kError, "Failed to queue event: %s",
-                    status.ToString().c_str());
+      if (handler->WantsEvent(*event)) {
+        send_event_to_client = true;
+        break;
       }
     }
+    if (!send_event_to_client) {
+      // We can ignore most events if the client doesn't want them
+      // but we will want to report log events to the logger.  Capcom will
+      // probably have written to a file, but we will want to see them
+      // on the screen.
+      if ((*event)->type == EventType::kLog && log_to_output_) {
+        LogMessage log = std::get<3>((*event)->event);
+        logger_.Log(log.level, log.timestamp, log.source, log.text);
+      }
+    } else {
+      auto proto_event = std::make_shared<stagezero::proto::Event>();
+      (*event)->ToProto(proto_event.get());
+      for (auto &handler : client_handlers_) {
+        if (absl::Status status = handler->QueueEvent(proto_event);
+            !status.ok()) {
+          logger_.Log(toolbelt::LogLevel::kError, "Failed to queue event: %s",
+                      status.ToString().c_str());
+        }
+      }
+    }
+    // Add the event to the cache for new clients to see.
+    CacheEvent(std::move(*event));
+  }
+}
+
+void FlightDirector::CacheEvent(std::shared_ptr<stagezero::Event> event) {
+  if (num_cached_events_ == kMaxEvents) {
+    event_cache_.pop_front();
+    --num_cached_events_;
+  }
+  event_cache_.push_back(std::move(event));
+  ++num_cached_events_;
+}
+
+void FlightDirector::DumpEventCache(ClientHandler *handler) {
+  for (auto &event : event_cache_) {
+    (void)handler->SendEvent(event);
   }
 }
 

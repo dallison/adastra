@@ -14,6 +14,9 @@ stagezero::StageZero *g_stagezero;
 co::CoroutineScheduler *g_scheduler;
 
 ABSL_FLAG(int, port, 6522, "TCP listening port");
+ABSL_FLAG(std::string, listen_address, "",
+          "IP Address or hostname to listen on");
+ABSL_FLAG(bool, silent, false, "Don't log messages to output");
 
 static void Signal(int sig) {
   if (sig == SIGQUIT && g_scheduler != nullptr) {
@@ -40,9 +43,13 @@ int main(int argc, char **argv) {
   co::CoroutineScheduler scheduler;
   g_scheduler = &scheduler;
 
-  toolbelt::InetAddress stagezero_addr("localhost", absl::GetFlag(FLAGS_port));
+  std::string listen_addr = absl::GetFlag(FLAGS_listen_address);
+  int listen_port = absl::GetFlag(FLAGS_port);
+  toolbelt::InetAddress stagezero_addr(
+      listen_addr.empty() ? toolbelt::InetAddress::AnyAddress(listen_port)
+                          : toolbelt::InetAddress(listen_addr, listen_port));
 
-  stagezero::StageZero stagezero(scheduler, stagezero_addr, -1);
+  stagezero::StageZero stagezero(scheduler, stagezero_addr, !absl::GetFlag(FLAGS_silent), -1);
   g_stagezero = &stagezero;
   if (absl::Status status = stagezero.Run(); !status.ok()) {
     std::cerr << "Failed to run StageZero: " << status.ToString() << std::endl;

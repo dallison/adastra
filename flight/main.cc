@@ -2,12 +2,12 @@
 // All Rights Reserved
 // See LICENSE file for licensing information.
 
-#include <signal.h>
-#include <filesystem>
-#include <iostream>
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
 #include "flight/flight_director.h"
+#include <filesystem>
+#include <iostream>
+#include <signal.h>
 
 stagezero::flight::FlightDirector *g_flight;
 co::CoroutineScheduler *g_scheduler;
@@ -29,6 +29,11 @@ static void Signal(int sig) {
 ABSL_FLAG(std::string, config_root_dir, "", "Root director for configuration");
 ABSL_FLAG(int, port, 6524, "TCP listening port");
 ABSL_FLAG(int, capcom_port, 6523, "Capcom client port");
+ABSL_FLAG(bool, silent, false, "Don't log messages to output");
+ABSL_FLAG(std::string, listen_address, "",
+          "IP Address or hostname to listen on");
+ABSL_FLAG(std::string, capcom_address, "localhost",
+          "IP Address or hostname of capcom process");
 
 int main(int argc, char **argv) {
   absl::ParseCommandLine(argc, argv);
@@ -40,8 +45,14 @@ int main(int argc, char **argv) {
   signal(SIGTERM, Signal);
   signal(SIGQUIT, Signal);
 
-  toolbelt::InetAddress capcom("localhost", absl::GetFlag(FLAGS_capcom_port));
-  toolbelt::InetAddress flight_addr("localhost", absl::GetFlag(FLAGS_port));
+  std::string listen_addr = absl::GetFlag(FLAGS_listen_address);
+  int listen_port = absl::GetFlag(FLAGS_port);
+  toolbelt::InetAddress flight_addr(
+      listen_addr.empty() ? toolbelt::InetAddress::AnyAddress(listen_port)
+                          : toolbelt::InetAddress(listen_addr, listen_port));
+
+  std::string capcom_addr = absl::GetFlag(FLAGS_capcom_address);
+  toolbelt::InetAddress capcom(capcom_addr, absl::GetFlag(FLAGS_capcom_port));
 
   std::string root_dir = absl::GetFlag(FLAGS_config_root_dir);
   if (root_dir.empty()) {
@@ -54,7 +65,8 @@ int main(int argc, char **argv) {
     exit(1);
   }
   stagezero::flight::FlightDirector flight(scheduler, flight_addr, capcom,
-                                           root_dir, -1);
+                                           root_dir,
+                                           !absl::GetFlag(FLAGS_silent), -1);
   g_flight = &flight;
   if (absl::Status status = flight.Run(); !status.ok()) {
     std::cerr << "Failed to run FlightDirector: " << status.ToString()

@@ -35,7 +35,7 @@ class ClientTest : public ::testing::Test {
     (void)pipe(server_pipe_);
 
     addr_ = toolbelt::InetAddress("localhost", 6522);
-    server_ = std::make_unique<stagezero::StageZero>(scheduler_, addr_,
+    server_ = std::make_unique<stagezero::StageZero>(scheduler_, addr_, true,
                                                      server_pipe_[1]);
 
     // Start server running in a thread.

@@ -7,8 +7,8 @@
 #include "capcom/capcom.h"
 #include "coroutine.h"
 
-#include <signal.h>
 #include <iostream>
+#include <signal.h>
 
 stagezero::capcom::Capcom *g_capcom;
 co::CoroutineScheduler *g_scheduler;
@@ -28,7 +28,11 @@ static void Signal(int sig) {
 }
 
 ABSL_FLAG(int, port, 6523, "TCP listening port");
+ABSL_FLAG(int, local_stagezero_port, 6522, "Local StageZero listening port");
 ABSL_FLAG(std::string, log_file, "/tmp/capcom.pb", "Capcom log file");
+ABSL_FLAG(std::string, listen_address, "",
+          "IP Address or hostname to listen on");
+ABSL_FLAG(bool, silent, false, "Don't log messages to output");
 
 int main(int argc, char **argv) {
   absl::ParseCommandLine(argc, argv);
@@ -41,9 +45,15 @@ int main(int argc, char **argv) {
   signal(SIGQUIT, Signal);
   signal(SIGHUP, Signal);
 
-  toolbelt::InetAddress capcom_addr("localhost", absl::GetFlag(FLAGS_port));
+  std::string listen_addr = absl::GetFlag(FLAGS_listen_address);
+  int listen_port = absl::GetFlag(FLAGS_port);
+  toolbelt::InetAddress capcom_addr(
+      listen_addr.empty() ? toolbelt::InetAddress::AnyAddress(listen_port)
+                          : toolbelt::InetAddress(listen_addr, listen_port));
 
   stagezero::capcom::Capcom capcom(scheduler, capcom_addr,
+                                   !absl::GetFlag(FLAGS_silent),
+                                   absl::GetFlag(FLAGS_local_stagezero_port),
                                    absl::GetFlag(FLAGS_log_file), -1);
   g_capcom = &capcom;
 

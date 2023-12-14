@@ -19,8 +19,8 @@
 namespace stagezero {
 
 StageZero::StageZero(co::CoroutineScheduler &scheduler,
-                     toolbelt::InetAddress addr, int notify_fd)
-    : co_scheduler_(scheduler), addr_(addr), notify_fd_(notify_fd) {}
+                     toolbelt::InetAddress addr, bool log_to_output, int notify_fd)
+    : co_scheduler_(scheduler), addr_(addr), notify_fd_(notify_fd), logger_("stagezero", log_to_output) {}
 
 StageZero::~StageZero() {
   // Clear this before other data members get destroyed.

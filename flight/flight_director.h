@@ -37,6 +37,7 @@ class FlightDirector {
  public:
   FlightDirector(co::CoroutineScheduler &scheduler, toolbelt::InetAddress addr,
                  toolbelt::InetAddress capcom_addr, const std::string &root_dir,
+                 bool log_to_output,
                  int notify_fd);
   ~FlightDirector();
 
@@ -106,15 +107,19 @@ class FlightDirector {
   }
 
   Process* FindInteractiveProcess(Subsystem* subsystem) const;
-  
+
+  void CacheEvent(std::shared_ptr<stagezero::Event> event);
+  void DumpEventCache(ClientHandler* handler);
+
   co::CoroutineScheduler &co_scheduler_;
   toolbelt::InetAddress addr_;
   toolbelt::InetAddress capcom_addr_;
   std::string root_dir_;
+  bool log_to_output_ = true;
   toolbelt::FileDescriptor notify_fd_;
 
   capcom::client::Client capcom_client_;
-  capcom::client::Client autostart_capcom_client_;
+  std::unique_ptr<capcom::client::Client> autostart_capcom_client_;
 
   // All coroutines are owned by this set.
   absl::flat_hash_set<std::unique_ptr<co::Coroutine>> coroutines_;
@@ -130,5 +135,9 @@ class FlightDirector {
   std::vector<std::shared_ptr<ClientHandler>> client_handlers_;
   bool running_ = false;
   toolbelt::Logger logger_;
+
+  static constexpr size_t kMaxEvents = 16384;
+  std::list<std::shared_ptr<stagezero::Event>> event_cache_;
+  size_t num_cached_events_ = 0;
 };
 }  // namespace stagezero::flight

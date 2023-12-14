@@ -1,10 +1,10 @@
 #pragma once
 
+#include "common/alarm.h"
+#include "common/log.h"
+#include "common/states.h"
 #include <string>
 #include <variant>
-#include "common/alarm.h"
-#include "common/states.h"
-#include "common/log.h"
 
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
@@ -44,6 +44,20 @@ struct Event {
 
   void ToProto(proto::Event *dest) const;
   absl::Status FromProto(const proto::Event &src);
+
+  bool IsMaskedIn(int mask) const {
+    switch (type) {
+    case EventType::kAlarm:
+      return (mask & kAlarmEvents) != 0;
+
+    case EventType::kLog:
+      return (mask & kLogMessageEvents) != 0;
+    case EventType::kOutput:
+      return (mask & kOutputEvents) != 0;
+    case EventType::kSubsystemStatus:
+      return (mask & kSubsystemStatusEvents) != 0;
+    }
+  }
 };
 
-}  // namespace stagezero
+} // namespace stagezero

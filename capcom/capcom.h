@@ -11,11 +11,11 @@
 #include "capcom/subsystem.h"
 #include "common/event.h"
 #include "common/vars.h"
+#include "proto/log.pb.h"
 #include "stagezero/client/client.h"
 #include "toolbelt/logging.h"
-#include "toolbelt/sockets.h"
 #include "toolbelt/pipe.h"
-#include "proto/log.pb.h"
+#include "toolbelt/sockets.h"
 
 #include <map>
 #include <memory>
@@ -35,8 +35,9 @@ struct Compute {
 };
 
 class Capcom {
- public:
+public:
   Capcom(co::CoroutineScheduler &scheduler, toolbelt::InetAddress addr,
+         bool log_to_output, int local_stagezero_port,
          const std::string &log_file_name = "/tmp/capcom.pb",
          int notify_fd = -1);
   ~Capcom();
@@ -44,7 +45,7 @@ class Capcom {
   absl::Status Run();
   void Stop();
 
- private:
+private:
   friend class ClientHandler;
   friend class Subsystem;
   friend class Process;
@@ -145,11 +146,13 @@ class Capcom {
   absl::Status Abort(const std::string &reason, co::Coroutine *c);
   absl::Status AddGlobalVariable(const Variable &var, co::Coroutine *c);
 
-  void Log(const std::string &source, toolbelt::LogLevel level, const char *fmt, ...);
+  void Log(const std::string &source, toolbelt::LogLevel level, const char *fmt,
+           ...);
 
- private:
+private:
   co::CoroutineScheduler &co_scheduler_;
   toolbelt::InetAddress addr_;
+  bool log_to_output_;
   toolbelt::FileDescriptor notify_fd_;
 
   Compute local_compute_;
@@ -173,4 +176,4 @@ class Capcom {
   std::map<uint64_t, std::shared_ptr<stagezero::proto::LogMessage>> log_buffer_;
   toolbelt::FileDescriptor log_file_;
 };
-}  // namespace stagezero::capcom
+} // namespace stagezero::capcom
