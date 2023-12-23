@@ -35,6 +35,7 @@ class ZygoteCore {
   [[noreturn]] void InvokeMainAfterSpawn(const control::SpawnRequest&& req,
                                          SymbolTable&& local_symbols);
 
+  co::CoroutineScheduler scheduler_;
   std::vector<std::string> args_;
   std::unique_ptr<toolbelt::UnixSocket> control_socket_;
   std::unique_ptr<co::Coroutine> server_;

@@ -35,7 +35,7 @@ class ClientTest : public ::testing::Test {
     (void)pipe(server_pipe_);
 
     addr_ = toolbelt::InetAddress("localhost", 6522);
-    server_ = std::make_unique<stagezero::StageZero>(scheduler_, addr_, true,
+    server_ = std::make_unique<stagezero::StageZero>(scheduler_, addr_, true, "/tmp",
                                                      server_pipe_[1]);
 
     // Start server running in a thread.
@@ -76,8 +76,8 @@ class ClientTest : public ::testing::Test {
   void SetUp() override { signal(SIGPIPE, SIG_IGN); }
   void TearDown() override {}
 
-  void InitClient(stagezero::Client &client, const std::string &name) {
-    absl::Status s = client.Init(Addr(), name, stagezero::kAllEvents);
+  void InitClient(stagezero::Client &client, const std::string &name, int event_mask = stagezero::kNoEvents) {
+    absl::Status s = client.Init(Addr(), name, event_mask);
     std::cout << "Init status: " << s << std::endl;
     ASSERT_TRUE(s.ok());
   }
@@ -320,7 +320,7 @@ TEST_F(ClientTest, LaunchAndStopRepeatedNewClient) {
 
 TEST_F(ClientTest, Output) {
   stagezero::Client client;
-  InitClient(client, "foobar2");
+  InitClient(client, "foobar2", stagezero::kOutputEvents);
 
   stagezero::Stream output = {
       .stream_fd = 1,
@@ -350,7 +350,7 @@ TEST_F(ClientTest, Output) {
 
 TEST_F(ClientTest, OutputTTY) {
   stagezero::Client client;
-  InitClient(client, "foobar2");
+  InitClient(client, "foobar2", stagezero::kOutputEvents);
 
   stagezero::Stream output = {
       .stream_fd = 1,
@@ -379,7 +379,7 @@ TEST_F(ClientTest, OutputTTY) {
 
 TEST_F(ClientTest, Echo) {
   stagezero::Client client;
-  InitClient(client, "foobar2");
+  InitClient(client, "foobar2", stagezero::kOutputEvents);
 
   stagezero::Stream output = {
       .stream_fd = 1,
@@ -426,7 +426,7 @@ TEST_F(ClientTest, Echo) {
 
 TEST_F(ClientTest, EchoFileRead) {
   stagezero::Client client;
-  InitClient(client, "foobar2");
+  InitClient(client, "foobar2", stagezero::kOutputEvents);
 
   stagezero::Stream output = {
       .stream_fd = 1,
@@ -542,7 +542,7 @@ TEST_F(ClientTest, Vars) {
 
 TEST_F(ClientTest, ProcessVars) {
   stagezero::Client client;
-  InitClient(client, "foobar4");
+  InitClient(client, "foobar4", stagezero::kOutputEvents);
 
   absl::Status var_status = client.SetGlobalVariable("foobar", "barfoo", false);
   ASSERT_TRUE(var_status.ok());
@@ -781,7 +781,7 @@ TEST_F(ClientTest, LaunchAndKillVirtual) {
 
 TEST_F(ClientTest, VirtualOutput) {
   stagezero::Client client;
-  InitClient(client, "foobar2");
+  InitClient(client, "foobar2", stagezero::kOutputEvents);
 
   // Launch zygote.
   absl::StatusOr<std::pair<std::string, int>> zygote_status =

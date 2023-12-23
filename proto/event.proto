@@ -14,6 +14,7 @@ message Alarm {
     UNKNOWN_TYPE = 0;
     SUBSYSTEM = 1;
     PROCESS = 2;
+    SYSTEM = 3;
   }
 
   enum Severity {
@@ -27,6 +28,7 @@ message Alarm {
     UNKNOWN_REASON = 0;
     CRASHED = 1;
     BROKEN = 2;
+    EMERGENCY_ABORT = 3;
   }
 
   enum Status {

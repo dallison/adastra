@@ -50,7 +50,7 @@ public:
 
     stagezero_addr_ = toolbelt::InetAddress("localhost", 6522);
     stagezero_ = std::make_unique<stagezero::StageZero>(
-        stagezero_scheduler_, stagezero_addr_, stagezero_pipe_[1]);
+        stagezero_scheduler_, stagezero_addr_, true, "/tmp", stagezero_pipe_[1]);
 
     // Start stagezero running in a thread.
     stagezero_thread_ = std::thread([]() {
@@ -78,7 +78,7 @@ public:
 
     capcom_addr_ = toolbelt::InetAddress("localhost", 6523);
     capcom_ = std::make_unique<stagezero::capcom::Capcom>(
-        capcom_scheduler_, capcom_addr_, "", capcom_pipe_[1]);
+        capcom_scheduler_, capcom_addr_, true, 6522, "", capcom_pipe_[1]);
 
     // Start capcom running in a thread.
     capcom_thread_ = std::thread([]() {
@@ -135,7 +135,9 @@ public:
 
   void InitClient(stagezero::capcom::client::Client &client,
                   const std::string &name) {
-    absl::Status s = client.Init(CapcomAddr(), name);
+    absl::Status s = client.Init(CapcomAddr(), name,
+                                 stagezero::kSubsystemStatusEvents |
+                                     stagezero::kOutputEvents);
     std::cout << "Init status: " << s << std::endl;
     ASSERT_TRUE(s.ok());
   }
@@ -145,7 +147,7 @@ public:
                      OperState oper_state) {
     std::cout << "waiting for subsystem state change " << subsystem << " "
               << admin_state << " " << oper_state << std::endl;
-    for (int retry = 0; retry < 10; retry++) {
+    for (int retry = 0; retry < 30; retry++) {
       absl::StatusOr<std::shared_ptr<Event>> e = client.WaitForEvent();
       if (!e.ok()) {
         std::cerr << e.status().ToString() << std::endl;
@@ -182,8 +184,10 @@ public:
         return s.str();
       }
       std::shared_ptr<stagezero::Event> event = *e;
+      std::cerr << "event: " << (int)event->type << std::endl;
       if (event->type == stagezero::EventType::kOutput) {
         s << std::get<2>(event->event).data;
+        std::cout << s.str() << std::endl;
         if (s.str().find(match) != std::string::npos) {
           return s.str();
         }
@@ -303,6 +307,7 @@ TEST_F(CapcomTest, SimpleSubsystem) {
                      .name = "loop",
                      .executable = "${runfiles_dir}/__main__/testdata/loop",
                  }}});
+  std::cerr << status << std::endl;
   ASSERT_TRUE(status.ok());
 
   status = client.RemoveSubsystem("foobar", false);
@@ -560,7 +565,7 @@ TEST_F(CapcomTest, Abort) {
 
   sleep(1);
 
-  status = client.Abort("Just because");
+  status = client.Abort("Just because", false);
   ASSERT_TRUE(status.ok());
 
   WaitForState(client, "subsys", AdminState::kOffline, OperState::kOffline);
@@ -585,7 +590,7 @@ TEST_F(CapcomTest, AbortThenGoAgain) {
 
   sleep(1);
 
-  status = client.Abort("Just because");
+  status = client.Abort("Just because", false);
   ASSERT_TRUE(status.ok());
 
   WaitForState(client, "subsys", AdminState::kOffline, OperState::kOffline);
@@ -762,7 +767,7 @@ TEST_F(CapcomTest, AbortVirtual) {
 
   sleep(1);
 
-  status = client.Abort("Just because");
+  status = client.Abort("Just because", false);
   ASSERT_TRUE(status.ok());
 
   WaitForState(client, "virtual", AdminState::kOffline, OperState::kOffline);

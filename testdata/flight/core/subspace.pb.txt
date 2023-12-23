@@ -8,6 +8,7 @@ subsystem {
     args: "--socket=${subspace_socket}"
     args: "--interface=${subspace_interface}"
     args: "--local=${subspace_local}"
+    args: "--notify_fd=${notify_fd}"
     notify: true
   }
   stdin {
@@ -20,6 +21,7 @@ subsystem {
     where: STAGEZERO
   }
  }
+ critical: true
 }
 
 autostart: "subspace"

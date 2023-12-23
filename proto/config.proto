@@ -45,10 +45,16 @@ message ProcessOptions {
   string user = 9;
   string group = 10;
 
+  // Interactive only makes sense for static processes.
   bool interactive = 11;
 
   // Interactive terminal parameters.
   stagezero.proto.Terminal interactive_terminal = 12;
+
+  // A critical process is one that is needed for the system to work
+  // at all.  They are not subject to restart or abort processing.  If
+  // they crash, the whole system is brought down.
+  bool critical = 13;
 }
 
 message StaticProcess {

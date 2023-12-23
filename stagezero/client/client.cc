@@ -117,6 +117,9 @@ void Client::BuildProcessOptions(const std::string &name,
   if (opts.interactive_terminal.IsPresent()) {
     opts.interactive_terminal.ToProto(options->mutable_interactive_terminal());
   }
+  options->set_group(opts.group);
+  options->set_user(opts.user);
+  options->set_critical(opts.critical);
 }
 
 absl::Status Client::StopProcess(const std::string &process_id,
@@ -224,12 +227,14 @@ Client::GetGlobalVariable(std::string name, co::Coroutine *co) {
   return std::make_pair(var_resp.value(), var_resp.exported());
 }
 
-absl::Status Client::Abort(const std::string &reason, co::Coroutine *co) {
+absl::Status Client::Abort(const std::string &reason, bool emergency, co::Coroutine *co) {
   if (co == nullptr) {
     co = co_;
   }
   stagezero::control::Request req;
-  req.mutable_abort()->set_reason(reason);
+  auto abort = req.mutable_abort();
+  abort->set_reason(reason);
+  abort->set_emergency(emergency);
 
   stagezero::control::Response resp;
   if (absl::Status status = SendRequestReceiveResponse(req, resp, co);

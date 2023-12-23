@@ -14,6 +14,7 @@ struct Alarm {
     kUnknown,
     kProcess,
     kSubsystem,
+    kSystem,
   };
 
   enum class Severity {
@@ -27,6 +28,7 @@ struct Alarm {
     kUnknown,
     kCrashed,
     kBroken,
+    kEmergencyAbort,
   };
 
   enum class Status {

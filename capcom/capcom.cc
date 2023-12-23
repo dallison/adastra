@@ -11,7 +11,8 @@ Capcom::Capcom(co::CoroutineScheduler &scheduler, toolbelt::InetAddress addr,
                bool log_to_output, int local_stagezero_port,
                const std::string &log_file_name, int notify_fd)
     : co_scheduler_(scheduler), addr_(std::move(addr)),
-      log_to_output_(log_to_output), notify_fd_(notify_fd), logger_("capcom", log_to_output) {
+      log_to_output_(log_to_output), notify_fd_(notify_fd),
+      logger_("capcom", log_to_output) {
   local_compute_ = {
       .name = "<localhost>",
       .addr = toolbelt::InetAddress("localhost", local_stagezero_port)};
@@ -307,13 +308,19 @@ std::vector<Alarm> Capcom::GetAlarms() const {
   return result;
 }
 
-absl::Status Capcom::Abort(const std::string &reason, co::Coroutine *c) {
+absl::Status Capcom::Abort(const std::string &reason, bool emergency,
+                           co::Coroutine *c) {
   // First take the subsystems offline with an abort.  This will not
   // kill any running processes.
   absl::Status result = absl::OkStatus();
 
+  emergency_aborting_ = emergency;
+
   for (auto & [ name, subsys ] : subsystems_) {
-    Message msg = {.code = Message::Code::kAbort};
+    if (subsys->IsCritical()) {
+      continue;
+    }
+    Message msg = {.code = Message::Code::kAbort, .emergency_abort = emergency};
     if (absl::Status status = subsys->SendMessage(msg); !status.ok()) {
       result = status;
     }
@@ -325,7 +332,7 @@ absl::Status Capcom::Abort(const std::string &reason, co::Coroutine *c) {
   for (;;) {
     bool all_offline = true;
     for (auto & [ name, subsys ] : subsystems_) {
-      if (!subsys->IsOffline()) {
+      if (!subsys->IsCritical() && !subsys->IsOffline()) {
         all_offline = false;
         break;
       }
@@ -358,12 +365,32 @@ absl::Status Capcom::Abort(const std::string &reason, co::Coroutine *c) {
                           compute->name, status.ToString()));
       continue;
     }
-    absl::Status status = client.Abort(reason);
+    absl::Status status = client.Abort(reason, emergency, c);
     if (!status.ok()) {
       result = absl::InternalError(absl::StrFormat(
           "Failed to abort compute %s: %s", compute->name, status.ToString()));
     }
   }
+  if (emergency) {
+    // Spawn a coroutine to do the shutdown so that we respond correctly
+    // to the request.
+    AddCoroutine(std::make_unique<co::Coroutine>(
+        co_scheduler_, [this, reason](co::Coroutine *c2) {
+          std::string text = absl::StrFormat(
+              "Capcom shutting down in an emergency abort: %s", reason);
+
+          SendAlarm({.name = "Capcom",
+                     .type = Alarm::Type::kSystem,
+                     .severity = Alarm::Severity::kCritical,
+                     .reason = Alarm::Reason::kEmergencyAbort,
+                     .status = Alarm::Status::kRaised,
+                     .details = text});
+
+          c2->Sleep(1);
+          logger_.Log(toolbelt::LogLevel::kFatal, "%s", text.c_str());
+        }));
+  }
+
   return result;
 }
 

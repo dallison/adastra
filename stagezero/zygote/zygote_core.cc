@@ -4,24 +4,26 @@
 
 #include "stagezero/zygote/zygote_core.h"
 
+#include "absl/container/flat_hash_set.h"
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_format.h"
 #include "toolbelt/fd.h"
 #include "toolbelt/hexdump.h"
 
 #include <dlfcn.h>
+#include <iostream>
 #include <stdlib.h>
+#include <string>
+#include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
-#include <iostream>
-#include <string>
 
 extern "C" const char **environ;
 
 namespace stagezero {
 
-ZygoteCore::ZygoteCore(int argc, char **argv) {
+ZygoteCore::ZygoteCore(int argc, char **argv) : logger_("zygote_core") {
   for (int i = 0; i < argc; i++) {
     args_.push_back(argv[i]);
   }
@@ -44,7 +46,6 @@ absl::Status ZygoteCore::Run() {
         "No STAGEZERO_ZYGOTE_SOCKET_NAME passed to zygote");
   }
 
-  co::CoroutineScheduler scheduler;
   std::string socket_name = sname;
   control_socket_ = std::make_unique<toolbelt::UnixSocket>();
   absl::Status status = control_socket_->Connect(socket_name);
@@ -54,7 +55,7 @@ absl::Status ZygoteCore::Run() {
   }
 
   server_ =
-      std::make_unique<co::Coroutine>(scheduler, [this](co::Coroutine *c) {
+      std::make_unique<co::Coroutine>(scheduler_, [this](co::Coroutine *c) {
         while (control_socket_->Connected()) {
           WaitForSpawn(c);
         }
@@ -62,7 +63,7 @@ absl::Status ZygoteCore::Run() {
       });
 
   monitor_ =
-      std::make_unique<co::Coroutine>(scheduler, [this](co::Coroutine *c) {
+      std::make_unique<co::Coroutine>(scheduler_, [this](co::Coroutine *c) {
         constexpr int kWaitTimeMs = 500;
 
         for (;;) {
@@ -77,7 +78,7 @@ absl::Status ZygoteCore::Run() {
 
       });
 
-  scheduler.Run();
+  scheduler_.Run();
   return absl::OkStatus();
 }
 
@@ -131,10 +132,10 @@ void ZygoteCore::WaitForSpawn(co::Coroutine *c) {
   }
 }
 
-absl::Status ZygoteCore::HandleSpawn(
-    const control::SpawnRequest &req, control::SpawnResponse *resp,
-    std::vector<toolbelt::FileDescriptor> &&fds) {
-
+absl::Status
+ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
+                        control::SpawnResponse *resp,
+                        std::vector<toolbelt::FileDescriptor> &&fds) {
   // Update all global symbols.
   for (auto &var : req.global_vars()) {
     auto sym = global_symbols_.FindSymbol(var.name());
@@ -165,7 +166,22 @@ absl::Status ZygoteCore::HandleSpawn(
       return absl::InternalError(
           absl::StrFormat("Can't find shared object %s", exe));
     }
+  } else {
+    // No shared object to load.  Look for the main_func symbol in
+    // the zygote.  Best to do it here so we can give a timely
+    // error.
+    if (req.main_func().empty()) {
+      return absl::InternalError("No main_func specifed for virtual process");
+    }
+    std::string expanded_main = local_symbols.ReplaceSymbols(req.main_func());
+    void *main_func = dlsym(nullptr, expanded_main.c_str());
+    if (main_func == nullptr) {
+      return absl::InternalError(
+          absl::StrFormat("Failed to find main function %s", expanded_main));
+    }
   }
+
+  // All looks good for the attempt to fork the zygote.  Let's do it.
   pid_t pid = fork();
   if (pid == -1) {
     return absl::InternalError(
@@ -176,9 +192,53 @@ absl::Status ZygoteCore::HandleSpawn(
     // Close control socket.
     control_socket_.reset();
 
+    // Stop all coroutines and the scheduler in the forked process.
+    server_.reset();
+    monitor_.reset();
+    scheduler_.Stop();
+
     local_symbols.AddSymbol("pid", absl::StrFormat("%d", getpid()), false);
 
+    // We want to close all file descriptors that the zygote has opened except
+    // all the ones we want.
+    absl::flat_hash_set<int> fds_to_keep_open;
+
+    // Keep 0, 1 and 2 open.  If the stream config specifies that they
+    // should be closed, they will be removed from the hash set.
+    for (int i = 0; i < 3; i++) {
+      fds_to_keep_open.insert(i);
+    }
+
     for (auto &stream : req.streams()) {
+      if (stream.has_filename()) {
+        // For files, we have deferred the open until we know the pid
+        // of the process.  This is because it's likely that the
+        // filename contains the PID of the process.
+        int oflag = stream.direction() == proto::StreamControl::INPUT
+                        ? O_RDONLY
+                        : (O_WRONLY | O_TRUNC | O_CREAT);
+
+        std::string filename = stream.filename();
+        std::cerr << "opening filename " << filename << std::endl;
+        int file_fd =
+            open(local_symbols.ReplaceSymbols(filename).c_str(), oflag, 0777);
+        if (file_fd == -1) {
+          std::cerr << "Failed to open file " << filename << ": "
+                    << strerror(errno) << std::endl;
+          exit(1);
+        }
+
+        fds_to_keep_open.insert(stream.fd());
+        int e = dup2(file_fd, stream.fd());
+        if (e == -1) {
+          std::cerr << "Failed to redirect fd " << stream.fd() << ": "
+                    << strerror(errno) << std::endl;
+          exit(1);
+        }
+        continue;
+      }
+      std::cerr << getpid() << " redirecting stream " << stream.fd()
+                << " index " << stream.index() << std::endl;
       (void)close(stream.fd());
       if (!stream.close()) {
         int e = dup2(fds[stream.index()].Fd(), stream.fd());
@@ -187,14 +247,35 @@ absl::Status ZygoteCore::HandleSpawn(
                     << strerror(errno) << std::endl;
           exit(1);
         }
+        std::cerr << getpid() << " keeping " << stream.fd() << " open\n";
+        fds_to_keep_open.insert(stream.fd());
+        std::cerr << "kept " << stream.fd() << " open\n";
+      } else {
+        // Don't keep this open.
+        std::cerr << getpid() << " not keeping " << stream.fd() << " open\n";
+        fds_to_keep_open.erase(stream.fd());
       }
       fds[stream.index()].Reset();
     }
+
+    std::cerr << "Invoking main\n";
+
+    // Close all open file descriptors that we don't want to explicitly
+    // keep open.
+    toolbelt::CloseAllFds(
+        [&fds_to_keep_open](int fd) { return !fds_to_keep_open.contains(fd); });
+
     InvokeMainAfterSpawn(std::move(req), std::move(local_symbols));
   }
+
   for (auto &stream : req.streams()) {
+    if (stream.has_filename()) {
+      // These are opened locally, not passed from streamzero.
+      continue;
+    }
     fds[stream.index()].Reset();
   }
+
   resp->set_pid(pid);
   return absl::OkStatus();
 }
@@ -202,6 +283,7 @@ absl::Status ZygoteCore::HandleSpawn(
 // This is called in the child process and does not return.
 void ZygoteCore::InvokeMainAfterSpawn(const control::SpawnRequest &&req,
                                       SymbolTable &&local_symbols) {
+
   void *handle = RTLD_DEFAULT;
   std::string exe = args_[0];
   if (!req.dso().empty()) {
@@ -230,7 +312,7 @@ void ZygoteCore::InvokeMainAfterSpawn(const control::SpawnRequest &&req,
   }
 
   std::vector<const char *> argv;
-  argv.push_back(exe.c_str());  // Executable.
+  argv.push_back(exe.c_str()); // Executable.
   for (auto &arg : args) {
     argv.push_back(arg.c_str());
   }
@@ -243,10 +325,12 @@ void ZygoteCore::InvokeMainAfterSpawn(const control::SpawnRequest &&req,
 
   setpgrp();
 
+  std::cerr << "calling main\n";
   // Convert to a function pointer and call main.
-  using Ptr = int (*)(SymbolTable &&local_symbols, int, const char **, const char **);
+  using Ptr =
+      int (*)(SymbolTable && local_symbols, int, const char **, const char **);
   Ptr main = reinterpret_cast<Ptr>(main_func);
   exit(main(std::move(local_symbols), argv.size(), argv.data(), environ));
 }
 
-}  // namespace stagezero
+} // namespace stagezero

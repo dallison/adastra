@@ -52,6 +52,8 @@ class ClientHandler
 
   void AddCoroutine(std::unique_ptr<co::Coroutine> c) override;
 
+  void StopAllCoroutines();
+  
   const std::string &GetCompute() const;
 
  private:

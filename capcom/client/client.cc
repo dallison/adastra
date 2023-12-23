@@ -108,6 +108,7 @@ absl::Status Client::AddSubsystem(const std::string &name,
     opts->set_user(sproc.user);
     opts->set_group(sproc.group);
     opts->set_interactive(sproc.interactive);
+    opts->set_critical(options.critical);
 
     auto *s = proc->mutable_static_process();
     s->set_executable(sproc.executable);
@@ -133,6 +134,7 @@ absl::Status Client::AddSubsystem(const std::string &name,
     opts->set_notify(true);
     opts->set_user(z.user);
     opts->set_group(z.group);
+    opts->set_critical(options.critical);
 
     auto *s = proc->mutable_zygote();
     s->set_executable(z.executable);
@@ -156,10 +158,11 @@ absl::Status Client::AddSubsystem(const std::string &name,
     opts->set_sigint_shutdown_timeout_secs(vproc.sigint_shutdown_timeout_secs);
     opts->set_sigterm_shutdown_timeout_secs(
         vproc.sigterm_shutdown_timeout_secs);
-    opts->set_notify(true);
+    opts->set_notify(vproc.notify);
     opts->set_user(vproc.user);
     opts->set_group(vproc.group);
     opts->set_interactive(vproc.interactive);
+    opts->set_critical(options.critical);
 
     auto *s = proc->mutable_virtual_process();
     s->set_zygote(vproc.zygote);
@@ -201,6 +204,9 @@ absl::Status Client::AddSubsystem(const std::string &name,
     auto *ch = add->add_children();
     *ch = child;
   }
+
+  add->set_max_restarts(options.max_restarts);
+  add->set_critical(options.critical);
 
   stagezero::capcom::proto::Response resp;
   absl::Status status = SendRequestReceiveResponse(req, resp, c);
@@ -317,8 +323,6 @@ absl::Status Client::WaitForSubsystemState(const std::string &subsystem,
     if (event->type == EventType::kSubsystemStatus) {
       SubsystemStatus &s = std::get<0>(event->event);
       if (s.subsystem == subsystem) {
-        std::cerr << "event " << AdminStateName(s.admin_state) << " "
-                  << OperStateName(s.oper_state) << std::endl;
         if (admin_state == s.admin_state) {
           if (s.admin_state == AdminState::kOnline &&
               s.oper_state == OperState::kBroken) {
@@ -334,12 +338,14 @@ absl::Status Client::WaitForSubsystemState(const std::string &subsystem,
   }
 }
 
-absl::Status Client::Abort(const std::string &reason, co::Coroutine *c) {
+absl::Status Client::Abort(const std::string &reason, bool emergency, co::Coroutine *c) {
   if (c == nullptr) {
     c = co_;
   }
   stagezero::capcom::proto::Request req;
-  req.mutable_abort()->set_reason(reason);
+  auto abort = req.mutable_abort();
+  abort->set_reason(reason);
+  abort->set_emergency(emergency);
 
   stagezero::capcom::proto::Response resp;
   if (absl::Status status = SendRequestReceiveResponse(req, resp, c);

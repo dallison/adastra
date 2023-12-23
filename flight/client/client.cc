@@ -138,12 +138,14 @@ absl::Status Client::WaitForSubsystemState(const std::string &subsystem,
   }
 }
 
-absl::Status Client::Abort(const std::string &reason, co::Coroutine *c) {
+absl::Status Client::Abort(const std::string &reason, bool emergency, co::Coroutine *c) {
   if (c == nullptr) {
     c = co_;
   }
   stagezero::flight::proto::Request req;
-  req.mutable_abort()->set_reason(reason);
+  auto abort = req.mutable_abort();
+  abort->set_reason(reason);
+  abort->set_emergency(emergency);
 
   stagezero::flight::proto::Response resp;
   if (absl::Status status = SendRequestReceiveResponse(req, resp, c);

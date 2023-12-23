@@ -272,7 +272,7 @@ inline void TCPClientHandler<Request, Response, Event>::EventSenderCoroutine(
             client->event_socket_.SendMessage(sendbuf, msglen, c);
         if (!n.ok()) {
           client->GetLogger().Log(toolbelt::LogLevel::kError,
-                                  "Failed to serialize event",
+                                  "Failed to send event",
                                   n.status().ToString().c_str());
         }
       }

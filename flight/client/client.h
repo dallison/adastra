@@ -63,7 +63,7 @@ public:
   absl::Status StopSubsystem(const std::string &name,
                              co::Coroutine *c = nullptr);
 
-  absl::Status Abort(const std::string &reason, co::Coroutine *c = nullptr);
+  absl::Status Abort(const std::string &reason, bool emergency = false, co::Coroutine *c = nullptr);
   absl::StatusOr<std::vector<SubsystemStatus>>
   GetSubsystems(co::Coroutine *c = nullptr);
 

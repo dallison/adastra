@@ -39,7 +39,7 @@ struct Message {
   enum Code {
     kChangeAdmin,
     kReportOper,
-    kAbort,
+    kAbort,     // See emergency_abort.
   };
   Code code;
   Subsystem *sender;
@@ -48,6 +48,9 @@ struct Message {
     AdminState admin;
     OperState oper;
   } state;
+
+  // An emergency abort is used to bring the whole system down.
+  bool emergency_abort;
 
   // Information for interactive.
   bool interactive;
@@ -92,6 +95,8 @@ public:
 
   absl::Status CloseFd(int fd, co::Coroutine *c);
 
+  bool IsCritical() const { return critical_; }
+
 protected:
   void ParseOptions(const stagezero::config::ProcessOptions &options);
   void ParseStreams(
@@ -116,6 +121,9 @@ protected:
   std::shared_ptr<stagezero::Client> client_;
   std::vector<Stream> streams_;
   bool interactive_ = false;
+  std::string user_;
+  std::string group_;
+  bool critical_ = false;
 };
 
 class StaticProcess : public Process {
@@ -166,7 +174,7 @@ private:
 class Subsystem : public std::enable_shared_from_this<Subsystem> {
 public:
   Subsystem(std::string name, Capcom &capcom, std::vector<Variable> vars,
-  std::vector<Stream> streams);
+  std::vector<Stream> streams, int max_restarts, bool critical);
   ~Subsystem() {}
 
   absl::Status AddStaticProcess(
@@ -251,6 +259,8 @@ public:
   const std::vector<Stream> &Streams() const { return streams_; }
 
   const Terminal& InteractiveTerminal() const { return interactive_terminal_; }
+
+  bool IsCritical() const { return critical_; }
 
 private:
   enum class EventSource {
@@ -344,14 +354,14 @@ private:
   void Restarting(uint32_t client_id, co::Coroutine *c);
   void Broken(uint32_t client_id, co::Coroutine *c);
 
-  void Abort();
+  StateTransition Abort(bool emergency);
 
   void EnterState(OperState state, uint32_t client_id);
 
   absl::Status LaunchProcesses(co::Coroutine *c);
   void StopProcesses(co::Coroutine *c);
 
-  void RestartIfPossibleAfterProcessCrash(std::string process_id,
+  StateTransition RestartIfPossibleAfterProcessCrash(std::string process_id,
                                           uint32_t client_id, co::Coroutine *c);
 
   void RestartIfPossible(uint32_t client_id, co::Coroutine *c);
@@ -404,6 +414,7 @@ private:
 
   int num_restarts_ = 0;
   int max_restarts_ = kDefaultMaxRestarts;
+  bool critical_ = false;
 
   Alarm alarm_;
   bool alarm_raised_ = false;

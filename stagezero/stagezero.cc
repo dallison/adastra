@@ -3,13 +3,13 @@
 // See LICENSE file for licensing information.
 
 #include "stagezero/stagezero.h"
+#include "absl/strings/str_format.h"
+#include "stagezero/client_handler.h"
+#include "toolbelt/sockets.h"
 #include <fcntl.h>
 #include <sys/poll.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#include "absl/strings/str_format.h"
-#include "stagezero/client_handler.h"
-#include "toolbelt/sockets.h"
 
 #if defined(__APPLE__)
 // For _NSGetExecutablePath
@@ -19,8 +19,13 @@
 namespace stagezero {
 
 StageZero::StageZero(co::CoroutineScheduler &scheduler,
-                     toolbelt::InetAddress addr, bool log_to_output, int notify_fd)
-    : co_scheduler_(scheduler), addr_(addr), notify_fd_(notify_fd), logger_("stagezero", log_to_output) {}
+                     toolbelt::InetAddress addr, bool log_to_output,
+                     const std::string &logdir, int notify_fd)
+    : co_scheduler_(scheduler), addr_(addr), notify_fd_(notify_fd),
+      logger_("stagezero", log_to_output) {
+  // Add a global symbol for where we want log files.
+  global_symbols_.AddSymbol("logdir", logdir, false);
+}
 
 StageZero::~StageZero() {
   // Clear this before other data members get destroyed.
@@ -38,8 +43,9 @@ void StageZero::CloseHandler(std::shared_ptr<ClientHandler> handler) {
   }
 }
 
-absl::Status StageZero::HandleIncomingConnection(
-    toolbelt::TCPSocket &listen_socket, co::Coroutine *c) {
+absl::Status
+StageZero::HandleIncomingConnection(toolbelt::TCPSocket &listen_socket,
+                                    co::Coroutine *c) {
   absl::StatusOr<toolbelt::TCPSocket> s = listen_socket.Accept(c);
   if (!s.ok()) {
     return s.status();
@@ -140,7 +146,8 @@ absl::Status StageZero::Run() {
   }
   global_symbols_.AddSymbol("runfiles_dir", runfiles_dir, false);
 
-  logger_.Log(toolbelt::LogLevel::kInfo, "StageZero running on address %s", addr_.ToString().c_str());
+  logger_.Log(toolbelt::LogLevel::kInfo, "StageZero running on address %s",
+              addr_.ToString().c_str());
   toolbelt::TCPSocket listen_socket;
 
   if (absl::Status status = listen_socket.SetCloseOnExec(); !status.ok()) {
@@ -179,6 +186,9 @@ absl::Status StageZero::Run() {
                                       },
                                       "Listener Socket"));
 
+  // Start a new process group.
+  setpgrp();
+
   // Run the coroutine main loop.
   co_scheduler_.Run();
 
@@ -208,12 +218,15 @@ void StageZero::KillAllProcesses() {
   }
 }
 
-void StageZero::KillAllProcesses(co::Coroutine *c) {
+void StageZero::KillAllProcesses(bool emergency, co::Coroutine *c) {
   // Copy all processes out of the processes_ map as we will
   // be removing them as they are killed.
   std::vector<std::shared_ptr<Process>> procs;
 
   for (auto & [ id, proc ] : processes_) {
+    if (!emergency && proc->IsCritical()) {
+      continue;
+    }
     procs.push_back(proc);
   }
   for (auto &proc : procs) {
@@ -234,5 +247,14 @@ void StageZero::KillAllProcesses(co::Coroutine *c) {
     }
     c->Millisleep(100);
   }
+
+  if (emergency) {
+    AddCoroutine(
+        std::make_unique<co::Coroutine>(co_scheduler_, [this](co::Coroutine *c2) {
+          // An emergency abort also stops StageZero.
+          c2->Sleep(1);
+          logger_.Log(toolbelt::LogLevel::kFatal, "Emergency abort");
+        }));
+  }
 }
-}  // namespace stagezero
+} // namespace stagezero

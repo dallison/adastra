@@ -143,12 +143,14 @@ private:
   std::vector<Subsystem *> GetSubsystems() const;
   std::vector<Alarm> GetAlarms() const;
 
-  absl::Status Abort(const std::string &reason, co::Coroutine *c);
+  absl::Status Abort(const std::string &reason, bool emergency, co::Coroutine *c);
   absl::Status AddGlobalVariable(const Variable &var, co::Coroutine *c);
 
   void Log(const std::string &source, toolbelt::LogLevel level, const char *fmt,
            ...);
 
+  bool IsEmergencyAborting() { return emergency_aborting_; }
+  
 private:
   co::CoroutineScheduler &co_scheduler_;
   toolbelt::InetAddress addr_;
@@ -175,5 +177,7 @@ private:
   toolbelt::Pipe log_pipe_;
   std::map<uint64_t, std::shared_ptr<stagezero::proto::LogMessage>> log_buffer_;
   toolbelt::FileDescriptor log_file_;
+
+  bool emergency_aborting_ = false;
 };
 } // namespace stagezero::capcom

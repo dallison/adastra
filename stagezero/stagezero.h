@@ -25,6 +25,7 @@ class StageZero {
  public:
   StageZero(co::CoroutineScheduler &scheduler, toolbelt::InetAddress addr,
           bool log_to_output,
+          const std::string& logdir,
             int notify_fd = -1);
   ~StageZero();
   absl::Status Run();
@@ -110,7 +111,7 @@ class StageZero {
   }
 
   void KillAllProcesses();
-  void KillAllProcesses(co::Coroutine *c);
+  void KillAllProcesses(bool emergency, co::Coroutine *c);
 
   co::CoroutineScheduler &co_scheduler_;
   toolbelt::InetAddress addr_;

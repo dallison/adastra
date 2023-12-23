@@ -2,7 +2,7 @@
 
 export RUNFILES_DIR=bazel-bin//flight/flight.runfiles
 
-SILENT=true
+SILENT=false
 
 echo Running stagezero
 bazel-bin/flight/flight.runfiles/__main__/stagezero/stagezero --silent=$SILENT 0<&1 &

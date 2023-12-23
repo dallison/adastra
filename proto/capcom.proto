@@ -62,6 +62,11 @@ message AddSubsystemRequest {
 
   // Names of children subsystems.  They must exist.
   repeated string children = 6;
+
+  // Max number of restarts before being broken.
+  int32 max_restarts = 7;
+
+  bool critical = 8;
 }
 
 message AddSubsystemResponse { string error = 1; }
@@ -101,6 +106,7 @@ message GetAlarmsResponse {
 
 message AbortRequest {
   string reason = 1; // Why we are aborting.
+  bool emergency = 2;   // Emergency abort - shutdown.
 }
 
 message AbortResponse { string error = 1; }

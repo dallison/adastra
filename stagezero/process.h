@@ -6,14 +6,14 @@
 
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
+#include "common/stream.h"
 #include "coroutine.h"
 #include "proto/config.pb.h"
 #include "proto/control.pb.h"
 #include "stagezero/symbols.h"
 #include "toolbelt/fd.h"
-#include "toolbelt/sockets.h"
 #include "toolbelt/pipe.h"
-#include "common/stream.h"
+#include "toolbelt/sockets.h"
 #include <memory>
 #include <string>
 
@@ -25,9 +25,10 @@ struct StreamInfo {
   proto::StreamControl::Direction direction;
   proto::StreamControl::Disposition disposition;
   toolbelt::Pipe pipe;
-  int fd;                             // Process fd to map to.
+  int fd; // Process fd to map to.
   std::string term_name;
   bool tty;
+  std::string filename;     // Filename for read/write.
 };
 
 // Ownership of processes is complex due to the fact that the
@@ -37,11 +38,10 @@ struct StreamInfo {
 // will be deleted when the Process has been removed from the
 // StageZero map and all coroutines have finished running.
 class Process : public std::enable_shared_from_this<Process> {
- public:
+public:
   Process(co::CoroutineScheduler &scheduler,
           std::shared_ptr<ClientHandler> client, std::string name);
-  virtual ~Process() {
-  }
+  virtual ~Process() {}
 
   virtual absl::Status Start(co::Coroutine *c) = 0;
   virtual absl::Status Stop(co::Coroutine *c);
@@ -65,7 +65,8 @@ class Process : public std::enable_shared_from_this<Process> {
   void SetProcessId();
   virtual bool WillNotify() const = 0;
   virtual int StartupTimeoutSecs() const = 0;
-
+  bool IsCritical() const { return critical_; }
+  
   const std::shared_ptr<StreamInfo> FindNotifyStream() const;
 
   const std::vector<std::shared_ptr<StreamInfo>> &GetStreams() const {
@@ -85,7 +86,7 @@ class Process : public std::enable_shared_from_this<Process> {
     group_ = group;
   }
 
- protected:
+protected:
   virtual int Wait() = 0;
   absl::Status BuildStreams(
       const google::protobuf::RepeatedPtrField<proto::StreamControl> &streams,
@@ -97,6 +98,7 @@ class Process : public std::enable_shared_from_this<Process> {
   int pid_ = 0;
   bool running_ = true;
   bool stopping_ = false;
+  bool critical_ = false;
   std::string process_id_;
   std::vector<std::shared_ptr<StreamInfo>> streams_;
   SymbolTable local_symbols_;
@@ -111,7 +113,7 @@ class Process : public std::enable_shared_from_this<Process> {
 };
 
 class StaticProcess : public Process {
- public:
+public:
   StaticProcess(co::CoroutineScheduler &scheduler,
                 std::shared_ptr<ClientHandler> client,
                 const stagezero::control::LaunchStaticProcessRequest &&req);
@@ -122,7 +124,7 @@ class StaticProcess : public Process {
     return req_.opts().startup_timeout_secs();
   }
 
- protected:
+protected:
   absl::Status StartInternal(const std::vector<std::string> extra_env_vars,
                              bool send_start_event);
   absl::Status ForkAndExec(const std::vector<std::string> extra_env_vars);
@@ -131,20 +133,17 @@ class StaticProcess : public Process {
 };
 
 class Zygote : public StaticProcess {
- public:
+public:
   Zygote(co::CoroutineScheduler &scheduler,
          std::shared_ptr<ClientHandler> client,
          const stagezero::control::LaunchStaticProcessRequest &&req)
-      : StaticProcess(scheduler, client, std::move(req)) {
-  }
+      : StaticProcess(scheduler, client, std::move(req)) {}
 
   absl::Status Start(co::Coroutine *c) override;
 
-  absl::StatusOr<int> Spawn(
-      const stagezero::control::LaunchVirtualProcessRequest &req,
-      const std::vector<std::shared_ptr<StreamInfo>> &streams,
-
-      co::Coroutine *c);
+  absl::StatusOr<int>
+  Spawn(const stagezero::control::LaunchVirtualProcessRequest &req,
+        const std::vector<std::shared_ptr<StreamInfo>> &streams, co::Coroutine *c);
 
   bool IsZygote() const override { return true; }
 
@@ -152,14 +151,14 @@ class Zygote : public StaticProcess {
     control_socket_ = std::move(s);
   }
 
- private:
+private:
   std::pair<std::string, int> BuildControlSocketName();
 
   toolbelt::UnixSocket control_socket_;
 };
 
 class VirtualProcess : public Process {
- public:
+public:
   VirtualProcess(co::CoroutineScheduler &scheduler,
                  std::shared_ptr<ClientHandler> client,
                  const stagezero::control::LaunchVirtualProcessRequest &&req);
@@ -170,10 +169,10 @@ class VirtualProcess : public Process {
     return req_.opts().startup_timeout_secs();
   }
 
- private:
+private:
   int Wait() override;
 
   stagezero::control::LaunchVirtualProcessRequest req_;
 };
 
-}  // namespace stagezero
+} // namespace stagezero

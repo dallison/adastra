@@ -39,6 +39,7 @@ const std::string &ClientHandler::GetCompute() const {
   return stagezero_.compute_;
 }
 
+void ClientHandler::StopAllCoroutines() { stagezero_.coroutines_.clear(); }
 
 absl::Status ClientHandler::HandleMessage(const control::Request &req,
                                           control::Response &resp,
@@ -99,7 +100,7 @@ absl::Status ClientHandler::HandleMessage(const control::Request &req,
 void ClientHandler::HandleInit(const control::InitRequest &req,
                                control::InitResponse *response,
                                co::Coroutine *c) {
-  absl::StatusOr<int> s = Init(req.client_name(), req.event_mask(), []{}, c);
+  absl::StatusOr<int> s = Init(req.client_name(), req.event_mask(), [] {}, c);
   if (!s.ok()) {
     response->set_error(s.status().ToString());
     return;
@@ -313,7 +314,7 @@ void ClientHandler::HandleAbort(const control::AbortRequest &req,
                                 co::Coroutine *c) {
   GetLogger().Log(toolbelt::LogLevel::kError, "Aborting all processes: %s",
                   req.reason().c_str());
-  stagezero_.KillAllProcesses(c);
+  stagezero_.KillAllProcesses(req.emergency(), c);
   GetLogger().Log(toolbelt::LogLevel::kError, "All processes aborted: %s",
                   req.reason().c_str());
 }

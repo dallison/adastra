@@ -121,7 +121,7 @@ absl::Status ClientHandler::HandleMessage(const proto::Request &req,
 void ClientHandler::HandleInit(const proto::InitRequest &req,
                                proto::InitResponse *response,
                                co::Coroutine *c) {
-  absl::StatusOr<int> s = Init(req.client_name(), req.event_mask(), []{}, c);
+  absl::StatusOr<int> s = Init(req.client_name(), req.event_mask(), [] {}, c);
   if (!s.ok()) {
     response->set_error(s.status().ToString());
     return;
@@ -150,8 +150,8 @@ void ClientHandler::HandleAddCompute(const proto::AddComputeRequest &req,
   // Probe a connection to the stagezero instance to make sure it's
   // there.
   stagezero::Client sclient;
-  if (absl::Status status =
-          sclient.Init(stagezero_addr, "<capcom probe>",  kNoEvents, compute.name(), c);
+  if (absl::Status status = sclient.Init(stagezero_addr, "<capcom probe>",
+                                         kNoEvents, compute.name(), c);
       !status.ok()) {
     response->set_error(absl::StrFormat(
         "Cannot connect to StageZero on compute %s at address %s",
@@ -207,7 +207,8 @@ void ClientHandler::HandleAddSubsystem(const proto::AddSubsystemRequest &req,
     streams.push_back(stream);
   }
   auto subsystem = std::make_shared<Subsystem>(
-      req.name(), capcom_, std::move(vars), std::move(streams));
+      req.name(), capcom_, std::move(vars), std::move(streams),
+      req.max_restarts(), req.critical());
 
   // Add the processes to the subsystem.
   for (auto &proc : req.processes()) {
@@ -408,7 +409,8 @@ void ClientHandler::HandleGetAlarms(const proto::GetAlarmsRequest &req,
 void ClientHandler::HandleAbort(const proto::AbortRequest &req,
                                 proto::AbortResponse *response,
                                 co::Coroutine *c) {
-  if (absl::Status status = capcom_.Abort(req.reason(), c); !status.ok()) {
+                                  std::cerr << "CAPCOM ABORT: " << req.DebugString();
+  if (absl::Status status = capcom_.Abort(req.reason(), req.emergency(), c); !status.ok()) {
     response->set_error(status.ToString());
   }
 }

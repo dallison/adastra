@@ -16,8 +16,7 @@ subsystem {
       where: STAGEZERO
     }
   }
- 
-
+  critical: true
 }
 
 autostart: "standard_zygote"

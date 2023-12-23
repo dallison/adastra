@@ -78,7 +78,6 @@ message Module {
   Stream stdout = 7;
   Stream stderr = 8;
   string main_func = 9; // ModuleMain if omitted.
-  bool interactive = 10;
 }
 
 message StaticProcess {
@@ -109,6 +108,12 @@ message Subsystem {
   // this module and shutdown after this module.  If a dependency
   // restart, this module will restart.
   repeated string dep = 7;
+
+  // Max number of restarts before being broken.
+  int32 max_restarts = 8;
+
+  // All processes in this subsystem are critical.
+  bool critical = 9;
 }
 
 message SubsystemGraph {
@@ -157,6 +162,7 @@ message GetAlarmsResponse {
 
 message AbortRequest {
   string reason = 1; // Why we are aborting.
+  bool emergency = 2; // Emergency shutdown.
 }
 
 message AbortResponse { string error = 1; }

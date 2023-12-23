@@ -96,6 +96,7 @@ StaticProcess::StaticProcess(
   if (req.opts().has_interactive_terminal()) {
     interactive_terminal_.FromProto(req.opts().interactive_terminal());
   }
+  critical_ = req.opts().critical();
 }
 
 absl::Status StaticProcess::Start(co::Coroutine *c) {
@@ -303,6 +304,7 @@ absl::Status Process::BuildStreams(
     if (!pipe.ok()) {
       return pipe.status();
     }
+    stream->fd = pipe->WriteFd().Fd();
     stream->pipe = std::move(*pipe);
     streams_.push_back(stream);
   }
@@ -347,7 +349,6 @@ absl::Status Process::BuildStreams(
   }
 
   for (const proto::StreamControl &s : streams) {
-    // TODO: do we allow both interactive and setting of streams?
     auto stream = std::make_shared<StreamInfo>();
     proto::StreamControl::Direction direction = s.direction();
     stream->direction = direction;
@@ -425,23 +426,13 @@ absl::Status Process::BuildStreams(
       break;
     }
     case proto::StreamControl::FILENAME: {
-      int oflag = stream->direction == proto::StreamControl::INPUT
-                      ? O_RDONLY
-                      : (O_WRONLY | O_TRUNC | O_CREAT);
-
-      int file_fd = open(local_symbols_.ReplaceSymbols(s.filename()).c_str(),
-                         oflag, 0777);
-      if (file_fd == -1) {
-        return absl::InternalError(
-            absl::StrFormat("Failed to open file %s", strerror(errno)));
+      std::string filename = s.filename();
+      if (filename.empty()) {
+        // An empty filename means we use a good default.
+        filename = absl::StrFormat("$logdir/$name.%d.$pid.log", stream->fd);
       }
-      // Set the process end of the stream (the fd that will be redirected)
-      // to the file's open fd.
-      if (stream->direction == proto::StreamControl::OUTPUT) {
-        stream->pipe.SetWriteFd(file_fd);
-      } else {
-        stream->pipe.SetReadFd(file_fd);
-      }
+      stream->filename = filename;
+      // Defer the opening of the filename until we know the PID of the process.
       break;
     }
     case proto::StreamControl::FD:
@@ -493,15 +484,19 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
         absl::StrFormat("Fork failed: %s", strerror(errno)));
   }
   if (pid_ == 0) {
+    // Set some local variables for the process.
+    local_symbols_.AddSymbol("pid", absl::StrFormat("%d", getpid()), false);
+
     // Stop the coroutine scheduler in this process.  We have forked so the
     // all the coroutines in the parent process are also in this child process.
     // We don't want them to run in the child, so we stop the scheduler.
+    // We will be calling exec so all the memory in the child process will
+    // be freed.
+    client_->StopAllCoroutines();
     client_->GetScheduler().Stop();
 
     // Redirect the streams.
     if (interactive_) {
-      std::cerr << "interactive, redirecting streams "
-                << interactive_proc_end_.Fd() << "\n";
       setsid();
       int e = ioctl(interactive_proc_end_.Fd(), TIOCSCTTY, 0);
       if (e != 0) {
@@ -529,6 +524,30 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
         // For other streams, we redirect to the given file descriptor
         // number and close the duplicated file descriptor.
         if (stream->disposition != proto::StreamControl::NOTIFY) {
+          if (stream->disposition == proto::StreamControl::FILENAME) {
+            // For files, we have deferred the open until we know the pid
+            // of the process.  This is because it's likely that the
+            // filename contains the PID of the process.
+            int oflag = stream->direction == proto::StreamControl::INPUT
+                            ? O_RDONLY
+                            : (O_WRONLY | O_TRUNC | O_CREAT);
+
+            std::string filename = stream->filename;
+            int file_fd = open(local_symbols_.ReplaceSymbols(filename).c_str(),
+                               oflag, 0777);
+            if (file_fd == -1) {
+              std::cerr << "Failed to open file " << filename << ": "
+                        << strerror(errno) << std::endl;
+              exit(1);
+            }
+            // Set the process end of the stream (the fd that will be
+            // redirected) to the file's open fd.
+            if (stream->direction == proto::StreamControl::OUTPUT) {
+              stream->pipe.SetWriteFd(file_fd);
+            } else {
+              stream->pipe.SetReadFd(file_fd);
+            }
+          }
           toolbelt::FileDescriptor &fd =
               stream->direction == proto::StreamControl::OUTPUT
                   ? stream->pipe.WriteFd()
@@ -563,8 +582,14 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
       }
     }
 
-    // Set some local variables for the process.
-    local_symbols_.AddSymbol("pid", absl::StrFormat("%d", getpid()), false);
+    std::shared_ptr<StreamInfo> notify_stream = FindNotifyStream();
+    if (req_.opts().notify() && notify_stream != nullptr) {
+      // Add a local symbol for the notify stream.  This can be see by the
+      // arguments.
+      local_symbols_.AddSymbol(
+          "notify_fd",
+          absl::StrFormat("%d", notify_stream->pipe.WriteFd().Fd()), false);
+    }
 
     // Copy args with symbols replaced into local memory to keep the
     // strings around for the argv array.
@@ -586,15 +611,12 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
 
     // Build the environment strings.
     std::vector<std::string> env_strings;
-    if (req_.opts().notify()) {
+    if (req_.opts().notify() && notify_stream != nullptr) {
       // For a notify fd, set the STAGEZERO_NOTIFY_FD environment
-      // variable.  The process will write a single arbitrary byte to this
+      // variable.  The process will write a 8 arbitrary bytes to this
       // to tell us that it has started.
-      std::shared_ptr<StreamInfo> notify_stream = FindNotifyStream();
-      if (notify_stream != nullptr) {
-        env_strings.push_back(absl::StrFormat(
-            "STAGEZERO_NOTIFY_FD=%d", notify_stream->pipe.WriteFd().Fd()));
-      }
+      env_strings.push_back(absl::StrFormat(
+          "STAGEZERO_NOTIFY_FD=%d", notify_stream->pipe.WriteFd().Fd()));
     }
     absl::flat_hash_map<std::string, Symbol *> env_vars =
         local_symbols_.GetEnvironmentSymbols();
@@ -805,20 +827,31 @@ Zygote::Spawn(const stagezero::control::LaunchVirtualProcessRequest &req,
 
   // Streams.
   std::vector<toolbelt::FileDescriptor> fds;
-  int index = 0;
+  int fd_index = 0;
   for (auto &stream : streams) {
-    auto *s = spawn.add_streams();
-    if (stream->disposition != proto::StreamControl::CLOSE &&
-        stream->disposition != proto::StreamControl::STAGEZERO) {
+    if (stream->disposition == proto::StreamControl::CLOSE) {
+      auto *s = spawn.add_streams();
+      s->set_fd(stream->fd);
+      s->set_close(true);
+      continue;
+    }
+    if (stream->disposition == proto::StreamControl::FILENAME) {
+      auto *s = spawn.add_streams();
+      s->set_fd(stream->fd);
+      s->set_filename(stream->filename);
+      s->set_direction(stream->direction);
+      // The file is opened by spawned process since it knows the PID.
+      continue;
+    }
+    if (stream->disposition != proto::StreamControl::STAGEZERO) {
       const toolbelt::FileDescriptor &fd =
           stream->direction == proto::StreamControl::OUTPUT
               ? stream->pipe.WriteFd()
               : stream->pipe.ReadFd();
+      auto *s = spawn.add_streams();
       s->set_fd(stream->fd);
       fds.push_back(fd);
-      s->set_index(index++);
-    } else {
-      s->set_close(true);
+      s->set_index(fd_index++);
     }
   }
 
@@ -899,10 +932,7 @@ VirtualProcess::VirtualProcess(
   SetSignalTimeouts(req.opts().sigint_shutdown_timeout_secs(),
                     req.opts().sigterm_shutdown_timeout_secs());
   SetUserAndGroup(req.opts().user(), req.opts().group());
-  interactive_ = req.opts().interactive();
-  if (req.opts().has_interactive_terminal()) {
-    interactive_terminal_.FromProto(req.opts().interactive_terminal());
-  }
+  critical_ = req.opts().critical();
 }
 
 absl::Status VirtualProcess::Start(co::Coroutine *c) {
@@ -919,6 +949,7 @@ absl::Status VirtualProcess::Start(co::Coroutine *c) {
       !status.ok()) {
     return status;
   }
+
   absl::StatusOr<int> pid = zygote->Spawn(req_, GetStreams(), c);
   if (!pid.ok()) {
     return absl::InternalError(

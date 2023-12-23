@@ -24,7 +24,8 @@ FlightDirector::FlightDirector(co::CoroutineScheduler &scheduler,
       capcom_client_(stagezero::capcom::client::ClientMode::kNonBlocking),
       autostart_capcom_client_(
           std::make_unique<stagezero::capcom::client::Client>(
-              stagezero::capcom::client::ClientMode::kNonBlocking)), logger_("flight") {}
+              stagezero::capcom::client::ClientMode::kNonBlocking)),
+      logger_("flight") {}
 
 FlightDirector::~FlightDirector() {
   // Clear this before other data members get destroyed.
@@ -345,11 +346,9 @@ static void ParseStream(const std::string &process_name,
   case flight::proto::Stream::FILE: {
     std::string filename = stream.filename();
     s.disposition = Stream::Disposition::kFile;
-    if (filename.empty()) {
-      filename = absl::StrFormat("/tmp/%s.%d.log", process_name, fd);
-    }
     s.data = filename;
-  } break;
+    break;
+  }
   case flight::proto::Stream::CLOSE:
     s.disposition = Stream::Disposition::kClose;
     break;
@@ -436,6 +435,10 @@ absl::Status FlightDirector::LoadSubsystemGraph(
                                  .value = var.value(),
                                  .exported = var.exported()});
     }
+
+    subsystem->max_restarts = s.max_restarts();
+    subsystem->critical = s.critical();
+
     // Load all the processes in the subsystem.
     // First static processes.
     for (auto &proc : s.static_process()) {
@@ -513,22 +516,10 @@ absl::Status FlightDirector::LoadSubsystemGraph(
       module->compute = mod.compute();
       module->main_func =
           mod.main_func().empty() ? "ModuleMain" : mod.main_func();
-      if (mod.interactive()) {
-        if (mod.has_stdin() || mod.has_stdout() || mod.has_stderr()) {
-          return absl::InternalError(
-              absl::StrFormat("Module %s is marked interactive so you can't "
-                              "set its standard streams too",
-                              mod.name()));
-        }
-        num_interactive_procs++;
-        module->interactive = true;
-      } else {
-        ParseStream(module->name, mod.stdin(), STDIN_FILENO, &module->streams);
-        ParseStream(module->name, mod.stdout(), STDOUT_FILENO,
-                    &module->streams);
-        ParseStream(module->name, mod.stderr(), STDERR_FILENO,
-                    &module->streams);
-      }
+
+      ParseStream(module->name, mod.stdin(), STDIN_FILENO, &module->streams);
+      ParseStream(module->name, mod.stdout(), STDOUT_FILENO, &module->streams);
+      ParseStream(module->name, mod.stderr(), STDERR_FILENO, &module->streams);
 
       // Automatically add a dep to the zygote unless it's already there.
       bool present = false;
@@ -705,7 +696,6 @@ absl::Status FlightDirector::RegisterSubsystemGraph(Subsystem *root,
             .streams = src->streams,
             .user = src->user,
             .group = src->group,
-            .interactive = src->interactive,
         });
         break;
       }
@@ -724,6 +714,9 @@ absl::Status FlightDirector::RegisterSubsystemGraph(Subsystem *root,
     for (auto &var : subsystem->vars) {
       options.vars.push_back(var);
     }
+
+    options.max_restarts = subsystem->max_restarts;
+    options.critical = subsystem->critical;
 
     absl::Status status =
         capcom_client_.AddSubsystem(subsystem->name, std::move(options), c);
@@ -783,6 +776,27 @@ void FlightDirector::EventMonitorCoroutine(co::Coroutine *c) {
         }
       }
     }
+
+    if ((*event)->type == EventType::kAlarm) {
+      // Check for a critical system alarm and if so, shut us down.
+      Alarm alarm = std::get<1>((*event)->event);
+      if (alarm.type == Alarm::Type::kSystem &&
+          alarm.severity == Alarm::Severity::kCritical &&
+          alarm.reason == Alarm::Reason::kEmergencyAbort) {
+        // We need to shut down, but if we do that immediately, the alarm will
+        // not be propagated to the clients that want it.  So we spawn a
+        // coroutine that delays for a second to allow for the propatation.
+        AddCoroutine(std::make_unique<co::Coroutine>(
+            co_scheduler_, [this, alarm](co::Coroutine *c2) {
+              c2->Sleep(1);
+              logger_.Log(
+                  toolbelt::LogLevel::kFatal,
+                  "Flight Director is shutting down due to emergency abort: %s",
+                  alarm.details.c_str());
+            }));
+      }
+    }
+
     // Add the event to the cache for new clients to see.
     CacheEvent(std::move(*event));
   }

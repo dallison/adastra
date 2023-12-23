@@ -34,6 +34,9 @@ struct ProcessOptions {
   bool notify = false;
   bool interactive = false;
   Terminal interactive_terminal;
+  std::string user;
+  std::string group;
+  bool critical;
 };
 
 class Client
@@ -107,7 +110,7 @@ public:
   absl::StatusOr<std::pair<std::string, bool>>
   GetGlobalVariable(std::string name, co::Coroutine *co = nullptr);
 
-  absl::Status Abort(const std::string &reason, co::Coroutine *co = nullptr);
+  absl::Status Abort(const std::string &reason, bool emergency, co::Coroutine *co = nullptr);
 
 private:
   absl::StatusOr<std::pair<std::string, int>> LaunchStaticProcessInternal(

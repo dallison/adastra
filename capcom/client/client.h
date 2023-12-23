@@ -25,6 +25,8 @@ enum class ClientMode {
   kNonBlocking,
 };
 
+static constexpr int kDefaultMaxRestarts = 3;
+
 constexpr int32_t kDefaultStartupTimeout = 2;
 constexpr int32_t kDefaultSigIntShutdownTimeout = 2;
 constexpr int32_t kDefaultSigTermShutdownTimeout = 4;
@@ -73,6 +75,7 @@ struct VirtualProcess {
   int32_t startup_timeout_secs = kDefaultStartupTimeout;
   int32_t sigint_shutdown_timeout_secs = kDefaultSigIntShutdownTimeout;
   int32_t sigterm_shutdown_timeout_secs = kDefaultSigTermShutdownTimeout;
+  bool notify = false;
   std::vector<Stream> streams;
   std::string user;
   std::string group;
@@ -88,6 +91,9 @@ struct SubsystemOptions {
   std::vector<Stream> streams;
   std::vector<std::string> args;
   std::vector<std::string> children;
+
+  int max_restarts = kDefaultMaxRestarts;
+  bool critical = false;
 };
 
 enum class RunMode {
@@ -107,7 +113,7 @@ public:
   ~Client() = default;
 
   absl::Status Init(toolbelt::InetAddress addr, const std::string &name,
-                    int event_mask = kAllEvents,
+                    int event_mask,
                     co::Coroutine *c = nullptr);
 
   absl::Status AddCompute(const std::string &name,
@@ -146,7 +152,7 @@ public:
   }
   absl::StatusOr<std::shared_ptr<Event>> ReadEvent(co::Coroutine *c = nullptr);
 
-  absl::Status Abort(const std::string &reason, co::Coroutine *c = nullptr);
+  absl::Status Abort(const std::string &reason, bool emergency, co::Coroutine *c = nullptr);
 
   absl::Status SendInput(const std::string &subsystem,
                          const std::string &process, int fd,

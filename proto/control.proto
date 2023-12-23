@@ -21,7 +21,6 @@ message InitResponse {
   int32 event_port = 2;
 }
 
-
 message LaunchStaticProcessRequest {
   config.StaticProcess proc = 1;
   config.ProcessOptions opts = 2;
@@ -81,7 +80,10 @@ message GetGlobalVariableResponse {
   bool exported = 4; // True if exported to environment for processes.
 }
 
-message AbortRequest { string reason = 1; }
+message AbortRequest {
+  string reason = 1;
+  bool emergency = 2;     // Emergency abort, all processes down.
+}
 
 message AbortResponse { string error = 1; }
 
@@ -128,7 +130,6 @@ message OutputEvent {
   int32 fd = 3; // What fd sent it
 }
 
-
 message Event {
   oneof event {
     StartEvent start = 51;
@@ -147,6 +148,11 @@ message SpawnRequest {
     int32 fd = 1;    // FD to redirect
     int32 index = 2; // Index into SCM_RIGHTS for src fd.
     bool close = 3;  // Close the stream, don't redirect.
+
+    // Streams for files are opened by the spawned process.  The information
+    // needed for that is in filename and direction.
+    optional string filename = 4; // For file streams.
+    optional stagezero.proto.StreamControl.Direction direction = 5;
   }
   string dso = 1; // Load this DSO (empty means already linked)
 

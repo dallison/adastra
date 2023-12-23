@@ -151,7 +151,7 @@ void ClientHandler::HandleGetAlarms(const flight::proto::GetAlarmsRequest &req,
 void ClientHandler::HandleAbort(const flight::proto::AbortRequest &req,
                                 flight::proto::AbortResponse *response,
                                 co::Coroutine *c) {
-  if (absl::Status status = flight_.capcom_client_.Abort(req.reason(), c);
+  if (absl::Status status = flight_.capcom_client_.Abort(req.reason(), req.emergency(), c);
       !status.ok()) {
     response->set_error(status.ToString());
   }
