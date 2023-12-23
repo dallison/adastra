@@ -118,10 +118,14 @@ message Response {
 message StartEvent { string process_id = 1; }
 
 message StopEvent {
+  enum Reason {
+    UNKNOWN = 0;
+    EXIT = 1;
+    SIGNAL = 2;
+  }
   string process_id = 1;
-  bool exited = 2;       // True if exited, false if signal
-  int32 exit_status = 3; // Status if exited = true
-  int32 signal = 4;      // Signal if exited = false
+  Reason reason = 2;      // Why process exited.
+  int32 sig_or_status = 3;  // Signal number or exit status.
 }
 
 message OutputEvent {

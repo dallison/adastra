@@ -236,9 +236,14 @@ absl::Status ClientHandler::SendProcessStopEvent(const std::string &process_id,
   auto event = std::make_shared<control::Event>();
   auto stop = event->mutable_stop();
   stop->set_process_id(process_id);
-  stop->set_exited(exited);
-  stop->set_exit_status(exit_status);
-  stop->set_signal(term_signal);
+  if (exited) {
+    stop->set_reason(control::StopEvent::EXIT);
+    stop->set_sig_or_status(exit_status);
+  } else {
+    stop->set_reason(control::StopEvent::SIGNAL);
+    stop->set_sig_or_status(term_signal);
+  }
+
   return QueueEvent(std::move(event));
 }
 

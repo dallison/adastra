@@ -595,13 +595,16 @@ void Subsystem::StartingProcesses(uint32_t client_id, co::Coroutine *c) {
                  }
                  case stagezero::control::Event::kStop:
                    // Process failed to start.
-                   subsystem->capcom_.Log(subsystem->Name(),
-                                          toolbelt::LogLevel::kInfo,
-                                          "Process %s has crashed, restarting",
-                                          event->stop().process_id().c_str());
-                   return subsystem->RestartIfPossibleAfterProcessCrash(
-                       event->stop().process_id(), client_id, c);
+                   if (!subsystem->capcom_.IsEmergencyAborting()) {
+                     subsystem->capcom_.Log(subsystem->Name(),
+                                            toolbelt::LogLevel::kError,
+                                            "Process %s has crashed",
+                                            event->stop().process_id().c_str());
 
+                     return subsystem->RestartIfPossibleAfterProcessCrash(
+                         event->stop().process_id(), client_id, c);
+                   }
+                   return StateTransition::kStay;
                  case stagezero::control::Event::kOutput:
                    subsystem->SendOutput(event->output().fd(),
                                          event->output().data(), c);
@@ -709,12 +712,15 @@ void Subsystem::Online(uint32_t client_id, co::Coroutine *c) {
                    }
 
                    // Non-interative process crashed.  Restart.
-                   subsystem->capcom_.Log(subsystem->Name(),
-                                          toolbelt::LogLevel::kInfo,
-                                          "Process %s has crashed, restarting",
-                                          event->stop().process_id().c_str());
-                   return subsystem->RestartIfPossibleAfterProcessCrash(
-                       event->stop().process_id(), client_id, c);
+                   if (!subsystem->capcom_.IsEmergencyAborting()) {
+                     subsystem->capcom_.Log(subsystem->Name(),
+                                            toolbelt::LogLevel::kError,
+                                            "Process %s has crashed",
+                                            event->stop().process_id().c_str());
+                     return subsystem->RestartIfPossibleAfterProcessCrash(
+                         event->stop().process_id(), client_id, c);
+                   }
+                   return StateTransition::kStay;
                  }
                  case stagezero::control::Event::kOutput:
                    subsystem->SendOutput(event->output().fd(),
@@ -1031,7 +1037,7 @@ Subsystem::StateTransition Subsystem::RestartIfPossibleAfterProcessCrash(
   if (capcom_.IsEmergencyAborting()) {
     return StateTransition::kStay;
   }
-  
+
   Process *proc = FindProcess(process_id);
   if (proc == nullptr) {
     capcom_.Log(Name(), toolbelt::LogLevel::kError,
@@ -1051,7 +1057,7 @@ Subsystem::StateTransition Subsystem::RestartIfPossibleAfterProcessCrash(
                           "Failed to abort cleanly, just shutting down: %s",
                           status.ToString().c_str());
     }
-    return StateTransition::kStay;    // Doesn't matter.
+    return StateTransition::kStay; // Doesn't matter.
   }
   proc->SetStopped();
   DeleteProcessId(proc->GetProcessId());

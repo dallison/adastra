@@ -157,24 +157,34 @@ StaticProcess::StartInternal(const std::vector<std::string> extra_env_vars,
           }
         }
         int status = proc->WaitLoop(c, -1);
-        client->Log(proc->Name(), toolbelt::LogLevel::kInfo,
-                    "static process %s exited with status %d",
-                    proc->Name().c_str(), status);
-
+        
         // The process might have died due to an external signal.  If we didn't
         // kill it, we won't have removed it from the maps.  We try to do this
         // now but ignore it if it's already gone.
         client->TryRemoveProcess(proc);
 
-        absl::Status eventStatus;
-        if (proc->IsStopping()) {
-          // Intentionally stopped.
-          eventStatus = client->SendProcessStopEvent(proc->GetId(), true, 0, 0);
-        } else {
-          // Unintentional stop.
-          eventStatus = client->SendProcessStopEvent(proc->GetId(), true, 0, 0);
+        bool signaled = WIFSIGNALED(status);
+        bool exited = WIFEXITED(status);
+        int term_sig = WTERMSIG(status);
+        int exit_status = WEXITSTATUS(status);
+        // Can't be both exit and signal, but can be neither in the case
+        // of a stop.  We don't expect anything to be stopped and don't
+        // support it.
+        if (!signaled && !exited) {
+          signaled = true;
         }
-        if (!eventStatus.ok()) {
+        if (exited) {
+          client->Log(proc->Name(), toolbelt::LogLevel::kInfo,
+                      "Static process %s exited with status %d",
+                      proc->Name().c_str(), exit_status);
+        } else {
+          client->Log(proc->Name(), toolbelt::LogLevel::kInfo,
+                      "Static process %s received signal %d \"%s\"",
+                      proc->Name().c_str(), term_sig, strsignal(term_sig));
+        }
+        if (absl::Status eventStatus = client->SendProcessStopEvent(
+                proc->GetId(), !signaled, exit_status, term_sig);
+            !eventStatus.ok()) {
           client->Log(proc->Name(), toolbelt::LogLevel::kError, "%s\n",
                       eventStatus.ToString().c_str());
           return;
@@ -971,17 +981,28 @@ absl::Status VirtualProcess::Start(co::Coroutine *c) {
         }
 
         int status = proc->WaitLoop(c2, -1);
-        client->Log(proc->Name(), toolbelt::LogLevel::kInfo,
-                    "virtual process %s exited with status %d",
-                    proc->Name().c_str(), status);
-        if (proc->IsStopping()) {
-          // Intentionally stopped.
-          eventStatus = client->SendProcessStopEvent(proc->GetId(), true, 0, 0);
-        } else {
-          // Unintentional stop.
-          eventStatus = client->SendProcessStopEvent(proc->GetId(), true, 0, 0);
+        bool signaled = WIFSIGNALED(status);
+        bool exited = WIFEXITED(status);
+        int term_sig = WTERMSIG(status);
+        int exit_status = WEXITSTATUS(status);
+        // Can't be both exit and signal, but can be neither in the case
+        // of a stop.  We don't expect anything to be stopped and don't
+        // support it.
+        if (!signaled && !exited) {
+          signaled = true;
         }
-        if (!eventStatus.ok()) {
+        if (exited) {
+          client->Log(proc->Name(), toolbelt::LogLevel::kInfo,
+                      "Virtual process %s exited with status %d",
+                      proc->Name().c_str(), exit_status);
+        } else {
+          client->Log(proc->Name(), toolbelt::LogLevel::kInfo,
+                      "Virtual process %s received signal %d \"%s\"",
+                      proc->Name().c_str(), term_sig, strsignal(term_sig));
+        }
+        if (absl::Status eventStatus = client->SendProcessStopEvent(
+                proc->GetId(), !signaled, exit_status, term_sig);
+            !eventStatus.ok()) {
           client->Log(proc->Name(), toolbelt::LogLevel::kError, "%s\n",
                       eventStatus.ToString().c_str());
           return;

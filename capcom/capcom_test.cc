@@ -50,7 +50,8 @@ public:
 
     stagezero_addr_ = toolbelt::InetAddress("localhost", 6522);
     stagezero_ = std::make_unique<stagezero::StageZero>(
-        stagezero_scheduler_, stagezero_addr_, true, "/tmp", stagezero_pipe_[1]);
+        stagezero_scheduler_, stagezero_addr_, true, "/tmp",
+        stagezero_pipe_[1]);
 
     // Start stagezero running in a thread.
     stagezero_thread_ = std::thread([]() {
@@ -793,6 +794,7 @@ TEST_F(CapcomTest, TalkAndListen) {
            .name = "subspace_server",
            .executable = "${runfiles_dir}/__main__/external/subspace/server/"
                          "subspace_server",
+           .args = {"--notify_fd=${notify_fd}"},
            .notify = true,
        }},
        .zygotes = {{
