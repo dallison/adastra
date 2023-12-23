@@ -593,18 +593,30 @@ void Subsystem::StartingProcesses(uint32_t client_id, co::Coroutine *c) {
                    }
                    break;
                  }
-                 case stagezero::control::Event::kStop:
+                 case stagezero::control::Event::kStop: {
                    // Process failed to start.
                    if (!subsystem->capcom_.IsEmergencyAborting()) {
-                     subsystem->capcom_.Log(subsystem->Name(),
-                                            toolbelt::LogLevel::kError,
-                                            "Process %s has crashed",
-                                            event->stop().process_id().c_str());
-
+                     const control::StopEvent &stop = event->stop();
+                     Process *proc = subsystem->FindProcess(stop.process_id());
+                     if (proc == nullptr) {
+                       subsystem->capcom_.Log(
+                           subsystem->Name(), toolbelt::LogLevel::kError,
+                           "Can't find process", stop.process_id().c_str());
+                       return StateTransition::kStay;
+                     }
+                     if (!proc->IsOneShot()) {
+                       subsystem->capcom_.Log(
+                           subsystem->Name(), toolbelt::LogLevel::kError,
+                           "Process %s has crashed", stop.process_id().c_str());
+                     }
+                     int signal_or_status = stop.sig_or_status();
+                     bool exited = stop.reason() != control::StopEvent::SIGNAL;
                      return subsystem->RestartIfPossibleAfterProcessCrash(
-                         event->stop().process_id(), client_id, c);
+                         stop.process_id(), client_id, exited, signal_or_status,
+                         c);
                    }
                    return StateTransition::kStay;
+                 }
                  case stagezero::control::Event::kOutput:
                    subsystem->SendOutput(event->output().fd(),
                                          event->output().data(), c);
@@ -713,12 +725,24 @@ void Subsystem::Online(uint32_t client_id, co::Coroutine *c) {
 
                    // Non-interative process crashed.  Restart.
                    if (!subsystem->capcom_.IsEmergencyAborting()) {
-                     subsystem->capcom_.Log(subsystem->Name(),
-                                            toolbelt::LogLevel::kError,
-                                            "Process %s has crashed",
-                                            event->stop().process_id().c_str());
+                     const control::StopEvent &stop = event->stop();
+                     Process *proc = subsystem->FindProcess(stop.process_id());
+                     if (proc == nullptr) {
+                       subsystem->capcom_.Log(
+                           subsystem->Name(), toolbelt::LogLevel::kError,
+                           "Can't find process", stop.process_id().c_str());
+                       return StateTransition::kStay;
+                     }
+                     if (!proc->IsOneShot()) {
+                       subsystem->capcom_.Log(
+                           subsystem->Name(), toolbelt::LogLevel::kError,
+                           "Process %s has crashed", stop.process_id().c_str());
+                     }
+                     int signal_or_status = stop.sig_or_status();
+                     bool exited = stop.reason() != control::StopEvent::SIGNAL;
                      return subsystem->RestartIfPossibleAfterProcessCrash(
-                         event->stop().process_id(), client_id, c);
+                         stop.process_id(), client_id, exited, signal_or_status,
+                         c);
                    }
                    return StateTransition::kStay;
                  }
@@ -783,7 +807,13 @@ void Subsystem::Online(uint32_t client_id, co::Coroutine *c) {
 }
 
 void Subsystem::StoppingProcesses(uint32_t client_id, co::Coroutine *c) {
-  if (processes_.empty()) {
+  int num_running_processes = 0;
+  for (auto &proc : processes_) {
+    if (proc->IsRunning()) {
+      num_running_processes++;
+    }
+  }
+  if (num_running_processes == 0) {
     EnterState(OperState::kStoppingChildren, client_id);
     return;
   }
@@ -1032,7 +1062,8 @@ void Subsystem::RestartNow(uint32_t client_id) {
 }
 
 Subsystem::StateTransition Subsystem::RestartIfPossibleAfterProcessCrash(
-    std::string process_id, uint32_t client_id, co::Coroutine *c) {
+    std::string process_id, uint32_t client_id, bool exited,
+    int signal_or_status, co::Coroutine *c) {
 
   if (capcom_.IsEmergencyAborting()) {
     return StateTransition::kStay;
@@ -1061,6 +1092,38 @@ Subsystem::StateTransition Subsystem::RestartIfPossibleAfterProcessCrash(
   }
   proc->SetStopped();
   DeleteProcessId(proc->GetProcessId());
+
+  if (proc->IsOneShot()) {
+    // A oneshot process has exited.  If it exited with
+    if (exited) {
+      if (signal_or_status == 0) {
+        // All good, oneshot terminated with success.
+        return StateTransition::kStay;
+      }
+    }
+    // Oneshot terminated with a signal or non-zero exit status.  This is deemed
+    // to be a failure of the process.  Since we can't restart oneshot processes
+    // (they are meant to run once only), this subsystem is now broken.
+    EnterState(OperState::kBroken, client_id);
+
+    std::string reason;
+    if (exited) {
+      reason = absl::StrFormat("exited with status %d", signal_or_status);
+    } else {
+      reason = absl::StrFormat("received signal %d \"%s\"", signal_or_status,
+                               strsignal(signal_or_status));
+    }
+    proc->RaiseAlarm(capcom_,
+                     {.name = proc->Name(),
+                      .type = Alarm::Type::kProcess,
+                      .severity = Alarm::Severity::kCritical,
+                      .reason = Alarm::Reason::kCrashed,
+                      .status = Alarm::Status::kRaised,
+                      .details = absl::StrFormat(
+                          "Oneshot process %s %s, subsystem %s is broken",
+                          proc->Name(), reason, Name())});
+    return StateTransition::kLeave;
+  }
 
   if (num_restarts_ == max_restarts_) {
     // We have reached the max number of restarts, so we are broken.
@@ -1265,6 +1328,7 @@ void Subsystem::Broken(uint32_t client_id, co::Coroutine *c) {
                    } else {
                      // Stop all children.
                      subsystem->active_clients_.Clear(client_id);
+                     subsystem->admin_state_ = AdminState::kOffline;
                      subsystem->EnterState(OperState::kStoppingChildren,
                                            client_id);
                    }
@@ -1483,6 +1547,7 @@ void Process::ParseOptions(const stagezero::config::ProcessOptions &options) {
   user_ = options.user();
   group_ = options.group();
   critical_ = options.critical();
+  oneshot_ = options.oneshot();
 }
 
 void Process::ParseStreams(

@@ -404,6 +404,135 @@ TEST_F(CapcomTest, StartSimpleSubsystem) {
   ASSERT_TRUE(status.ok());
 }
 
+TEST_F(CapcomTest, OneshotOK) {
+  stagezero::capcom::client::Client client(ClientMode::kBlocking);
+  InitClient(client, "foobar1");
+
+  absl::Status status = client.AddSubsystem(
+      "oneshot", {.static_processes = {{
+                      .name = "oneshot",
+                      .executable = "${runfiles_dir}/__main__/testdata/oneshot",
+                      .oneshot = true,
+                  }}});
+  ASSERT_TRUE(status.ok());
+
+  status = client.StartSubsystem("oneshot");
+  ASSERT_TRUE(status.ok());
+
+  sleep(2);
+
+  status = client.StopSubsystem("oneshot");
+  ASSERT_TRUE(status.ok());
+
+  status = client.RemoveSubsystem("oneshot", false);
+  ASSERT_TRUE(status.ok());
+}
+
+TEST_F(CapcomTest, OneshotFail) {
+  stagezero::capcom::client::Client client(ClientMode::kNonBlocking);
+  InitClient(client, "foobar1");
+
+  absl::Status status = client.AddSubsystem(
+      "oneshot", {.static_processes = {{
+                      .name = "oneshot",
+                      .executable = "${runfiles_dir}/__main__/testdata/oneshot",
+                      .args = {"--fail"},
+                      .notify = true,
+                      .oneshot = true,
+                  }}});
+  ASSERT_TRUE(status.ok());
+
+  status = client.StartSubsystem("oneshot");
+  ASSERT_TRUE(status.ok());
+
+  WaitForState(client, "oneshot", AdminState::kOnline, OperState::kOnline);
+  WaitForState(client, "oneshot", AdminState::kOnline, OperState::kBroken);
+
+  status = client.StopSubsystem("oneshot");
+  ASSERT_TRUE(status.ok());
+
+  WaitForState(client, "oneshot", AdminState::kOffline, OperState::kOffline);
+
+  status = client.RemoveSubsystem("oneshot", false);
+  ASSERT_TRUE(status.ok());
+
+  // To see the log messages.
+  sleep(1);
+}
+
+TEST_F(CapcomTest, OneshotSignal) {
+  stagezero::capcom::client::Client client(ClientMode::kNonBlocking);
+  InitClient(client, "foobar1");
+
+  absl::Status status = client.AddSubsystem(
+      "oneshot", {.static_processes = {{
+                      .name = "oneshot",
+                      .executable = "${runfiles_dir}/__main__/testdata/oneshot",
+                      .args = {"--signal"},
+                      .notify = true,
+                      .oneshot = true,
+                  }}});
+  ASSERT_TRUE(status.ok());
+
+  status = client.StartSubsystem("oneshot");
+  ASSERT_TRUE(status.ok());
+
+  WaitForState(client, "oneshot", AdminState::kOnline, OperState::kOnline);
+
+  WaitForState(client, "oneshot", AdminState::kOnline, OperState::kBroken);
+
+  status = client.StopSubsystem("oneshot");
+  ASSERT_TRUE(status.ok());
+
+  WaitForState(client, "oneshot", AdminState::kOffline, OperState::kOffline);
+
+  status = client.RemoveSubsystem("oneshot", false);
+  ASSERT_TRUE(status.ok());
+
+  // To see the log messages.
+  sleep(1);
+}
+
+TEST_F(CapcomTest, OneshotKill) {
+  stagezero::capcom::client::Client client(ClientMode::kNonBlocking);
+  InitClient(client, "foobar1");
+
+  absl::Status status = client.AddSubsystem(
+      "oneshot", {.static_processes = {{
+                      .name = "oneshot",
+                      .executable = "${runfiles_dir}/__main__/testdata/oneshot",
+                      .args = {"--signal"},
+                      .notify = true,
+                      .oneshot = true,
+                  }}});
+  ASSERT_TRUE(status.ok());
+
+  status = client.StartSubsystem("oneshot");
+  ASSERT_TRUE(status.ok());
+
+  Event e =
+      WaitForState(client, "oneshot", AdminState::kOnline, OperState::kOnline);
+
+  // Kill the process.
+  SubsystemStatus s = std::get<0>(e.event);
+  ASSERT_EQ(1, s.processes.size());
+  int pid = s.processes[0].pid;
+  kill(pid, SIGINT);
+
+  WaitForState(client, "oneshot", AdminState::kOnline, OperState::kBroken);
+
+  status = client.StopSubsystem("oneshot");
+  ASSERT_TRUE(status.ok());
+
+  WaitForState(client, "oneshot", AdminState::kOffline, OperState::kOffline);
+
+  status = client.RemoveSubsystem("oneshot", false);
+  ASSERT_TRUE(status.ok());
+
+  // To see the log messages.
+  sleep(1);
+}
+
 TEST_F(CapcomTest, StartSimpleSubsystemCompute) {
   stagezero::capcom::client::Client client(ClientMode::kBlocking);
   InitClient(client, "foobar1");

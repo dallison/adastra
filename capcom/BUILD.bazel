@@ -60,6 +60,7 @@ cc_test(
         "//testdata:module.so",
         "//testdata:talker.so",
         "//testdata:vars",
+        "//testdata:oneshot",
         "@subspace//server:subspace_server",
     ],
     deps = [

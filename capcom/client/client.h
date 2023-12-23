@@ -46,6 +46,7 @@ struct StaticProcess {
   std::string user;
   std::string group;
   bool interactive = false;
+  bool oneshot = false;
 };
 
 struct Zygote {
@@ -79,7 +80,6 @@ struct VirtualProcess {
   std::vector<Stream> streams;
   std::string user;
   std::string group;
-  bool interactive = false;
 };
 
 struct SubsystemOptions {

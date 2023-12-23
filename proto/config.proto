@@ -55,6 +55,11 @@ message ProcessOptions {
   // at all.  They are not subject to restart or abort processing.  If
   // they crash, the whole system is brought down.
   bool critical = 13;
+
+  // A oneshot process is expected to run once and exit.  If it exits with a
+  // non-zero status or receives a signal it is considered to be a process
+  // failure.
+  bool oneshot = 14;
 }
 
 message StaticProcess {

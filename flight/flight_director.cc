@@ -451,6 +451,7 @@ absl::Status FlightDirector::LoadSubsystemGraph(
       process->name = proc.name();
       process->executable = proc.executable();
       process->compute = proc.compute();
+      process->oneshot = proc.oneshot();
 
       auto &options = proc.options();
       ParseProcessOptions(process.get(), options);
@@ -659,6 +660,7 @@ absl::Status FlightDirector::RegisterSubsystemGraph(Subsystem *root,
             .user = src->user,
             .group = src->group,
             .interactive = src->interactive,
+            .oneshot = src->oneshot,
         });
         break;
       }

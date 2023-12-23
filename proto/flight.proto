@@ -89,6 +89,7 @@ message StaticProcess {
   Stream stdout = 6;
   Stream stderr = 7;
   bool interactive = 8;
+  bool oneshot = 9;
 }
 
 message Subsystem {

@@ -96,6 +96,7 @@ public:
   absl::Status CloseFd(int fd, co::Coroutine *c);
 
   bool IsCritical() const { return critical_; }
+  bool IsOneShot() const { return oneshot_; }
 
 protected:
   void ParseOptions(const stagezero::config::ProcessOptions &options);
@@ -124,6 +125,7 @@ protected:
   std::string user_;
   std::string group_;
   bool critical_ = false;
+  bool oneshot_ = false;
 };
 
 class StaticProcess : public Process {
@@ -362,7 +364,8 @@ private:
   void StopProcesses(co::Coroutine *c);
 
   StateTransition RestartIfPossibleAfterProcessCrash(std::string process_id,
-                                          uint32_t client_id, co::Coroutine *c);
+                                          uint32_t client_id, bool exited, int signal_or_status,
+                                           co::Coroutine *c);
 
   void RestartIfPossible(uint32_t client_id, co::Coroutine *c);
 

@@ -109,7 +109,8 @@ absl::Status Client::AddSubsystem(const std::string &name,
     opts->set_group(sproc.group);
     opts->set_interactive(sproc.interactive);
     opts->set_critical(options.critical);
-
+    opts->set_oneshot(sproc.oneshot);
+    
     auto *s = proc->mutable_static_process();
     s->set_executable(sproc.executable);
     proc->set_compute(sproc.compute);
@@ -161,7 +162,6 @@ absl::Status Client::AddSubsystem(const std::string &name,
     opts->set_notify(vproc.notify);
     opts->set_user(vproc.user);
     opts->set_group(vproc.group);
-    opts->set_interactive(vproc.interactive);
     opts->set_critical(options.critical);
 
     auto *s = proc->mutable_virtual_process();
