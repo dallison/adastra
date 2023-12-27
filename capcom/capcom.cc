@@ -9,10 +9,10 @@ namespace stagezero::capcom {
 
 Capcom::Capcom(co::CoroutineScheduler &scheduler, toolbelt::InetAddress addr,
                bool log_to_output, int local_stagezero_port,
-               const std::string &log_file_name, bool test_mode, int notify_fd)
+               std::string log_file_name, bool test_mode, int notify_fd)
     : co_scheduler_(scheduler), addr_(std::move(addr)),
-      log_to_output_(log_to_output), test_mode_(test_mode), notify_fd_(notify_fd),
-      logger_("capcom", log_to_output) {
+      log_to_output_(log_to_output), test_mode_(test_mode),
+      notify_fd_(notify_fd), logger_("capcom", log_to_output) {
   local_compute_ = {
       .name = "<localhost>",
       .addr = toolbelt::InetAddress("localhost", local_stagezero_port)};
@@ -26,6 +26,21 @@ Capcom::Capcom(co::CoroutineScheduler &scheduler, toolbelt::InetAddress addr,
   }
   log_pipe_ = std::move(*p);
 
+  // Make a log file name with the current local time and data.
+  if (log_file_name.empty()) {
+    char timebuf[64];
+    struct tm tm;
+    struct timespec now_ts;
+    clock_gettime(CLOCK_REALTIME, &now_ts);
+
+    size_t n = strftime(timebuf, sizeof(timebuf), "%FT%T",
+                        localtime_r(&now_ts.tv_sec, &tm));
+    if (n == 0) {
+      log_file_name = "/tmp/capcom.pb";
+    } else {
+      log_file_name = absl::StrFormat("/tmp/capcom-%s.pb", timebuf);
+    }
+  }
   if (!log_file_name.empty()) {
     log_file_.SetFd(
         open(log_file_name.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0777));

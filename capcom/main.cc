@@ -29,7 +29,7 @@ static void Signal(int sig) {
 
 ABSL_FLAG(int, port, 6523, "TCP listening port");
 ABSL_FLAG(int, local_stagezero_port, 6522, "Local StageZero listening port");
-ABSL_FLAG(std::string, log_file, "/tmp/capcom.pb", "Capcom log file");
+ABSL_FLAG(std::string, log_file, "", "Capcom log file");
 ABSL_FLAG(std::string, listen_address, "",
           "IP Address or hostname to listen on");
 ABSL_FLAG(bool, silent, false, "Don't log messages to output");

@@ -7,12 +7,14 @@
 #include "absl/flags/parse.h"
 #include "common/stream.h"
 #include "flight/client/client.h"
+#include "proto/log.pb.h"
 #include "toolbelt/color.h"
+#include "toolbelt/logging.h"
 #include "toolbelt/sockets.h"
 #include "toolbelt/table.h"
-#include "toolbelt/logging.h"
 
 #include <cstdlib>
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <sys/ioctl.h>
@@ -68,7 +70,11 @@ void FlightCommand::Run(int argc, char **argv) {
     std::cerr << "unknown flight command " << root << std::endl;
     exit(1);
   }
-  if (it->first != "help") {
+  bool connect_live = true;
+  if (it->first == "help" || (it->first == "log" && argc == 3)) {
+    connect_live = false;
+  }
+  if (connect_live) {
     bool is_run = it->first == "run";
     int event_mask = kSubsystemStatusEvents;
     if (is_run) {
@@ -96,7 +102,8 @@ absl::Status HelpCommand::Execute(flight::client::Client *client, int argc,
   std::cout << "  flight status - show status of all subsystems\n";
   std::cout << "  flight abort <subsystem> - abort all subsystems\n";
   std::cout << "  flight alarms - show all alarms\n";
-  std::cout << "  flight log - show text log\n";
+  std::cout << "  flight log - show live text log\n";
+  std::cout << "  flight log <filename>- show recorded text log from file\n";
   return absl::OkStatus();
 }
 
@@ -201,6 +208,45 @@ absl::Status AbortCommand::Execute(flight::client::Client *client, int argc,
 absl::Status LogCommand::Execute(flight::client::Client *client, int argc,
                                  char **argv) const {
   toolbelt::Logger logger("flight");
+  if (argc == 3) {
+    // Log from file.
+    std::ifstream in(argv[2]);
+    if (!in) {
+      std::cerr << "Cannot open log file " << argv[3] << std::endl;
+      exit(1);
+    }
+    std::vector<char> buffer;
+    while (!in.eof()) {
+      // Read 8-byte little endian length
+      unsigned char length_buf[8];
+      in.read(reinterpret_cast<char*>(length_buf), sizeof(length_buf));
+      if (in.eof()) {
+        break;
+      }
+      // Convert to little endian value;
+      int64_t length = 0;
+      for (int i = 0; i < 8; i++) {
+        length |= length_buf[i] << (i*8);
+      }
+      if (buffer.size() < length) {
+        buffer.resize(length);
+      }
+      in.read(buffer.data(), length);
+      if (in.eof()) {
+        break;
+      }
+      stagezero::proto::LogMessage log_proto;
+      if (!log_proto.ParseFromArray(buffer.data(), static_cast<int>(length))) {
+        break;
+      }
+      LogMessage log;
+      log.FromProto(log_proto);
+      logger.Log(log.level, log.timestamp, log.source, log.text);
+    }
+    return absl::OkStatus();
+  }
+
+  // Live log.
   for (;;) {
     absl::StatusOr<std::shared_ptr<Event>> e = client->ReadEvent();
     if (!e.ok()) {

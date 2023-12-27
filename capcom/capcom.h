@@ -38,7 +38,7 @@ class Capcom {
 public:
   Capcom(co::CoroutineScheduler &scheduler, toolbelt::InetAddress addr,
          bool log_to_output, int local_stagezero_port,
-         const std::string &log_file_name = "/tmp/capcom.pb",
+        std::string log_file_name = "",
          bool test_mode = false,
          int notify_fd = -1);
   ~Capcom();
