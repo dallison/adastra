@@ -169,6 +169,11 @@ void ClientHandler::HandleLaunchVirtualProcess(
   response->set_pid(proc->GetPid());
   if (!stagezero_.AddProcess(process_id, proc)) {
     response->set_error(
+        absl::StrFormat("Unable to add process %s", process_id));
+    return;
+  }
+  if (!stagezero_.AddVirtualProcess(proc->GetPid(), proc)) {
+    response->set_error(
         absl::StrFormat("Unable to add virtual process %s", process_id));
     return;
   }

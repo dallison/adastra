@@ -22,17 +22,19 @@ constexpr int64_t kStopped = 2;
 class ClientHandler;
 
 class StageZero {
- public:
+public:
   StageZero(co::CoroutineScheduler &scheduler, toolbelt::InetAddress addr,
-          bool log_to_output,
-          const std::string& logdir,
-            int notify_fd = -1);
+            bool log_to_output, const std::string &logdir, int notify_fd = -1);
   ~StageZero();
   absl::Status Run();
   void Stop();
 
- private:
+  void ShowCoroutines() { co_scheduler_.Show(); }
+
+private:
   friend class ClientHandler;
+  friend class Zygote;
+  friend class VirtualProcess;
   absl::Status HandleIncomingConnection(toolbelt::TCPSocket &listen_socket,
                                         co::Coroutine *c);
 
@@ -60,6 +62,11 @@ class StageZero {
     return z_inserted;
   }
 
+  bool AddVirtualProcess(int pid, std::shared_ptr<Process> proc) {
+    auto[it, inserted] = virtual_processes_.emplace(pid, proc);
+    return inserted;
+  }
+
   absl::Status RemoveProcess(Process *proc) {
     if (proc->IsZygote()) {
       auto it = zygotes_.find(proc->Name());
@@ -85,6 +92,11 @@ class StageZero {
       if (it != zygotes_.end()) {
         zygotes_.erase(it);
       }
+    } else if (proc->IsVirtual()) {
+      auto it = virtual_processes_.find(proc->GetPid());
+      if (it != virtual_processes_.end()) {
+        virtual_processes_.erase(it);
+      }
     }
 
     const std::string &id = proc->GetId();
@@ -100,6 +112,23 @@ class StageZero {
       return nullptr;
     }
     return it->second;
+  }
+
+  std::shared_ptr<Process> FindVirtualProcess(int pid) {
+    auto it = virtual_processes_.find(pid);
+    if (it == virtual_processes_.end()) {
+      return nullptr;
+    }
+    return it->second;
+  }
+
+  absl::Status RemoveVirtualProcess(int pid) {
+    auto it = virtual_processes_.find(pid);
+    if (it == virtual_processes_.end()) {
+      return absl::InternalError(absl::StrFormat("No such zygote %d", pid));
+    }
+    virtual_processes_.erase(it);
+    return absl::OkStatus();
   }
 
   std::shared_ptr<Zygote> FindZygote(const std::string &id) {
@@ -126,9 +155,10 @@ class StageZero {
   absl::flat_hash_map<std::string, std::shared_ptr<Process>> processes_;
 
   absl::flat_hash_map<std::string, std::shared_ptr<Zygote>> zygotes_;
+  absl::flat_hash_map<int, std::shared_ptr<Process>> virtual_processes_;
   toolbelt::Logger logger_;
 
   SymbolTable global_symbols_;
-};
+}; // namespace stagezero
 
-}  // namespace stagezero
+} // namespace stagezero

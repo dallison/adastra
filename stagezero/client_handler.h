@@ -56,6 +56,8 @@ class ClientHandler
   
   const std::string &GetCompute() const;
 
+  StageZero& GetStageZero() const { return stagezero_; }
+  
  private:
   std::shared_ptr<ClientHandler> shared_from_this() {
     return std::static_pointer_cast<ClientHandler>(

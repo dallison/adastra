@@ -3,6 +3,7 @@
 // See LICENSE file for licensing information.
 
 #include "stagezero/process.h"
+#include "stagezero/stagezero.h"
 
 #include "absl/strings/str_format.h"
 #include "common/stream.h"
@@ -45,16 +46,20 @@ void Process::SetProcessId() {
 }
 
 void Process::KillNow() {
+  client_->Log(Name(), toolbelt::LogLevel::kInfo,
+               "Killing process %s with pid %d", Name().c_str(), pid_);
   if (pid_ <= 0) {
     return;
   }
-  ::kill(-pid_, SIGKILL);
+  ::kill(pid_, SIGKILL);
   (void)client_->RemoveProcess(this);
 }
 
-int Process::WaitLoop(co::Coroutine *c, int timeout_secs) {
+int Process::WaitLoop(co::Coroutine *c,
+                      std::optional<std::chrono::seconds> timeout) {
   constexpr int kWaitTimeMs = 100;
-  int num_iterations = timeout_secs * 1000 / kWaitTimeMs;
+  int num_iterations =
+      timeout.has_value() ? timeout->count() * 1000 / kWaitTimeMs : 0;
   int status = 0;
   for (;;) {
     status = Wait();
@@ -62,7 +67,7 @@ int Process::WaitLoop(co::Coroutine *c, int timeout_secs) {
       break;
     }
     c->Millisleep(kWaitTimeMs);
-    if (timeout_secs != -1) {
+    if (timeout.has_value()) {
       num_iterations--;
       if (num_iterations == 0) {
         break;
@@ -156,8 +161,7 @@ StaticProcess::StartInternal(const std::vector<std::string> extra_env_vars,
             return;
           }
         }
-        int status = proc->WaitLoop(c, -1);
-        
+        int status = proc->WaitLoop(c, std::nullopt);
         // The process might have died due to an external signal.  If we didn't
         // kill it, we won't have removed it from the maps.  We try to do this
         // now but ignore it if it's already gone.
@@ -708,19 +712,19 @@ absl::Status Process::Stop(co::Coroutine *c) {
           client->Log(proc->Name(), toolbelt::LogLevel::kInfo,
                       "Killing process %s with SIGINT (timeout %d seconds)",
                       proc->Name().c_str(), timeout);
-          kill(-proc->GetPid(), SIGINT);
-          (void)proc->WaitLoop(c2, timeout);
+          kill(proc->GetPid(), SIGINT);
+          (void)proc->WaitLoop(c2, std::chrono::seconds(timeout));
           if (!proc->IsRunning()) {
             return;
           }
         }
         timeout = proc->SigTermTimeoutSecs();
         if (timeout > 0) {
-          kill(-proc->GetPid(), SIGTERM);
+          kill(proc->GetPid(), SIGTERM);
           client->Log(proc->Name(), toolbelt::LogLevel::kInfo,
                       "Killing process %s with SIGTERM (timeout %d seconds)",
                       proc->Name().c_str(), timeout);
-          (void)proc->WaitLoop(c2, timeout);
+          (void)proc->WaitLoop(c2, std::chrono::seconds(timeout));
         }
 
         // Always send SIGKILL if it's still running.  It can't ignore this.
@@ -728,7 +732,7 @@ absl::Status Process::Stop(co::Coroutine *c) {
           client->Log(proc->Name(), toolbelt::LogLevel::kInfo,
                       "Killing process %s with SIGKILL", proc->Name().c_str());
 
-          kill(-proc->GetPid(), SIGKILL);
+          kill(proc->GetPid(), SIGKILL);
         }
       }));
   return client_->RemoveProcess(this);
@@ -774,7 +778,7 @@ absl::Status Zygote::Start(co::Coroutine *c) {
   // Open a listening Unix Domain Socket for the zygote to connect to.
   toolbelt::UnixSocket listen_socket;
 
-  std::pair<std::string, int> socket_and_fd = BuildControlSocketName();
+  std::pair<std::string, int> socket_and_fd = BuildZygoteSocketName();
   std::string socket_name = socket_and_fd.first;
   remove(socket_name.c_str());
   absl::Status status = listen_socket.Bind(socket_name, true);
@@ -784,6 +788,7 @@ absl::Status Zygote::Start(co::Coroutine *c) {
   if (!status.ok()) {
     return status;
   }
+
   std::vector<std::string> zygoteEnv = {
       absl::StrFormat("STAGEZERO_ZYGOTE_SOCKET_NAME=%s", socket_name)};
 
@@ -794,7 +799,7 @@ absl::Status Zygote::Start(co::Coroutine *c) {
   }
 
   // Wait for the zygote to connect to the socket in a coroutine.
-  client_->AddCoroutine(std::make_unique<co::Coroutine>(scheduler_, [
+  auto acceptor = new co::Coroutine(scheduler_, [
     proc = shared_from_this(), listen_socket = std::move(listen_socket),
     client = client_
   ](co::Coroutine * c) mutable {
@@ -805,7 +810,7 @@ absl::Status Zygote::Start(co::Coroutine *c) {
                   proc->Name().c_str(), s.status().ToString().c_str());
       return;
     }
-    auto *zygote = static_cast<Zygote *>(proc.get());
+    auto zygote = std::static_pointer_cast<Zygote>(proc);
     zygote->SetControlSocket(std::move(*s));
     client->Log(proc->Name(), toolbelt::LogLevel::kInfo,
                 "Zygote control socket open");
@@ -815,11 +820,50 @@ absl::Status Zygote::Start(co::Coroutine *c) {
                   eventStatus.ToString().c_str());
       return;
     }
-  }));
+    // Read from notification pipe to detect process death notifications.
+    std::shared_ptr<StreamInfo> notify_stream = proc->FindNotifyStream();
+    if (notify_stream != nullptr) {
+      int notify_fd = notify_stream->pipe.ReadFd().Fd();
+
+      // Close write end now that zygote has it open.
+      notify_stream->pipe.WriteFd().Reset();
+
+      for (;;) {
+        uint64_t pid_and_status;
+        c->Wait(notify_fd);
+
+        ssize_t n = read(notify_fd, &pid_and_status, sizeof(pid_and_status));
+        if (n <= 0) {
+          // EOF or error means zygote is no longer running.  Close all the
+          // notification pipes to the virtual processes using the zygote.
+          zygote->ForeachVirtualProcess(
+              [](std::shared_ptr<VirtualProcess> p) { p->CloseNotifyPipe(); });
+          return;
+        }
+        if (n == sizeof(pid_and_status) &&
+            (pid_and_status & (1LL << 63)) != 0) {
+          // Zygote notified us of a process going down.  This contains
+          // both the process id and the status.
+          int pid = (pid_and_status >> 32) & 0x7fffffff;
+          int64_t status = pid_and_status & 0xffffffff;
+          StageZero &stagezero = client->GetStageZero();
+          auto p = stagezero.FindVirtualProcess(pid);
+          if (p != nullptr) {
+            p->Notify(status);
+          } else {
+            client->Log(proc->Name(), toolbelt::LogLevel::kError,
+                        "Can't find virtual process %d\n", pid);
+          }
+        }
+      }
+    }
+
+  });
+  client_->AddCoroutine(std::unique_ptr<co::Coroutine>(acceptor));
   return absl::OkStatus();
 }
 
-std::pair<std::string, int> Zygote::BuildControlSocketName() {
+std::pair<std::string, int> Zygote::BuildZygoteSocketName() {
   char socket_file[NAME_MAX]; // Unique file in file system.
   snprintf(socket_file, sizeof(socket_file), "/tmp/zygote-%s.XXXXXX",
            Name().c_str());
@@ -839,29 +883,37 @@ Zygote::Spawn(const stagezero::control::LaunchVirtualProcessRequest &req,
   std::vector<toolbelt::FileDescriptor> fds;
   int fd_index = 0;
   for (auto &stream : streams) {
-    if (stream->disposition == proto::StreamControl::CLOSE) {
+    switch (stream->disposition) {
+    case proto::StreamControl::CLOSE: {
       auto *s = spawn.add_streams();
       s->set_fd(stream->fd);
       s->set_close(true);
-      continue;
+      break;
     }
-    if (stream->disposition == proto::StreamControl::FILENAME) {
+    case proto::StreamControl::FILENAME: {
       auto *s = spawn.add_streams();
       s->set_fd(stream->fd);
       s->set_filename(stream->filename);
       s->set_direction(stream->direction);
       // The file is opened by spawned process since it knows the PID.
-      continue;
+      break;
     }
-    if (stream->disposition != proto::StreamControl::STAGEZERO) {
-      const toolbelt::FileDescriptor &fd =
-          stream->direction == proto::StreamControl::OUTPUT
-              ? stream->pipe.WriteFd()
-              : stream->pipe.ReadFd();
-      auto *s = spawn.add_streams();
-      s->set_fd(stream->fd);
-      fds.push_back(fd);
-      s->set_index(fd_index++);
+    case proto::StreamControl::NOTIFY:
+      fds.push_back(stream->pipe.WriteFd());
+      spawn.set_notify_fd_index(fd_index++);
+      break;
+    default:
+      if (stream->disposition != proto::StreamControl::STAGEZERO) {
+        const toolbelt::FileDescriptor &fd =
+            stream->direction == proto::StreamControl::OUTPUT
+                ? stream->pipe.WriteFd()
+                : stream->pipe.ReadFd();
+        auto *s = spawn.add_streams();
+        s->set_fd(stream->fd);
+        fds.push_back(fd);
+        s->set_index(fd_index++);
+        break;
+      }
     }
   }
 
@@ -943,11 +995,21 @@ VirtualProcess::VirtualProcess(
                     req.opts().sigterm_shutdown_timeout_secs());
   SetUserAndGroup(req.opts().user(), req.opts().group());
   critical_ = req.opts().critical();
+
+  // Create the notification pipe for zygote notifications.
+  absl::StatusOr<toolbelt::Pipe> pipe = toolbelt::Pipe::Create();
+  if (!pipe.ok()) {
+    abort();
+  }
+  notify_pipe_ = *pipe;
 }
 
 absl::Status VirtualProcess::Start(co::Coroutine *c) {
-  std::shared_ptr<Zygote> zygote = client_->FindZygote(req_.proc().zygote());
-  if (zygote == nullptr) {
+  auto proc = shared_from_this();
+  auto vproc = std::static_pointer_cast<VirtualProcess>(proc);
+
+  zygote_ = client_->FindZygote(req_.proc().zygote());
+  if (zygote_ == nullptr) {
     return absl::InternalError(
         absl::StrFormat("No such zygote %s", req_.proc().zygote()));
   }
@@ -960,7 +1022,7 @@ absl::Status VirtualProcess::Start(co::Coroutine *c) {
     return status;
   }
 
-  absl::StatusOr<int> pid = zygote->Spawn(req_, GetStreams(), c);
+  absl::StatusOr<int> pid = zygote_->Spawn(req_, GetStreams(), c);
   if (!pid.ok()) {
     return absl::InternalError(
         absl::StrFormat("Failed to spawn virtual process %s: %s", Name(),
@@ -969,10 +1031,40 @@ absl::Status VirtualProcess::Start(co::Coroutine *c) {
   SetPid(*pid);
   SetProcessId();
 
+  zygote_->AddVirtualProcess(vproc);
+
+  if (req_.opts().notify()) {
+    // Wait for notification from process.
+    std::shared_ptr<StreamInfo> s = FindNotifyStream();
+    if (s != nullptr) {
+      int notify_fd = s->pipe.ReadFd().Fd();
+      uint64_t timeout_ns = StartupTimeoutSecs() * 1000000000LL;
+      int wait_fd = c->Wait(notify_fd, POLLIN, timeout_ns);
+      if (wait_fd == -1) {
+        // Timeout waiting for notification.
+        client_->Log(
+            Name(), toolbelt::LogLevel::kError,
+            "Process %s failed to notify us of startup after %d seconds",
+            Name().c_str(), StartupTimeoutSecs());
+
+        // Stop the process as it failed to notify us.
+        (void)Stop(c);
+        return absl::OkStatus();
+      }
+      // Read the data from the notify pipe.
+      int64_t val;
+      (void)read(notify_fd, &val, 8);
+      // Nothing to interpret from this (yet?)
+
+      client_->Log(Name(), toolbelt::LogLevel::kInfo,
+                   "Process %s notified us of startup", Name().c_str());
+    }
+  }
+
   client_->AddCoroutine(std::make_unique<co::Coroutine>(
-      scheduler_, [ proc = shared_from_this(), zygote,
-                    client = client_ ](co::Coroutine * c2) {
-        // Send start event to client->
+      scheduler_,
+      [ proc, vproc, zygote = zygote_, client = client_ ](co::Coroutine * c2) {
+        // Send start event to client.
         absl::Status eventStatus = client->SendProcessStartEvent(proc->GetId());
         if (!eventStatus.ok()) {
           client->Log(proc->Name(), toolbelt::LogLevel::kError, "%s",
@@ -980,7 +1072,9 @@ absl::Status VirtualProcess::Start(co::Coroutine *c) {
           return;
         }
 
-        int status = proc->WaitLoop(c2, -1);
+        int status = vproc->WaitForZygoteNotification(c2);
+        zygote->RemoveVirtualProcess(vproc);
+
         bool signaled = WIFSIGNALED(status);
         bool exited = WIFEXITED(status);
         int term_sig = WTERMSIG(status);
@@ -1019,6 +1113,26 @@ int VirtualProcess::Wait() {
     return 127;
   }
   return 0;
+}
+
+int VirtualProcess::WaitForZygoteNotification(co::Coroutine *c) {
+  int status;
+  c->Wait(notify_pipe_.ReadFd().Fd());
+  ssize_t n = read(notify_pipe_.ReadFd().Fd(), &status, sizeof(status));
+  if (n <= 0) {
+    // EOF from notification means zygote is no longer running.
+    (void)Stop(c);
+    return 127;
+  }
+  if (absl::Status status = client_->GetStageZero().RemoveVirtualProcess(pid_);
+      !status.ok()) {
+    client_->Log(Name(), toolbelt::LogLevel::kError,
+                 "Failed to remove virtual process %d", pid_);
+  }
+  if (n == sizeof(status)) {
+    return static_cast<int>(status);
+  }
+  return 127; // Something to say that we have a problem.
 }
 
 } // namespace stagezero

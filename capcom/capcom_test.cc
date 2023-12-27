@@ -41,22 +41,23 @@ public:
     StartCapcom();
   }
 
-  static void StartStageZero() {
+  static void StartStageZero(int port = 6522) {
     printf("Starting StageZero\n");
 
     // Capcom will write to this pipe to notify us when it
     // has started and stopped.  This end of the pipe is blocking.
     (void)pipe(stagezero_pipe_);
 
-    stagezero_addr_ = toolbelt::InetAddress("localhost", 6522);
+    stagezero_addr_ = toolbelt::InetAddress("localhost", port);
     stagezero_ = std::make_unique<stagezero::StageZero>(
         stagezero_scheduler_, stagezero_addr_, true, "/tmp",
         stagezero_pipe_[1]);
 
     // Start stagezero running in a thread.
     stagezero_thread_ = std::thread([]() {
+
       absl::Status s = stagezero_->Run();
-      if (!s.ok()) {
+    if (!s.ok()) {
         fprintf(stderr, "Error running stagezero: %s\n", s.ToString().c_str());
         exit(1);
       }
@@ -65,21 +66,21 @@ public:
     // Wait stagezero to tell us that it's running.
     char buf[8];
     (void)::read(stagezero_pipe_[0], buf, 8);
-    std::cout << "stagezero running\n";
     signal(SIGINT, SignalHandler);
     signal(SIGQUIT, SignalQuitHandler);
   }
 
-  static void StartCapcom() {
+  static void StartCapcom(int port = 6523, int stagezero_port = 6522) {
     printf("Starting Capcom\n");
 
     // Capcom will write to this pipe to notify us when it
     // has started and stopped.  This end of the pipe is blocking.
     (void)pipe(capcom_pipe_);
 
-    capcom_addr_ = toolbelt::InetAddress("localhost", 6523);
+    capcom_addr_ = toolbelt::InetAddress("localhost", port);
     capcom_ = std::make_unique<stagezero::capcom::Capcom>(
-        capcom_scheduler_, capcom_addr_, true, 6522, "", capcom_pipe_[1]);
+        capcom_scheduler_, capcom_addr_, true, stagezero_port, "", false,
+        capcom_pipe_[1]);
 
     // Start capcom running in a thread.
     capcom_thread_ = std::thread([]() {
@@ -135,10 +136,10 @@ public:
   void TearDown() override {}
 
   void InitClient(stagezero::capcom::client::Client &client,
-                  const std::string &name) {
-    absl::Status s = client.Init(CapcomAddr(), name,
-                                 stagezero::kSubsystemStatusEvents |
-                                     stagezero::kOutputEvents);
+                  const std::string &name,
+                  int event_mask = stagezero::kSubsystemStatusEvents |
+                                   stagezero::kOutputEvents) {
+    absl::Status s = client.Init(CapcomAddr(), name, event_mask);
     std::cout << "Init status: " << s << std::endl;
     ASSERT_TRUE(s.ok());
   }
@@ -195,6 +196,30 @@ public:
       }
     }
     abort();
+  }
+
+  void WaitForAlarm(stagezero::capcom::client::Client &client,
+                    stagezero::Alarm::Type type,
+                    stagezero::Alarm::Severity severity,
+                    stagezero::Alarm::Reason reason) {
+    std::cout << "waiting for alarm\n";
+    for (int retry = 0; retry < 10; retry++) {
+      absl::StatusOr<std::shared_ptr<stagezero::Event>> e =
+          client.WaitForEvent();
+      ASSERT_TRUE(e.ok());
+
+      std::shared_ptr<stagezero::Event> event = *e;
+      std::cerr << "event: " << (int)event->type << std::endl;
+      if (event->type == stagezero::EventType::kAlarm) {
+        stagezero::Alarm alarm = std::get<1>(event->event);
+        if (alarm.type == type && alarm.severity == severity &&
+            alarm.reason == reason) {
+          std::cout << "alarm received\n";
+          return;
+        }
+      }
+    }
+    FAIL();
   }
 
   void SendInput(stagezero::capcom::client::Client &client,
@@ -836,6 +861,7 @@ TEST_F(CapcomTest, VirtualProcess) {
                       .zygote = "zygote1",
                       .dso = "${runfiles_dir}/__main__/testdata/module.so",
                       .main_func = "Main",
+                      .notify = true,
                   }}});
   ASSERT_TRUE(status.ok());
 
@@ -884,6 +910,7 @@ TEST_F(CapcomTest, AbortVirtual) {
                       .zygote = "zygote1",
                       .dso = "${runfiles_dir}/__main__/testdata/module.so",
                       .main_func = "Main",
+                      .notify = false,
                   }}});
   ASSERT_TRUE(status.ok());
 
@@ -900,6 +927,7 @@ TEST_F(CapcomTest, AbortVirtual) {
   status = client.Abort("Just because", false);
   ASSERT_TRUE(status.ok());
 
+  std::cerr << "WAITING FOR OFFLINE\n";
   WaitForState(client, "virtual", AdminState::kOffline, OperState::kOffline);
 
   status = client.RemoveSubsystem("virtual", false);

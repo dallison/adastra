@@ -38,6 +38,7 @@ absl::Status ZygoteCore::Run() {
       int64_t val = 1;
       (void)write(notify_fd, &val, 8);
     }
+    notification_pipe_.SetFd(notify_fd);
   }
 
   const char *sname = getenv("STAGEZERO_ZYGOTE_SOCKET_NAME");
@@ -70,8 +71,13 @@ absl::Status ZygoteCore::Run() {
           int status;
           pid_t pid = waitpid(-1, &status, WNOHANG);
           if (pid > 0) {
-            // A process died.
+            // A process died.  Write the pid and status to the notification
+            // pipe.  Set the top bit to distinguish this from any other
+            // notification.
             logger_.Log(toolbelt::LogLevel::kInfo, "Process %d died", pid);
+            uint64_t val = (1LL << 63) | (static_cast<uint64_t>(pid) << 32) |
+                           static_cast<uint64_t>(status);
+            (void)write(notification_pipe_.Fd(), &val, 8);
           }
           c->Millisleep(kWaitTimeMs);
         }
@@ -162,7 +168,6 @@ ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
     int e = ::stat(exe.c_str(), &st);
     if (e == -1) {
       // Can't find the shared object.
-      std::cerr << "Failed to find shared object " << exe << std::endl;
       return absl::InternalError(
           absl::StrFormat("Can't find shared object %s", exe));
     }
@@ -209,6 +214,18 @@ ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
       fds_to_keep_open.insert(i);
     }
 
+    // The notify fd is added as an exported symbol.
+    if (req.has_notify_fd_index()) {
+      toolbelt::FileDescriptor &notify_fd = fds[req.notify_fd_index()];
+      fds_to_keep_open.insert(notify_fd.Fd());
+
+      // The zygote's notify fd is in the current environment and we will
+      // replace it.
+      unsetenv("STAGEZERO_NOTIFY_FD");
+      local_symbols.AddSymbol("STAGEZERO_NOTIFY_FD",
+                              absl::StrFormat("%d", notify_fd.Fd()), true);
+    }
+
     for (auto &stream : req.streams()) {
       if (stream.has_filename()) {
         // For files, we have deferred the open until we know the pid
@@ -219,7 +236,6 @@ ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
                         : (O_WRONLY | O_TRUNC | O_CREAT);
 
         std::string filename = stream.filename();
-        std::cerr << "opening filename " << filename << std::endl;
         int file_fd =
             open(local_symbols.ReplaceSymbols(filename).c_str(), oflag, 0777);
         if (file_fd == -1) {
@@ -237,8 +253,6 @@ ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
         }
         continue;
       }
-      std::cerr << getpid() << " redirecting stream " << stream.fd()
-                << " index " << stream.index() << std::endl;
       (void)close(stream.fd());
       if (!stream.close()) {
         int e = dup2(fds[stream.index()].Fd(), stream.fd());
@@ -247,18 +261,13 @@ ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
                     << strerror(errno) << std::endl;
           exit(1);
         }
-        std::cerr << getpid() << " keeping " << stream.fd() << " open\n";
         fds_to_keep_open.insert(stream.fd());
-        std::cerr << "kept " << stream.fd() << " open\n";
       } else {
         // Don't keep this open.
-        std::cerr << getpid() << " not keeping " << stream.fd() << " open\n";
         fds_to_keep_open.erase(stream.fd());
       }
       fds[stream.index()].Reset();
     }
-
-    std::cerr << "Invoking main\n";
 
     // Close all open file descriptors that we don't want to explicitly
     // keep open.
@@ -323,9 +332,6 @@ void ZygoteCore::InvokeMainAfterSpawn(const control::SpawnRequest &&req,
     setenv(name.c_str(), symbol->Value().c_str(), 1);
   }
 
-  setpgrp();
-
-  std::cerr << "calling main\n";
   // Convert to a function pointer and call main.
   using Ptr =
       int (*)(SymbolTable && local_symbols, int, const char **, const char **);

@@ -12,6 +12,7 @@
 #include "stagezero/symbols.h"
 #include "toolbelt/logging.h"
 #include "toolbelt/sockets.h"
+#include "toolbelt/pipe.h"
 
 #include <memory>
 
@@ -38,6 +39,7 @@ class ZygoteCore {
   co::CoroutineScheduler scheduler_;
   std::vector<std::string> args_;
   std::unique_ptr<toolbelt::UnixSocket> control_socket_;
+  toolbelt::FileDescriptor notification_pipe_;
   std::unique_ptr<co::Coroutine> server_;
   std::unique_ptr<co::Coroutine> monitor_;
   char buffer_[kBufferSize];

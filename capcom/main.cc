@@ -33,6 +33,7 @@ ABSL_FLAG(std::string, log_file, "/tmp/capcom.pb", "Capcom log file");
 ABSL_FLAG(std::string, listen_address, "",
           "IP Address or hostname to listen on");
 ABSL_FLAG(bool, silent, false, "Don't log messages to output");
+ABSL_FLAG(bool, test_mode, false, "Exit if any subsystem fails (no restarts)");
 
 int main(int argc, char **argv) {
   absl::ParseCommandLine(argc, argv);
@@ -51,10 +52,10 @@ int main(int argc, char **argv) {
       listen_addr.empty() ? toolbelt::InetAddress::AnyAddress(listen_port)
                           : toolbelt::InetAddress(listen_addr, listen_port));
 
-  stagezero::capcom::Capcom capcom(scheduler, capcom_addr,
-                                   !absl::GetFlag(FLAGS_silent),
-                                   absl::GetFlag(FLAGS_local_stagezero_port),
-                                   absl::GetFlag(FLAGS_log_file), -1);
+  stagezero::capcom::Capcom capcom(
+      scheduler, capcom_addr, !absl::GetFlag(FLAGS_silent),
+      absl::GetFlag(FLAGS_local_stagezero_port), absl::GetFlag(FLAGS_log_file),
+      absl::GetFlag(FLAGS_test_mode), -1);
   g_capcom = &capcom;
 
   if (absl::Status status = capcom.Run(); !status.ok()) {

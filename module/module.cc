@@ -37,12 +37,12 @@ absl::Status Module::ModuleInit() {
     return sym->Value();
   }
 
-absl::Status Module::NotifyStartup() {
+absl::Status Module::NotifyStartup(const SymbolTable& symbols) {
   // Notify stagezero of startup.
-  char *notify = getenv("STAGEZERO_NOTIFY_FD");
+  Symbol* notify = symbols.FindSymbol("STAGEZERO_NOTIFY_FD");
   if (notify != nullptr) {
     int notify_fd;
-    bool ok = absl::SimpleAtoi(notify, &notify_fd);
+    bool ok = absl::SimpleAtoi(notify->Value(), &notify_fd);
     if (ok) {
       int64_t val = 1;
       (void)write(notify_fd, &val, 8);

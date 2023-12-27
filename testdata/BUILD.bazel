@@ -44,6 +44,8 @@ cc_binary(
     linkstatic = 0,
     deps = [
       "//stagezero:symbols_lib",
+      "@com_google_absl//absl/debugging:failure_signal_handler",
+      "@com_google_absl//absl/debugging:symbolize",
     ]
 )
 

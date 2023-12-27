@@ -409,7 +409,6 @@ void ClientHandler::HandleGetAlarms(const proto::GetAlarmsRequest &req,
 void ClientHandler::HandleAbort(const proto::AbortRequest &req,
                                 proto::AbortResponse *response,
                                 co::Coroutine *c) {
-                                  std::cerr << "CAPCOM ABORT: " << req.DebugString();
   if (absl::Status status = capcom_.Abort(req.reason(), req.emergency(), c); !status.ok()) {
     response->set_error(status.ToString());
   }

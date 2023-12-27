@@ -16,6 +16,9 @@
 #include "toolbelt/sockets.h"
 #include <memory>
 #include <string>
+#include <chrono>
+#include <optional>
+#include "absl/container/flat_hash_set.h"
 
 namespace stagezero {
 
@@ -30,6 +33,8 @@ struct StreamInfo {
   bool tty;
   std::string filename;     // Filename for read/write.
 };
+
+class VirtualProcess;
 
 // Ownership of processes is complex due to the fact that the
 // process will run coroutines.  We store shared_ptrs to the
@@ -48,6 +53,7 @@ public:
   void KillNow();
 
   virtual bool IsZygote() const { return false; }
+  virtual bool IsVirtual() const { return false; }
   absl::Status SendInput(int fd, const std::string &data, co::Coroutine *c);
 
   absl::Status CloseFileDescriptor(int fd);
@@ -56,7 +62,7 @@ public:
 
   const std::string &Name() const { return name_; }
 
-  int WaitLoop(co::Coroutine *c, int timeout_secs);
+  int WaitLoop(co::Coroutine *c, std::optional<std::chrono::seconds> timeout);
 
   bool IsStopping() const { return stopping_; }
   bool IsRunning() const { return running_; }
@@ -66,7 +72,9 @@ public:
   virtual bool WillNotify() const = 0;
   virtual int StartupTimeoutSecs() const = 0;
   bool IsCritical() const { return critical_; }
-  
+
+  virtual void Notify(int64_t status) {}
+
   const std::shared_ptr<StreamInfo> FindNotifyStream() const;
 
   const std::vector<std::shared_ptr<StreamInfo>> &GetStreams() const {
@@ -151,10 +159,26 @@ public:
     control_socket_ = std::move(s);
   }
 
+  void AddVirtualProcess(std::shared_ptr<VirtualProcess> p) {
+    virtual_processes_.insert(p);
+  }
+
+
+  void RemoveVirtualProcess(std::shared_ptr<VirtualProcess> p) {
+    virtual_processes_.erase(p);
+  }
+
+  void ForeachVirtualProcess(std::function<void(std::shared_ptr<VirtualProcess>)> fn) {
+    for (auto& v : virtual_processes_) {
+      fn(v);
+    }
+  }
+
 private:
-  std::pair<std::string, int> BuildControlSocketName();
+  std::pair<std::string, int> BuildZygoteSocketName();
 
   toolbelt::UnixSocket control_socket_;
+  absl::flat_hash_set<std::shared_ptr<VirtualProcess>> virtual_processes_;
 };
 
 class VirtualProcess : public Process {
@@ -169,10 +193,23 @@ public:
     return req_.opts().startup_timeout_secs();
   }
 
+  void CloseNotifyPipe() {
+    notify_pipe_.WriteFd().Reset();
+  }
+
+  void Notify(int64_t status) override {
+    (void)write(notify_pipe_.WriteFd().Fd(), &status, 8);
+  }
+
+  bool IsVirtual() const override { return true; }
+
 private:
   int Wait() override;
+  int WaitForZygoteNotification(co::Coroutine* c);
 
   stagezero::control::LaunchVirtualProcessRequest req_;
+  toolbelt::Pipe notify_pipe_;
+  std::shared_ptr<Zygote> zygote_;
 };
 
 } // namespace stagezero

@@ -2,18 +2,18 @@
 // All Rights Reserved
 // See LICENSE file for licensing information.
 
-#include "stagezero/client/client.h"
-#include <gtest/gtest.h>
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
+#include "stagezero/client/client.h"
 #include "stagezero/stagezero.h"
+#include <gtest/gtest.h>
 
-#include <inttypes.h>
-#include <signal.h>
-#include <sys/resource.h>
 #include <fstream>
+#include <inttypes.h>
 #include <memory>
+#include <signal.h>
 #include <sstream>
+#include <sys/resource.h>
 #include <thread>
 
 ABSL_FLAG(bool, start_server, true, "Start the stagezero server");
@@ -21,7 +21,7 @@ ABSL_FLAG(bool, start_server, true, "Start the stagezero server");
 void SignalHandler(int sig);
 
 class ClientTest : public ::testing::Test {
- public:
+public:
   // We run one server for the duration of the whole test suite.
   static void SetUpTestSuite() {
     if (!absl::GetFlag(FLAGS_start_server)) {
@@ -35,8 +35,8 @@ class ClientTest : public ::testing::Test {
     (void)pipe(server_pipe_);
 
     addr_ = toolbelt::InetAddress("localhost", 6522);
-    server_ = std::make_unique<stagezero::StageZero>(scheduler_, addr_, true, "/tmp",
-                                                     server_pipe_[1]);
+    server_ = std::make_unique<stagezero::StageZero>(scheduler_, addr_, true,
+                                                     "/tmp", server_pipe_[1]);
 
     // Start server running in a thread.
     server_thread_ = std::thread([]() {
@@ -76,7 +76,8 @@ class ClientTest : public ::testing::Test {
   void SetUp() override { signal(SIGPIPE, SIG_IGN); }
   void TearDown() override {}
 
-  void InitClient(stagezero::Client &client, const std::string &name, int event_mask = stagezero::kNoEvents) {
+  void InitClient(stagezero::Client &client, const std::string &name,
+                  int event_mask = stagezero::kNoEvents) {
     absl::Status s = client.Init(Addr(), name, event_mask);
     std::cout << "Init status: " << s << std::endl;
     ASSERT_TRUE(s.ok());
@@ -136,7 +137,7 @@ class ClientTest : public ::testing::Test {
 
   static stagezero::StageZero *Server() { return server_.get(); }
 
- private:
+private:
   static co::CoroutineScheduler scheduler_;
   static std::string socket_;
   static int server_pipe_[2];
@@ -152,6 +153,9 @@ std::thread ClientTest::server_thread_;
 toolbelt::InetAddress ClientTest::addr_;
 
 void SignalHandler(int sig) {
+  if (sig == SIGQUIT) {
+    ClientTest::Server()->ShowCoroutines();
+  }
   printf("Signal %d\n", sig);
   ClientTest::Server()->Stop();
   ClientTest::WaitForServerStop();
@@ -532,12 +536,12 @@ TEST_F(ClientTest, Vars) {
       client.GetGlobalVariable("foobar");
   ASSERT_TRUE(var_status2.ok());
   ASSERT_EQ("barfoo", var_status2->first);
-  ASSERT_FALSE(var_status2->second);  // Not exported.
+  ASSERT_FALSE(var_status2->second); // Not exported.
 
   var_status2 = client.GetGlobalVariable("FOOBAR");
   ASSERT_TRUE(var_status2.ok());
   ASSERT_EQ("BARFOO", var_status2->first);
-  ASSERT_TRUE(var_status2->second);  // Exported.
+  ASSERT_TRUE(var_status2->second); // Exported.
 }
 
 TEST_F(ClientTest, ProcessVars) {
@@ -554,12 +558,12 @@ TEST_F(ClientTest, ProcessVars) {
       client.GetGlobalVariable("foobar");
   ASSERT_TRUE(var_status2.ok());
   ASSERT_EQ("barfoo", var_status2->first);
-  ASSERT_FALSE(var_status2->second);  // Not exported.
+  ASSERT_FALSE(var_status2->second); // Not exported.
 
   var_status2 = client.GetGlobalVariable("FOOBAR");
   ASSERT_TRUE(var_status2.ok());
   ASSERT_EQ("BARFOO", var_status2->first);
-  ASSERT_TRUE(var_status2->second);  // Exported.
+  ASSERT_TRUE(var_status2->second); // Exported.
 
   var_status2 = client.GetGlobalVariable("runfiles_dir");
   ASSERT_TRUE(var_status2.ok());
@@ -686,7 +690,8 @@ TEST_F(ClientTest, LaunchAndStopVirtual) {
       client.LaunchVirtualProcess("modtest", "zygote",
                                   "${runfiles_dir}/__main__/"
                                   "testdata/module.so",
-                                  "Main", {.args = {"ignore_signal"}});
+                                  "Main",
+                                  {.args = {"ignore_signal"}, .notify = true});
   ASSERT_TRUE(virt_status.ok());
   std::string virt_process_id = virt_status->first;
   WaitForEvent(client, stagezero::control::Event::kStart);
@@ -731,6 +736,7 @@ TEST_F(ClientTest, LaunchAndStopVirtualVars) {
                   {
                       {.name = "DAVE", .value = "ALLISON", .exported = true},
                   },
+              .notify = true,
           });
   ASSERT_TRUE(virt_status.ok());
   std::string virt_process_id = virt_status->first;
@@ -765,7 +771,7 @@ TEST_F(ClientTest, LaunchAndKillVirtual) {
       client.LaunchVirtualProcess("modtest", "zygote",
                                   "${runfiles_dir}/__main__/"
                                   "testdata/module.so",
-                                  "Main");
+                                  "Main", {.notify = true});
   ASSERT_TRUE(virt_status.ok());
   int pid = virt_status->second;
   WaitForEvent(client, stagezero::control::Event::kStart);

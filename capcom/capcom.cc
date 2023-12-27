@@ -9,9 +9,9 @@ namespace stagezero::capcom {
 
 Capcom::Capcom(co::CoroutineScheduler &scheduler, toolbelt::InetAddress addr,
                bool log_to_output, int local_stagezero_port,
-               const std::string &log_file_name, int notify_fd)
+               const std::string &log_file_name, bool test_mode, int notify_fd)
     : co_scheduler_(scheduler), addr_(std::move(addr)),
-      log_to_output_(log_to_output), notify_fd_(notify_fd),
+      log_to_output_(log_to_output), test_mode_(test_mode), notify_fd_(notify_fd),
       logger_("capcom", log_to_output) {
   local_compute_ = {
       .name = "<localhost>",
@@ -378,7 +378,6 @@ absl::Status Capcom::Abort(const std::string &reason, bool emergency,
         co_scheduler_, [this, reason](co::Coroutine *c2) {
           std::string text = absl::StrFormat(
               "Capcom shutting down in an emergency abort: %s", reason);
-
           SendAlarm({.name = "Capcom",
                      .type = Alarm::Type::kSystem,
                      .severity = Alarm::Severity::kCritical,

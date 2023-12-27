@@ -39,11 +39,14 @@ public:
   Capcom(co::CoroutineScheduler &scheduler, toolbelt::InetAddress addr,
          bool log_to_output, int local_stagezero_port,
          const std::string &log_file_name = "/tmp/capcom.pb",
+         bool test_mode = false,
          int notify_fd = -1);
   ~Capcom();
 
   absl::Status Run();
   void Stop();
+
+  void EnterTestMode() { test_mode_ = true; }
 
 private:
   friend class ClientHandler;
@@ -150,11 +153,13 @@ private:
            ...);
 
   bool IsEmergencyAborting() { return emergency_aborting_; }
+  bool TestMode() const { return test_mode_; }
   
 private:
   co::CoroutineScheduler &co_scheduler_;
   toolbelt::InetAddress addr_;
   bool log_to_output_;
+  bool test_mode_;
   toolbelt::FileDescriptor notify_fd_;
 
   Compute local_compute_;

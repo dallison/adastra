@@ -1078,16 +1078,20 @@ Subsystem::StateTransition Subsystem::RestartIfPossibleAfterProcessCrash(
   if (IsCritical()) {
     // A critical subsystem has had a process crash.  We need to bring the
     // whole system down.
-    absl::Status status = capcom_.Abort(
-        absl::StrFormat("Process %s of critical subsystem %s has "
-                        "suffered a failure and we need to shut down",
-                        proc->Name(), Name()),
-        /*emergency=*/true, c);
-    if (!status.ok()) {
-      capcom_.logger_.Log(toolbelt::LogLevel::kFatal,
-                          "Failed to abort cleanly, just shutting down: %s",
-                          status.ToString().c_str());
-    }
+    capcom_.AddCoroutine(std::make_unique<co::Coroutine>(
+        capcom_.co_scheduler_, [this, proc](co::Coroutine *c2) {
+          absl::Status status = capcom_.Abort(
+              absl::StrFormat("Process %s of critical subsystem %s has "
+                              "suffered a failure and we need to shut down",
+                              proc->Name(), Name()),
+              /*emergency=*/true, c2);
+          if (!status.ok()) {
+            capcom_.logger_.Log(
+                toolbelt::LogLevel::kFatal,
+                "Failed to abort cleanly, just shutting down: %s",
+                status.ToString().c_str());
+          }
+        }));
     return StateTransition::kStay; // Doesn't matter.
   }
   proc->SetStopped();
@@ -1113,16 +1117,42 @@ Subsystem::StateTransition Subsystem::RestartIfPossibleAfterProcessCrash(
       reason = absl::StrFormat("received signal %d \"%s\"", signal_or_status,
                                strsignal(signal_or_status));
     }
-    proc->RaiseAlarm(capcom_,
-                     {.name = proc->Name(),
-                      .type = Alarm::Type::kProcess,
-                      .severity = Alarm::Severity::kCritical,
-                      .reason = Alarm::Reason::kCrashed,
-                      .status = Alarm::Status::kRaised,
-                      .details = absl::StrFormat(
-                          "Oneshot process %s %s, subsystem %s is broken",
-                          proc->Name(), reason, Name())});
-    return StateTransition::kLeave;
+    if (!capcom_.TestMode()) {
+      proc->RaiseAlarm(capcom_,
+                       {.name = proc->Name(),
+                        .type = Alarm::Type::kProcess,
+                        .severity = Alarm::Severity::kCritical,
+                        .reason = Alarm::Reason::kCrashed,
+                        .status = Alarm::Status::kRaised,
+                        .details = absl::StrFormat(
+                            "Oneshot process %s %s, subsystem %s is broken",
+                            proc->Name(), reason, Name())});
+      return StateTransition::kLeave;
+    }
+  }
+
+  // If we are test mode don't restart anything and perform an emergency
+  // abort.
+  if (capcom_.TestMode()) {
+    capcom_.logger_.Log(toolbelt::LogLevel::kError, "Test mode, shutting down");
+    capcom_.AddCoroutine(std::make_unique<
+                         co::Coroutine>(capcom_.co_scheduler_, [this, proc](
+                                                                   co::Coroutine
+                                                                       *c2) {
+      absl::Status status = capcom_.Abort(
+          absl::StrFormat(
+              "Process %s of subsystem %s has "
+              "suffered a failure and we are in test mode.  Shutting down now.",
+              proc->Name(), Name()),
+          /*emergency=*/true, c2);
+      if (!status.ok()) {
+        capcom_.logger_.Log(toolbelt::LogLevel::kFatal,
+                            "Failed to abort cleanly, just shutting down: %s",
+                            status.ToString().c_str());
+      }
+    }));
+
+    return StateTransition::kStay; // Doesn't matter.
   }
 
   if (num_restarts_ == max_restarts_) {

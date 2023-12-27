@@ -483,7 +483,7 @@ public:
       std::function<void(toolbelt::FileDescriptor, co::Coroutine *)> callback,
       short poll_events = POLLIN);
 
-  absl::Status NotifyStartup();
+  absl::Status NotifyStartup(const SymbolTable& symbols);
 
 private:
   template <typename T, typename D> friend class Subscriber;
@@ -825,7 +825,7 @@ Module::RegisterZeroCopyPublisher(
                 << ": " << status.ToString() << std::endl;                     \
       abort();                                                                 \
     }                                                                          \
-    if (absl::Status status = module->NotifyStartup(); !status.ok()) {         \
+    if (absl::Status status = module->NotifyStartup(symbols); !status.ok()) {         \
       std::cerr << "Module startup failed " << status.ToString() << std::endl; \
       abort();                                                                 \
     }                                                                          \
