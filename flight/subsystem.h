@@ -33,7 +33,7 @@ struct Process {
   std::string group;
   bool interactive = false;
   bool oneshot = false;
-  
+
   virtual ~Process() = default;
   virtual ProcessType Type() const = 0;
 };
@@ -63,6 +63,7 @@ struct Subsystem {
   std::vector<std::string> args;
   int max_restarts;
   bool critical = false;
+  bool disabled = false;
 };
 
 }  // namespace stagezero::flight

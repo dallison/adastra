@@ -8,6 +8,8 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
+#include "absl/debugging/failure_signal_handler.h"
+#include "absl/debugging/symbolize.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_format.h"
@@ -483,9 +485,9 @@ public:
       std::function<void(toolbelt::FileDescriptor, co::Coroutine *)> callback,
       short poll_events = POLLIN);
 
-  absl::Status NotifyStartup(const SymbolTable& symbols);
+  absl::Status NotifyStartup(const SymbolTable &symbols);
 
-private:
+protected:
   template <typename T, typename D> friend class Subscriber;
   template <typename T> friend class ZeroCopySubscriber;
   template <typename T, typename L, typename S> friend class Publisher;
@@ -499,6 +501,7 @@ private:
 
   stagezero::SymbolTable symbols_;
   subspace::Client subspace_client_;
+  char *argv0_;
 
   // All coroutines are owned by this set.
   absl::flat_hash_set<std::unique_ptr<co::Coroutine>> coroutines_;
@@ -811,6 +814,11 @@ Module::RegisterZeroCopyPublisher(
 #define _DEFINE_MODULE(_type, _main)                                           \
   extern "C" void _main(stagezero::SymbolTable &&symbols, int argc,            \
                         char **argv) {                                         \
+    absl::InitializeSymbolizer(argv[0]);                                       \
+                                                                               \
+    absl::InstallFailureSignalHandler({                                        \
+        .use_alternate_stack = false,                                          \
+    });                                                                        \
     std::unique_ptr<_type> module =                                            \
         std::make_unique<_type>(std::move(symbols));                           \
     /* Initialize the base module*/                                            \
@@ -825,7 +833,7 @@ Module::RegisterZeroCopyPublisher(
                 << ": " << status.ToString() << std::endl;                     \
       abort();                                                                 \
     }                                                                          \
-    if (absl::Status status = module->NotifyStartup(symbols); !status.ok()) {         \
+    if (absl::Status status = module->NotifyStartup(symbols); !status.ok()) {  \
       std::cerr << "Module startup failed " << status.ToString() << std::endl; \
       abort();                                                                 \
     }                                                                          \

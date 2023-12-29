@@ -3,10 +3,17 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-
+#include "absl/debugging/symbolize.h"
+#include "absl/debugging/failure_signal_handler.h"
 void Signal(int sig) { printf("Signal %d\n", sig); }
 
 int main(int argc, char** argv) {
+    absl::InitializeSymbolizer(argv[0]);
+
+  absl::InstallFailureSignalHandler({
+    .use_alternate_stack = false,
+  });
+
   printf("Running\n");
   if (argc == 2 && strcmp(argv[1], "ignore_signal") == 0) {
     printf("Ignoring signals\n");

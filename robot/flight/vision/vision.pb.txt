@@ -1,0 +1,50 @@
+subsystem {
+  name: "vision"
+  module {
+    name: "camera_left"
+    zygote: "standard_zygote"
+    disabled: false
+    dso: "${runfiles_dir}/__main__/robot/vision/camera.so"
+    options {
+      vars: {
+          name: "camera_name"
+          value: "left"
+      }
+      
+      sigint_shutdown_timeout_secs: 2
+      sigterm_shutdown_timeout_secs: 10
+    }
+    stdout {
+      where: LOGGER
+    }
+    stderr {
+      where: LOGGER
+    }
+  }
+
+  module {
+    name: "camera_right"
+    zygote: "standard_zygote"
+    dso: "${runfiles_dir}/__main__/robot/vision/camera.so"
+    disabled: false
+    options {
+      vars: {
+          name: "camera_name"
+          value: "right"
+      }
+    
+      sigint_shutdown_timeout_secs: 2
+      sigterm_shutdown_timeout_secs: 10
+    }
+    stdout {
+      where: LOGGER
+    }
+    stderr {
+      where: LOGGER
+    }
+  }
+}
+
+interface: "vision"
+autostart: "vision"
+

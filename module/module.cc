@@ -3,13 +3,13 @@
 // See LICENSE file for licensing information.
 
 #include "module/module.h"
-#include <cerrno>
 #include "absl/strings/numbers.h"
+#include <cerrno>
 
 namespace stagezero::module {
 
-Module::Module(stagezero::SymbolTable symbols)
-    : symbols_(std::move(symbols)) {}
+Module::Module(stagezero::SymbolTable symbols) : symbols_(std::move(symbols)) {
+}
 
 absl::Status Module::ModuleInit() {
   if (absl::Status status = subspace_client_.Init(SubspaceSocket());
@@ -20,26 +20,24 @@ absl::Status Module::ModuleInit() {
   return absl::OkStatus();
 }
 
-  const std::string& Module::Name() const {
-    return LookupSymbol("name");
-  }
+const std::string &Module::Name() const { return LookupSymbol("name"); }
 
-  const std::string& Module::SubspaceSocket() const {
-    return LookupSymbol("subspace_socket");
-  }
-  
-  const std::string& Module::LookupSymbol(const std::string& name) const {
-    static std::string empty;
-    Symbol* sym = symbols_.FindSymbol(name);
-    if (sym == nullptr) {
-      return empty;
-    }
-    return sym->Value();
-  }
+const std::string &Module::SubspaceSocket() const {
+  return LookupSymbol("subspace_socket");
+}
 
-absl::Status Module::NotifyStartup(const SymbolTable& symbols) {
+const std::string &Module::LookupSymbol(const std::string &name) const {
+  static std::string empty;
+  Symbol *sym = symbols_.FindSymbol(name);
+  if (sym == nullptr) {
+    return empty;
+  }
+  return sym->Value();
+}
+
+absl::Status Module::NotifyStartup(const SymbolTable &symbols) {
   // Notify stagezero of startup.
-  Symbol* notify = symbols.FindSymbol("STAGEZERO_NOTIFY_FD");
+  Symbol *notify = symbols.FindSymbol("STAGEZERO_NOTIFY_FD");
   if (notify != nullptr) {
     int notify_fd;
     bool ok = absl::SimpleAtoi(notify->Value(), &notify_fd);
@@ -196,7 +194,7 @@ absl::StatusOr<void *> PublisherBase::GetMessageBuffer(size_t size,
                     << wait_status.ToString() << std::endl;
           abort();
         }
-        continue;  // Try again to get a buffer
+        continue; // Try again to get a buffer
       } else {
         return absl::InternalError(
             absl::StrFormat("Failed to get buffer for publisher to channel %s",
@@ -239,4 +237,4 @@ void PublisherBase::ReleaseSubscribers() {
   }
 }
 
-}  // namespace stagezero::module
+} // namespace stagezero::module

@@ -10,6 +10,8 @@
 #include "toolbelt/fd.h"
 #include "toolbelt/hexdump.h"
 
+#include "absl/flags/flag.h"
+#include "absl/flags/parse.h"
 #include <dlfcn.h>
 #include <iostream>
 #include <stdlib.h>
@@ -21,9 +23,15 @@
 
 extern "C" const char **environ;
 
+ABSL_FLAG(std::string, run, "", "Run this module directly");
+ABSL_FLAG(std::string, main, "ModuleMain", "Name of main function");
+ABSL_FLAG(std::vector<std::string>, vars, {}, "Variables (name=value) pairs");
+
 namespace stagezero {
 
 ZygoteCore::ZygoteCore(int argc, char **argv) : logger_("zygote_core") {
+  absl::ParseCommandLine(argc, argv);
+
   for (int i = 0; i < argc; i++) {
     args_.push_back(argv[i]);
   }
@@ -39,6 +47,12 @@ absl::Status ZygoteCore::Run() {
       (void)write(notify_fd, &val, 8);
     }
     notification_pipe_.SetFd(notify_fd);
+  }
+
+  std::string module_to_run = absl::GetFlag(FLAGS_run);
+  if (!module_to_run.empty()) {
+    Run(module_to_run, absl::GetFlag(FLAGS_main), absl::GetFlag(FLAGS_vars));
+    return absl::OkStatus();
   }
 
   const char *sname = getenv("STAGEZERO_ZYGOTE_SOCKET_NAME");
@@ -85,6 +99,20 @@ absl::Status ZygoteCore::Run() {
       });
 
   scheduler_.Run();
+  // When we get here we are either in the zygote that has been stopped or
+  // we are in the forked process and will invoke the main function.
+
+  if (forked_) {
+    // We want to destruct the ZygoteCore as we don't need it in the
+    // child process.
+    AfterFork a = std::move(after_fork);
+    std::string exe = args_[0];
+    ZygoteCore::~ZygoteCore();
+    
+    InvokeMainAfterSpawn(std::move(exe), std::move(a.req),
+                         std::move(a.local_symbols));
+    // Will never get here.
+  }
   return absl::OkStatus();
 }
 
@@ -113,7 +141,7 @@ void ZygoteCore::WaitForSpawn(co::Coroutine *c) {
   if (request.ParseFromArray(buffer_, *n)) {
     stagezero::control::SpawnResponse response;
 
-    if (absl::Status status = HandleSpawn(request, &response, std::move(fds));
+    if (absl::Status status = HandleSpawn(request, &response, std::move(fds), c);
         !status.ok()) {
       response.set_error(status.ToString());
     }
@@ -138,10 +166,33 @@ void ZygoteCore::WaitForSpawn(co::Coroutine *c) {
   }
 }
 
+void ZygoteCore::Run(const std::string &dso, const std::string &main,
+                     const std::vector<std::string> &vars) {
+  control::SpawnRequest spawn;
+  spawn.set_dso(dso);
+  spawn.set_main_func(main);
+  SymbolTable symbols(&global_symbols_);
+  for (auto &var : vars) {
+    std::string name;
+    std::string value;
+    size_t equal = var.find('=');
+    if (equal != std::string::npos) {
+      name = var.substr(0, equal);
+      value = var.substr(equal + 1);
+      symbols.AddSymbol(name, value, false);
+    } else {
+      symbols.AddSymbol(name, "", false);
+    }
+  }
+  InvokeMainAfterSpawn(std::move(args_[0]), std::move(spawn),
+                       std::move(symbols));
+}
+
 absl::Status
 ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
                         control::SpawnResponse *resp,
-                        std::vector<toolbelt::FileDescriptor> &&fds) {
+                        std::vector<toolbelt::FileDescriptor> &&fds,
+                        co::Coroutine* c) {
   // Update all global symbols.
   for (auto &var : req.global_vars()) {
     auto sym = global_symbols_.FindSymbol(var.name());
@@ -196,11 +247,6 @@ ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
     // Child.
     // Close control socket.
     control_socket_.reset();
-
-    // Stop all coroutines and the scheduler in the forked process.
-    server_.reset();
-    monitor_.reset();
-    scheduler_.Stop();
 
     local_symbols.AddSymbol("pid", absl::StrFormat("%d", getpid()), false);
 
@@ -274,7 +320,24 @@ ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
     toolbelt::CloseAllFds(
         [&fds_to_keep_open](int fd) { return !fds_to_keep_open.contains(fd); });
 
-    InvokeMainAfterSpawn(std::move(req), std::move(local_symbols));
+    // We are in the child process running in the server coroutine context.
+    // We want to invoke the virtual process's main function using the process's
+    // main stack instead of the coroutine stack.  To do this, we stop the
+    // coroutine scheduler in the child process and yield the server
+    // coroutine.  This will switch to the scheduler's context which will
+    // return from Run.
+    after_fork.req = std::move(req);
+    after_fork.local_symbols = std::move(local_symbols);
+    forked_ = true;
+
+    // Stop the coroutine scheduler in the child process.  This will cause
+    // a return from its Run() function in ZygoteCore::Run, where we will
+    // invoke the main function on the program stack.
+    scheduler_.Stop();
+    c->Yield();
+
+    // Won't get here in the child process.
+    return absl::OkStatus();
   }
 
   for (auto &stream : req.streams()) {
@@ -290,11 +353,11 @@ ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
 }
 
 // This is called in the child process and does not return.
-void ZygoteCore::InvokeMainAfterSpawn(const control::SpawnRequest &&req,
+void ZygoteCore::InvokeMainAfterSpawn(std::string exe,
+                                      const control::SpawnRequest &&req,
                                       SymbolTable &&local_symbols) {
 
   void *handle = RTLD_DEFAULT;
-  std::string exe = args_[0];
   if (!req.dso().empty()) {
     exe = local_symbols.ReplaceSymbols(req.dso());
     handle = dlopen(exe.c_str(), RTLD_LAZY);

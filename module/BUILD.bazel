@@ -10,8 +10,11 @@ cc_library(
     ],
     deps = [
         ":test_cc_proto",
+        "//stagezero:symbols_lib",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/debugging:failure_signal_handler",
+        "@com_google_absl//absl/debugging:symbolize",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings:str_format",
@@ -19,7 +22,6 @@ cc_library(
         "@coroutines//:co",
         "@subspace//client:subspace_client",
         "@toolbelt//toolbelt",
-        "//stagezero:symbols_lib",
     ],
 )
 

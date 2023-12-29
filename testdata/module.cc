@@ -15,11 +15,14 @@ extern "C" {
 extern char **environ;
 
 int Main(stagezero::SymbolTable&& symbols, int argc, char **argv, char **envp) {
-  absl::InitializeSymbolizer(argv[0]);
+  write(1, "foo\n", 4);
+   absl::InitializeSymbolizer(argv[0]);
 
-  absl::FailureSignalHandlerOptions options;
-  absl::InstallFailureSignalHandler(options);
+  absl::InstallFailureSignalHandler({
+    .use_alternate_stack = false,
+  });
 
+  std::cerr << "module main running\n";
   for (int i = 0; i < argc; i++) {
     printf("arg[%d]: %s\n", i, argv[i]);
   }

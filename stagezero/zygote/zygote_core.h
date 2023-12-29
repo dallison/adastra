@@ -31,11 +31,14 @@ class ZygoteCore {
 
   absl::Status HandleSpawn(const control::SpawnRequest& req,
                            control::SpawnResponse* resp,
-                           std::vector<toolbelt::FileDescriptor>&& fds);
+                           std::vector<toolbelt::FileDescriptor>&& fds,
+                           co::Coroutine* c);
 
-  [[noreturn]] void InvokeMainAfterSpawn(const control::SpawnRequest&& req,
+  [[noreturn]] static void InvokeMainAfterSpawn(std::string exe, const control::SpawnRequest&& req,
                                          SymbolTable&& local_symbols);
 
+  void Run(const std::string& dso, const std::string& main, const std::vector<std::string>& vars);
+  
   co::CoroutineScheduler scheduler_;
   std::vector<std::string> args_;
   std::unique_ptr<toolbelt::UnixSocket> control_socket_;
@@ -45,6 +48,15 @@ class ZygoteCore {
   char buffer_[kBufferSize];
   toolbelt::Logger logger_;
   SymbolTable global_symbols_;
+
+  bool forked_ = false;
+
+  // After the fork, this struct holds the information we need to
+  // invoke the virtual process.  It is only in the child process.
+  struct AfterFork {
+    control::SpawnRequest req;
+    SymbolTable local_symbols;
+  } after_fork;
 };
 
 }  // namespace stagezero

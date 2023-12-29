@@ -5,6 +5,10 @@ cc_binary(
     srcs = [
         "loop.cc",
     ],
+    deps = [
+      "@com_google_absl//absl/debugging:failure_signal_handler",
+      "@com_google_absl//absl/debugging:symbolize",
+    ],
 )
 
 cc_binary(

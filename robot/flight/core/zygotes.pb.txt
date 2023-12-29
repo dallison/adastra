@@ -1,0 +1,22 @@
+subsystem {
+  name: "standard_zygote"
+  zygote {
+    name: "standard_zygote"
+    executable: "${runfiles_dir}/__main__/stagezero/zygote/${name}"
+    options {
+      notify: true
+    }
+    stdin {
+      where: STAGEZERO
+    }
+    stdout {
+      where: STAGEZERO
+    }
+    stderr {
+      where: STAGEZERO
+    }
+  }
+  critical: true
+}
+
+autostart: "standard_zygote"

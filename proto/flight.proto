@@ -78,6 +78,7 @@ message Module {
   Stream stdout = 7;
   Stream stderr = 8;
   string main_func = 9; // ModuleMain if omitted.
+  bool disabled = 10;
 }
 
 message StaticProcess {
@@ -90,6 +91,7 @@ message StaticProcess {
   Stream stderr = 7;
   bool interactive = 8;
   bool oneshot = 9;
+  bool disabled = 10;
 }
 
 message Subsystem {
@@ -115,6 +117,8 @@ message Subsystem {
 
   // All processes in this subsystem are critical.
   bool critical = 9;
+
+  bool disabled = 10;
 }
 
 message SubsystemGraph {

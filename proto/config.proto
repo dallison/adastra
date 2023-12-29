@@ -12,12 +12,14 @@ message Compute {
   string name = 1;
   bytes ip_addr = 2;  // Host byte order.
   int32 port = 3;       // Host byte order.
+  bool disabled = 4; 
 }
 
 message Variable {
   string name = 1;     // Varible name
   string value = 2;    // Expression for value (use $ for var names)
   bool exported = 3;     // Export to environment.
+  bool disabled = 4;
 }
 
 message ProcessOptions {

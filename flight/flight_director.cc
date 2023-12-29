@@ -375,6 +375,9 @@ absl::Status FlightDirector::LoadSubsystemGraph(
     std::unique_ptr<proto::SubsystemGraph> graph) {
   // Load the computes.
   for (auto &c : graph->compute()) {
+    if (c.disabled()) {
+      continue;
+    }
     const Compute *c2 = FindCompute(c.name());
     if (c2 != nullptr) {
       return absl::InternalError(
@@ -387,6 +390,9 @@ absl::Status FlightDirector::LoadSubsystemGraph(
 
   // Global variables.
   for (auto &v : graph->var()) {
+    if (v.disabled()) {
+      continue;
+    }
     Variable var = {
         .name = v.name(), .value = v.value(), .exported = v.exported()};
 
@@ -431,6 +437,9 @@ absl::Status FlightDirector::LoadSubsystemGraph(
       subsystem->args.push_back(arg);
     }
     for (auto &var : s.var()) {
+      if (var.disabled()) {
+        continue;
+      }
       subsystem->vars.push_back({.name = var.name(),
                                  .value = var.value(),
                                  .exported = var.exported()});
@@ -442,6 +451,9 @@ absl::Status FlightDirector::LoadSubsystemGraph(
     // Load all the processes in the subsystem.
     // First static processes.
     for (auto &proc : s.static_process()) {
+      if (proc.disabled()) {
+        continue;
+      }
       if (!CheckProcessUniqueness(*subsystem, proc.name())) {
         return absl::InternalError(
             absl::StrFormat("Process %s already exists in subsystem %s",
@@ -477,6 +489,9 @@ absl::Status FlightDirector::LoadSubsystemGraph(
 
     // Now zygotes.
     for (auto &z : s.zygote()) {
+      if (z.disabled()) {
+        continue;
+      }
       if (!CheckProcessUniqueness(*subsystem, z.name())) {
         return absl::InternalError(absl::StrFormat(
             "Zygote %s already exists in subsystem %s", z.name(), s.name()));
@@ -500,6 +515,9 @@ absl::Status FlightDirector::LoadSubsystemGraph(
 
     // And modules.
     for (auto &mod : s.module()) {
+      if (mod.disabled()) {
+        continue;
+      }
       if (!CheckProcessUniqueness(*subsystem, mod.name())) {
         return absl::InternalError(absl::StrFormat(
             "Module %s already exists in subsystem %s", mod.name(), s.name()));
@@ -640,6 +658,9 @@ absl::Status FlightDirector::RegisterSubsystemGraph(Subsystem *root,
                                                     co::Coroutine *c) {
   std::vector<Subsystem *> flattened_graph = FlattenSubsystemGraph(root);
   for (auto &subsystem : flattened_graph) {
+    if (subsystem->disabled) {
+      continue;
+    }
     capcom::client::SubsystemOptions options;
     for (auto &proc : subsystem->processes) {
       switch (proc->Type()) {
@@ -732,6 +753,9 @@ absl::Status FlightDirector::RegisterSubsystemGraph(Subsystem *root,
 
 absl::Status FlightDirector::AutostartSubsystem(Subsystem *subsystem,
                                                 co::Coroutine *c) {
+  if (subsystem->disabled) {
+    return absl::OkStatus();
+  }
   return autostart_capcom_client_->StartSubsystem(
       subsystem->name, stagezero::capcom::client::RunMode::kNoninteractive,
       nullptr, c);

@@ -7,8 +7,7 @@
 namespace stagezero::capcom::client {
 
 absl::Status Client::Init(toolbelt::InetAddress addr, const std::string &name,
-int event_mask,
-                          co::Coroutine *co) {
+                          int event_mask, co::Coroutine *co) {
   auto fill_init = [name, event_mask](capcom::proto::Request &req) {
     auto init = req.mutable_init();
     init->set_client_name(name);
@@ -61,7 +60,7 @@ absl::Status Client::AddCompute(const std::string &name,
   auto &add_resp = resp.add_compute();
   if (!add_resp.error().empty()) {
     return absl::InternalError(
-        absl::StrFormat("Failed to add subsystem: %s", add_resp.error()));
+        absl::StrFormat("Failed to add compute: %s", add_resp.error()));
   }
   return absl::OkStatus();
 }
@@ -110,13 +109,19 @@ absl::Status Client::AddSubsystem(const std::string &name,
     opts->set_interactive(sproc.interactive);
     opts->set_critical(options.critical);
     opts->set_oneshot(sproc.oneshot);
-    
+
     auto *s = proc->mutable_static_process();
     s->set_executable(sproc.executable);
     proc->set_compute(sproc.compute);
     for (auto &arg : sproc.args) {
       auto *a = opts->add_args();
       *a = arg;
+    }
+    for (auto &var : sproc.vars) {
+      auto *v = opts->add_vars();
+      v->set_name(var.name);
+      v->set_value(var.value);
+      v->set_exported(var.exported);
     }
     for (auto &stream : sproc.streams) {
       auto *s = proc->add_streams();
@@ -143,6 +148,12 @@ absl::Status Client::AddSubsystem(const std::string &name,
     for (auto &arg : z.args) {
       auto *a = opts->add_args();
       *a = arg;
+    }
+    for (auto &var : z.vars) {
+      auto *v = opts->add_vars();
+      v->set_name(var.name);
+      v->set_value(var.value);
+      v->set_exported(var.exported);
     }
     for (auto &stream : z.streams) {
       auto *s = proc->add_streams();
@@ -173,28 +184,34 @@ absl::Status Client::AddSubsystem(const std::string &name,
       auto *a = opts->add_args();
       *a = arg;
     }
+    for (auto &var : vproc.vars) {
+      auto *v = opts->add_vars();
+      v->set_name(var.name);
+      v->set_value(var.value);
+      v->set_exported(var.exported);
+    }
     for (auto &stream : vproc.streams) {
       auto *s = proc->add_streams();
       stream.ToProto(s);
     }
- }
+  }
 
   // Variables.
-  for (auto& var : options.vars) {
-    auto* v = add->add_vars();
+  for (auto &var : options.vars) {
+    auto *v = add->add_vars();
     v->set_name(var.name);
     v->set_value(var.value);
     v->set_exported(var.exported);
   }
 
   // Streams.
-  for (auto& stream : options.streams) {
-    auto* s = add->add_streams();
+  for (auto &stream : options.streams) {
+    auto *s = add->add_streams();
     stream.ToProto(s);
   }
 
   // Args.
-  for (auto& arg : options.args) {
+  for (auto &arg : options.args) {
     auto *a = add->add_args();
     *a = arg;
   }
@@ -252,7 +269,8 @@ absl::Status Client::RemoveSubsystem(const std::string &name, bool recursive,
   return absl::OkStatus();
 }
 
-absl::Status Client::StartSubsystem(const std::string &name, RunMode mode, Terminal* terminal, co::Coroutine *c) {
+absl::Status Client::StartSubsystem(const std::string &name, RunMode mode,
+                                    Terminal *terminal, co::Coroutine *c) {
   if (c == nullptr) {
     c = co_;
   }
@@ -261,7 +279,7 @@ absl::Status Client::StartSubsystem(const std::string &name, RunMode mode, Termi
   s->set_subsystem(name);
   s->set_interactive(mode == RunMode::kInteractive);
   if (terminal != nullptr) {
-    auto* t = s->mutable_terminal();
+    auto *t = s->mutable_terminal();
     terminal->ToProto(t);
   }
   stagezero::capcom::proto::Response resp;
@@ -338,7 +356,8 @@ absl::Status Client::WaitForSubsystemState(const std::string &subsystem,
   }
 }
 
-absl::Status Client::Abort(const std::string &reason, bool emergency, co::Coroutine *c) {
+absl::Status Client::Abort(const std::string &reason, bool emergency,
+                           co::Coroutine *c) {
   if (c == nullptr) {
     c = co_;
   }
