@@ -55,6 +55,7 @@ cc_binary(
         "//testdata:talker.so",
         "//testdata:echoraw",
         "//robot/vision:camera.so",
+        "//robot/vision:stereo.so",
         "@subspace//server:subspace_server",
     ],
     deps = [

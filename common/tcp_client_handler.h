@@ -271,8 +271,12 @@ inline void TCPClientHandler<Request, Response, Event>::EventSenderCoroutine(
         absl::StatusOr<ssize_t> n =
             client->event_socket_.SendMessage(sendbuf, msglen, c);
         if (!n.ok()) {
-          client->GetLogger().Log(toolbelt::LogLevel::kError,
-                                  "Failed to send event",
+          // This isn't really an issue and can occur if the socket is
+          // closed on the remote end.  Switch debug on if you want to
+          // see why events aren't being delivered if  you think they
+          // should be.
+          client->GetLogger().Log(toolbelt::LogLevel::kDebug,
+                                  "Failed to send event: %s",
                                   n.status().ToString().c_str());
         }
       }

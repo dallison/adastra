@@ -51,7 +51,7 @@ void Process::KillNow() {
   if (pid_ <= 0) {
     return;
   }
-  ::kill(pid_, SIGKILL);
+  SafeKill(pid_, SIGKILL);
   (void)client_->RemoveProcess(this);
 }
 
@@ -713,7 +713,7 @@ absl::Status Process::Stop(co::Coroutine *c) {
           client->Log(proc->Name(), toolbelt::LogLevel::kInfo,
                       "Killing process %s with SIGINT (timeout %d seconds)",
                       proc->Name().c_str(), timeout);
-          kill(proc->GetPid(), SIGINT);
+          SafeKill(proc->GetPid(), SIGINT);
           (void)proc->WaitLoop(c2, std::chrono::seconds(timeout));
           if (!proc->IsRunning()) {
             return;
@@ -721,7 +721,7 @@ absl::Status Process::Stop(co::Coroutine *c) {
         }
         timeout = proc->SigTermTimeoutSecs();
         if (timeout > 0) {
-          kill(proc->GetPid(), SIGTERM);
+          SafeKill(proc->GetPid(), SIGTERM);
           client->Log(proc->Name(), toolbelt::LogLevel::kInfo,
                       "Killing process %s with SIGTERM (timeout %d seconds)",
                       proc->Name().c_str(), timeout);
@@ -733,7 +733,7 @@ absl::Status Process::Stop(co::Coroutine *c) {
           client->Log(proc->Name(), toolbelt::LogLevel::kInfo,
                       "Killing process %s with SIGKILL", proc->Name().c_str());
 
-          kill(proc->GetPid(), SIGKILL);
+          SafeKill(proc->GetPid(), SIGKILL);
         }
       }));
   return client_->RemoveProcess(this);
@@ -1108,7 +1108,7 @@ absl::Status VirtualProcess::Start(co::Coroutine *c) {
 }
 
 int VirtualProcess::Wait() {
-  int e = ::kill(pid_, 0);
+  int e = SafeKill(pid_, 0);
   if (e == -1) {
     running_ = false;
     return 127;

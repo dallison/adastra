@@ -169,11 +169,20 @@ absl::Status FlightDirector::Run() {
                       << ": " << status.ToString() << std::endl;
           }
         }
+
+        // We flatten the subsystem graph so that all dependencies are registered
+        // before the subsystems that depend on them.
+        std::vector<Subsystem *> flattened_graph;
+        absl::flat_hash_set<Subsystem *> visited;
         for (auto & [ name, subsystem ] : interfaces_) {
-          if (absl::Status status = RegisterSubsystemGraph(subsystem, c);
+          FlattenSubsystemGraph(visited, subsystem, flattened_graph);
+        }
+
+        for (auto subsystem : flattened_graph) {
+          if (absl::Status status = RegisterSubsystem(subsystem, c);
               !status.ok()) {
-            std::cerr << "Failed to register interface " << name << ": "
-                      << status.ToString() << std::endl;
+            std::cerr << "Failed to register interface " << subsystem->name
+                      << ": " << status.ToString() << std::endl;
           }
         }
         for (auto & [ name, subsystem ] : autostarts_) {
@@ -445,7 +454,10 @@ absl::Status FlightDirector::LoadSubsystemGraph(
                                  .exported = var.exported()});
     }
 
-    subsystem->max_restarts = s.max_restarts();
+    subsystem->max_restarts = capcom::client::kDefaultMaxRestarts;
+    if (s.has_max_restarts()) {
+       subsystem->max_restarts = s.max_restarts();
+    }
     subsystem->critical = s.critical();
 
     // Load all the processes in the subsystem.
@@ -594,11 +606,23 @@ absl::Status FlightDirector::LoadSubsystemGraph(
 }
 
 absl::Status FlightDirector::CheckForSubsystemLoopsRecurse(
-    absl::flat_hash_set<Subsystem *> &visited, Subsystem *subsystem,
-    std::string path) {
+    absl::flat_hash_set<Subsystem *> &visited, Subsystem *root,
+    Subsystem *subsystem, std::string path) {
+  if (subsystem == nullptr) {
+    // First time in, check deps of root.
+    for (auto *dep : root->deps) {
+      if (absl::Status status =
+              CheckForSubsystemLoopsRecurse(visited, root, dep, path);
+          !status.ok()) {
+        return status;
+      }
+    }
+    return absl::OkStatus();
+  }
+  // Recursive call, check that we haven't reached the root and if not
+  // check deps.
   if (visited.contains(subsystem)) {
-    return absl::InternalError(
-        absl::StrFormat("Dependency loop in subsystem graph: %s", path));
+    return absl::OkStatus();
   }
   visited.insert(subsystem);
   if (path.empty()) {
@@ -606,8 +630,13 @@ absl::Status FlightDirector::CheckForSubsystemLoopsRecurse(
   } else {
     absl::StrAppend(&path, "->", subsystem->name);
   }
+  if (subsystem == root) {
+    return absl::InternalError(
+        absl::StrFormat("Dependency loop in subsystem graph: %s", path));
+  }
   for (auto *dep : subsystem->deps) {
-    if (absl::Status status = CheckForSubsystemLoopsRecurse(visited, dep, path);
+    if (absl::Status status =
+            CheckForSubsystemLoopsRecurse(visited, root, dep, path);
         !status.ok()) {
       return status;
     }
@@ -618,20 +647,16 @@ absl::Status FlightDirector::CheckForSubsystemLoopsRecurse(
 absl::Status FlightDirector::CheckForSubsystemLoops() {
   for (auto & [ name, subsystem ] : subsystems_) {
     absl::flat_hash_set<Subsystem *> visited;
-    return CheckForSubsystemLoopsRecurse(visited, subsystem.get(), "");
+    if (absl::Status status = CheckForSubsystemLoopsRecurse(
+            visited, subsystem.get(), nullptr, name);
+        !status.ok()) {
+      return status;
+    }
   }
   return absl::OkStatus();
 }
 
-std::vector<Subsystem *>
-FlightDirector::FlattenSubsystemGraph(Subsystem *root) {
-  absl::flat_hash_set<Subsystem *> visited;
-  std::vector<Subsystem *> result;
-  FlattenSubsystemGraphRecurse(visited, root, result);
-  return result;
-}
-
-void FlightDirector::FlattenSubsystemGraphRecurse(
+void FlightDirector::FlattenSubsystemGraph(
     absl::flat_hash_set<Subsystem *> &visited, Subsystem *subsystem,
     std::vector<Subsystem *> &vec) {
   if (visited.contains(subsystem)) {
@@ -639,9 +664,10 @@ void FlightDirector::FlattenSubsystemGraphRecurse(
   }
   visited.insert(subsystem);
   for (auto &dep : subsystem->deps) {
-    FlattenSubsystemGraphRecurse(visited, dep, vec);
+    FlattenSubsystemGraph(visited, dep, vec);
   }
   vec.push_back(subsystem);
+  std::cerr << "Flattened " << subsystem->name << std::endl;
 }
 
 absl::Status FlightDirector::RegisterCompute(const Compute &compute,
@@ -654,98 +680,95 @@ absl::Status FlightDirector::RegisterGlobalVariable(const Variable &var,
   return capcom_client_.AddGlobalVariable(var, c);
 }
 
-absl::Status FlightDirector::RegisterSubsystemGraph(Subsystem *root,
-                                                    co::Coroutine *c) {
-  std::vector<Subsystem *> flattened_graph = FlattenSubsystemGraph(root);
-  for (auto &subsystem : flattened_graph) {
-    if (subsystem->disabled) {
-      continue;
+absl::Status FlightDirector::RegisterSubsystem(Subsystem *subsystem,
+                                               co::Coroutine *c) {
+  if (subsystem->disabled) {
+    return absl::OkStatus();
+  }
+  capcom::client::SubsystemOptions options;
+  for (auto &proc : subsystem->processes) {
+    switch (proc->Type()) {
+    case ProcessType::kStatic: {
+      StaticProcess *src = static_cast<StaticProcess *>(proc.get());
+      options.static_processes.push_back({
+          .name = src->name,
+          .description = src->description,
+          .executable = src->executable,
+          .compute = src->compute,
+          .vars = src->vars,
+          .args = src->args,
+          .startup_timeout_secs = src->startup_timeout_secs,
+          .sigint_shutdown_timeout_secs = src->sigint_shutdown_timeout_secs,
+          .sigterm_shutdown_timeout_secs = src->sigterm_shutdown_timeout_secs,
+          .notify = src->notify,
+          .streams = src->streams,
+          .user = src->user,
+          .group = src->group,
+          .interactive = src->interactive,
+          .oneshot = src->oneshot,
+      });
+      break;
     }
-    capcom::client::SubsystemOptions options;
-    for (auto &proc : subsystem->processes) {
-      switch (proc->Type()) {
-      case ProcessType::kStatic: {
-        StaticProcess *src = static_cast<StaticProcess *>(proc.get());
-        options.static_processes.push_back({
-            .name = src->name,
-            .description = src->description,
-            .executable = src->executable,
-            .compute = src->compute,
-            .vars = src->vars,
-            .args = src->args,
-            .startup_timeout_secs = src->startup_timeout_secs,
-            .sigint_shutdown_timeout_secs = src->sigint_shutdown_timeout_secs,
-            .sigterm_shutdown_timeout_secs = src->sigterm_shutdown_timeout_secs,
-            .notify = src->notify,
-            .streams = src->streams,
-            .user = src->user,
-            .group = src->group,
-            .interactive = src->interactive,
-            .oneshot = src->oneshot,
-        });
-        break;
-      }
-      case ProcessType::kZygote: {
-        Zygote *src = static_cast<Zygote *>(proc.get());
-        options.zygotes.push_back({
-            .name = src->name,
-            .description = src->description,
-            .executable = src->executable,
-            .compute = src->compute,
-            .vars = src->vars,
-            .args = src->args,
-            .startup_timeout_secs = src->startup_timeout_secs,
-            .sigint_shutdown_timeout_secs = src->sigint_shutdown_timeout_secs,
-            .sigterm_shutdown_timeout_secs = src->sigterm_shutdown_timeout_secs,
-            .streams = src->streams,
-            .user = src->user,
-            .group = src->group,
-        });
-        break;
-      }
-      case ProcessType::kModule: {
-        Module *src = static_cast<Module *>(proc.get());
-        options.virtual_processes.push_back({
-            .name = src->name,
-            .description = src->description,
-            .zygote = src->zygote,
-            .dso = src->dso,
-            .main_func = src->main_func,
-            .compute = src->compute,
-            .vars = src->vars,
-            .startup_timeout_secs = src->startup_timeout_secs,
-            .sigint_shutdown_timeout_secs = src->sigint_shutdown_timeout_secs,
-            .sigterm_shutdown_timeout_secs = src->sigterm_shutdown_timeout_secs,
-            .streams = src->streams,
-            .user = src->user,
-            .group = src->group,
-        });
-        break;
-      }
-      }
+    case ProcessType::kZygote: {
+      Zygote *src = static_cast<Zygote *>(proc.get());
+      options.zygotes.push_back({
+          .name = src->name,
+          .description = src->description,
+          .executable = src->executable,
+          .compute = src->compute,
+          .vars = src->vars,
+          .args = src->args,
+          .startup_timeout_secs = src->startup_timeout_secs,
+          .sigint_shutdown_timeout_secs = src->sigint_shutdown_timeout_secs,
+          .sigterm_shutdown_timeout_secs = src->sigterm_shutdown_timeout_secs,
+          .streams = src->streams,
+          .user = src->user,
+          .group = src->group,
+      });
+      break;
     }
+    case ProcessType::kModule: {
+      Module *src = static_cast<Module *>(proc.get());
+      options.virtual_processes.push_back({
+          .name = src->name,
+          .description = src->description,
+          .zygote = src->zygote,
+          .dso = src->dso,
+          .main_func = src->main_func,
+          .compute = src->compute,
+          .vars = src->vars,
+          .startup_timeout_secs = src->startup_timeout_secs,
+          .sigint_shutdown_timeout_secs = src->sigint_shutdown_timeout_secs,
+          .sigterm_shutdown_timeout_secs = src->sigterm_shutdown_timeout_secs,
+          .streams = src->streams,
+          .user = src->user,
+          .group = src->group,
+      });
+      break;
+    }
+    }
+  }
 
-    // Add deps as children.
-    for (auto &dep : subsystem->deps) {
-      options.children.push_back(dep->name);
-    }
+  // Add deps as children.
+  for (auto &dep : subsystem->deps) {
+    options.children.push_back(dep->name);
+  }
 
-    // Add subsytem vars and args.
-    for (auto &arg : subsystem->args) {
-      options.args.push_back(arg);
-    }
-    for (auto &var : subsystem->vars) {
-      options.vars.push_back(var);
-    }
+  // Add subsytem vars and args.
+  for (auto &arg : subsystem->args) {
+    options.args.push_back(arg);
+  }
+  for (auto &var : subsystem->vars) {
+    options.vars.push_back(var);
+  }
 
-    options.max_restarts = subsystem->max_restarts;
-    options.critical = subsystem->critical;
+  options.max_restarts = subsystem->max_restarts;
+  options.critical = subsystem->critical;
 
-    absl::Status status =
-        capcom_client_.AddSubsystem(subsystem->name, std::move(options), c);
-    if (!status.ok()) {
-      return status;
-    }
+  absl::Status status =
+      capcom_client_.AddSubsystem(subsystem->name, std::move(options), c);
+  if (!status.ok()) {
+    return status;
   }
 
   return absl::OkStatus();

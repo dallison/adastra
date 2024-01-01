@@ -40,6 +40,7 @@ int main(int argc, char **argv) {
   signal(SIGTERM, Signal);
   signal(SIGHUP, Signal);
   signal(SIGQUIT, Signal);
+  signal(SIGPIPE, SIG_IGN);
 
   co::CoroutineScheduler scheduler;
   g_scheduler = &scheduler;

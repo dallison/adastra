@@ -18,6 +18,7 @@
 #include <string>
 #include <chrono>
 #include <optional>
+#include <signal.h>
 #include "absl/container/flat_hash_set.h"
 
 namespace stagezero {
@@ -100,6 +101,12 @@ protected:
       const google::protobuf::RepeatedPtrField<proto::StreamControl> &streams,
       bool notify);
 
+  static int SafeKill(int pid, int sig) {
+    if (pid > 0) {
+      return kill(pid, sig);
+    }
+    return -1;
+  }
   co::CoroutineScheduler &scheduler_;
   std::shared_ptr<ClientHandler> client_;
   std::string name_;

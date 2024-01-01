@@ -1,6 +1,7 @@
 #include "absl/strings/str_format.h"
 #include "module/protobuf_module.h"
 #include "robot/proto/vision.pb.h"
+#include "toolbelt/clock.h"
 
 template <typename T>
 using Publisher = stagezero::module::ProtobufPublisher<T>;
@@ -24,14 +25,15 @@ class Camera : public stagezero::module::ProtobufModule {
     }
     std::string channel_name = absl::StrFormat("/camera_%s", name->Value());
     auto pub = RegisterPublisher<robot::CameraImage>(
-        channel_name, 1024*1024*4, 100,
+        channel_name, 1024*1024*4, 16,
         [](const Publisher<robot::CameraImage> &pub, robot::CameraImage &msg,
                co::Coroutine *c) -> bool {
+          msg.mutable_header()->set_timestamp(toolbelt::Now());
           msg.set_rows(1024);
           msg.set_cols(1024);
           std::string image;
           for (int i = 0; i < 1024*1024*4; i++) {
-            image += static_cast<char>(/*rand() & */0xff);
+            image += static_cast<char>(rand() & 0xff);
           }
           msg.set_image(image);
           return true;

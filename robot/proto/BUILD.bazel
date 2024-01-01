@@ -1,8 +1,21 @@
 package(default_visibility = ["//visibility:public"])
 
 proto_library(
+    name = "header_proto",
+    srcs = ["header.proto"],
+)
+
+cc_proto_library(
+    name = "header_cc_proto",
+    deps = [":header_proto"],
+)
+
+proto_library(
     name = "vision_proto",
     srcs = ["vision.proto"],
+    deps = [
+        ":header_proto",
+    ],
 )
 
 cc_proto_library(

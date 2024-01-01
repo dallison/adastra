@@ -113,7 +113,7 @@ message Subsystem {
   repeated string dep = 7;
 
   // Max number of restarts before being broken.
-  int32 max_restarts = 8;
+  optional int32 max_restarts = 8;
 
   // All processes in this subsystem are critical.
   bool critical = 9;

@@ -88,7 +88,7 @@ absl::Status ZygoteCore::Run() {
             // A process died.  Write the pid and status to the notification
             // pipe.  Set the top bit to distinguish this from any other
             // notification.
-            logger_.Log(toolbelt::LogLevel::kInfo, "Process %d died", pid);
+            logger_.Log(toolbelt::LogLevel::kDebug, "Process %d died", pid);
             uint64_t val = (1LL << 63) | (static_cast<uint64_t>(pid) << 32) |
                            static_cast<uint64_t>(status);
             (void)write(notification_pipe_.Fd(), &val, 8);
@@ -108,7 +108,7 @@ absl::Status ZygoteCore::Run() {
     AfterFork a = std::move(after_fork);
     std::string exe = args_[0];
     ZygoteCore::~ZygoteCore();
-    
+
     InvokeMainAfterSpawn(std::move(exe), std::move(a.req),
                          std::move(a.local_symbols));
     // Will never get here.
@@ -394,6 +394,8 @@ void ZygoteCore::InvokeMainAfterSpawn(std::string exe,
   for (auto & [ name, symbol ] : env_vars) {
     setenv(name.c_str(), symbol->Value().c_str(), 1);
   }
+
+  signal(SIGPIPE, SIG_IGN);
 
   // Convert to a function pointer and call main.
   using Ptr =

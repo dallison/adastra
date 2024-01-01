@@ -15,10 +15,10 @@ subsystem {
     where: CLOSE
   }
   stdout {
-    where: STAGEZERO
+    where: LOGGER
   }
   stderr {
-    where: STAGEZERO
+    where: LOGGER
   }
  }
  critical: true

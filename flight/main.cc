@@ -44,7 +44,8 @@ int main(int argc, char **argv) {
   signal(SIGINT, Signal);
   signal(SIGTERM, Signal);
   signal(SIGQUIT, Signal);
-
+  signal(SIGPIPE, SIG_IGN);
+  
   std::string listen_addr = absl::GetFlag(FLAGS_listen_address);
   int listen_port = absl::GetFlag(FLAGS_port);
   toolbelt::InetAddress flight_addr(

@@ -1,5 +1,5 @@
 subsystem {
-  name: "vision"
+  name: "camera"
   module {
     name: "camera_left"
     zygote: "standard_zygote"
@@ -45,6 +45,4 @@ subsystem {
   }
 }
 
-interface: "vision"
-autostart: "vision"
-
+interface: "camera"

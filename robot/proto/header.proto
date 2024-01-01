@@ -1,0 +1,7 @@
+syntax = "proto3";
+
+package robot;
+
+message MessageHeader {
+  uint64 timestamp = 1;
+}

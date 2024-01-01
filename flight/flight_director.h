@@ -67,15 +67,15 @@ class FlightDirector {
   absl::Status LoadSubsystemGraph(std::unique_ptr<proto::SubsystemGraph> graph);
   absl::Status CheckForSubsystemLoops();
   absl::Status CheckForSubsystemLoopsRecurse(
-      absl::flat_hash_set<Subsystem *> &visited, Subsystem *subsystem,
+      absl::flat_hash_set<Subsystem *> &visited, Subsystem* root,
+      Subsystem *subsystem,
       std::string path);
 
-  std::vector<Subsystem *> FlattenSubsystemGraph(Subsystem *root);
-  void FlattenSubsystemGraphRecurse(absl::flat_hash_set<Subsystem *> &visited,
+  void FlattenSubsystemGraph(absl::flat_hash_set<Subsystem *> &visited,
                                     Subsystem *subsystem,
                                     std::vector<Subsystem *> &vec);
 
-  absl::Status RegisterSubsystemGraph(Subsystem *root, co::Coroutine *c);
+  absl::Status RegisterSubsystem(Subsystem *subsystem, co::Coroutine *c);
   absl::Status RegisterCompute(const Compute &compute, co::Coroutine *c);
   absl::Status RegisterGlobalVariable(const Variable &compute,
                                       co::Coroutine *c);

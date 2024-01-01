@@ -2,21 +2,25 @@ syntax = "proto3";
 
 package robot;
 
+import "robot/proto/header.proto";
+
 message CameraImage {
-  int32 rows = 1;
-  int32 cols = 2;
-  bytes image = 3;
+  MessageHeader header = 1;
+  int32 rows = 2;
+  int32 cols = 3;
+  bytes image = 4;
 }
 
-message Cameras {
-  CameraImage left = 1;
-  CameraImage right = 2;
-  CameraImage center = 3;
+message StereoImage {
+  MessageHeader header = 1;
+  CameraImage left = 2;
+  CameraImage right = 3;
   CameraImage disparity = 4;
 }
 
 message LidarScan {
-  bytes image = 1;
+  MessageHeader header = 1;
+  repeated double beams = 2;
 }
 
 

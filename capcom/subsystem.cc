@@ -407,7 +407,7 @@ void Subsystem::Offline(uint32_t client_id, co::Coroutine *c) {
 
                  case Message::kReportOper:
                    subsystem->capcom_.Log(
-                       subsystem->Name(), toolbelt::LogLevel::kInfo,
+                       subsystem->Name(), toolbelt::LogLevel::kDebug,
                        "Subsystem %s has reported oper state change to %s",
                        message->sender->Name().c_str(),
                        OperStateName(message->state.oper));
@@ -508,7 +508,7 @@ void Subsystem::StartingChildren(uint32_t client_id, co::Coroutine *c) {
                 break;
               case Message::kReportOper:
                 subsystem->capcom_.Log(
-                    subsystem->Name(), toolbelt::LogLevel::kInfo,
+                    subsystem->Name(), toolbelt::LogLevel::kDebug,
                     "Subsystem %s has reported oper state change to %s",
                     message->sender->Name().c_str(),
                     OperStateName(message->state.oper));
@@ -558,6 +558,8 @@ void Subsystem::StartingProcesses(uint32_t client_id, co::Coroutine *c) {
   if (absl::Status status = LaunchProcesses(c); !status.ok()) {
     // If we fail to lauch, go into restarting state if we can.  if we
     // can't (due to number of attempts) we go into broken state.
+    capcom_.Log(Name(), toolbelt::LogLevel::kError, "%s",
+                status.ToString().c_str());
     RestartIfPossible(client_id, c);
     return;
   }
@@ -649,7 +651,7 @@ void Subsystem::StartingProcesses(uint32_t client_id, co::Coroutine *c) {
                    break;
                  case Message::kReportOper:
                    subsystem->capcom_.Log(
-                       subsystem->Name(), toolbelt::LogLevel::kInfo,
+                       subsystem->Name(), toolbelt::LogLevel::kDebug,
                        "Subsystem %s has reported oper state change to %s",
                        message->sender->Name().c_str(),
                        OperStateName(message->state.oper));
@@ -778,7 +780,7 @@ void Subsystem::Online(uint32_t client_id, co::Coroutine *c) {
                    break;
                  case Message::kReportOper:
                    subsystem->capcom_.Log(
-                       subsystem->Name(), toolbelt::LogLevel::kInfo,
+                       subsystem->Name(), toolbelt::LogLevel::kDebug,
                        "Subsystem %s has reported oper state change to %s",
                        message->sender->Name().c_str(),
                        OperStateName(message->state.oper));
@@ -890,7 +892,7 @@ void Subsystem::StoppingProcesses(uint32_t client_id, co::Coroutine *c) {
                    break;
                  case Message::kReportOper:
                    subsystem->capcom_.Log(
-                       subsystem->Name(), toolbelt::LogLevel::kInfo,
+                       subsystem->Name(), toolbelt::LogLevel::kDebug,
                        "Subsystem %s has reported oper state change to %s",
                        message->sender->Name().c_str(),
                        OperStateName(message->state.oper));
@@ -1006,7 +1008,7 @@ void Subsystem::StoppingChildren(uint32_t client_id, co::Coroutine *c) {
                 break;
               case Message::kReportOper:
                 subsystem->capcom_.Log(
-                    subsystem->Name(), toolbelt::LogLevel::kInfo,
+                    subsystem->Name(), toolbelt::LogLevel::kDebug,
                     "Subsystem %s has reported oper state change to %s",
                     message->sender->Name().c_str(),
                     OperStateName(message->state.oper));

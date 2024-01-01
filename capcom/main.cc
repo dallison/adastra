@@ -45,6 +45,7 @@ int main(int argc, char **argv) {
   signal(SIGTERM, Signal);
   signal(SIGQUIT, Signal);
   signal(SIGHUP, Signal);
+  signal(SIGPIPE, SIG_IGN);
 
   std::string listen_addr = absl::GetFlag(FLAGS_listen_address);
   int listen_port = absl::GetFlag(FLAGS_port);

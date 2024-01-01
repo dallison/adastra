@@ -31,11 +31,11 @@ template <typename MessageType> struct ProtobufDeserialize {
 // Partial specialization for subscribers and publishers for protobuf.
 template <typename MessageType>
 using ProtobufSubscriber =
-    Subscriber<MessageType, ProtobufDeserialize<MessageType>>;
+    SerializingSubscriber<MessageType, ProtobufDeserialize<MessageType>>;
 
 template <typename MessageType>
 using ProtobufPublisher =
-    Publisher<MessageType, ProtobufSerializedLength<MessageType>,
+    SerializingPublisher<MessageType, ProtobufSerializedLength<MessageType>,
               ProtobufSerialize<MessageType>>;
 
 class ProtobufModule : public Module {

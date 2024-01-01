@@ -1,0 +1,26 @@
+subsystem {
+  name: "stereo"
+  
+   module {
+    name: "stereo_processor"
+    zygote: "standard_zygote"
+    dso: "${runfiles_dir}/__main__/robot/vision/stereo.so"
+    disabled: false
+    options {
+      sigint_shutdown_timeout_secs: 2
+      sigterm_shutdown_timeout_secs: 10
+    }
+    stdout {
+      where: LOGGER
+    }
+    stderr {
+      where: LOGGER
+    }
+   }
+  
+   dep: "camera"
+   max_restarts: 0
+}
+
+interface: "stereo"
+
