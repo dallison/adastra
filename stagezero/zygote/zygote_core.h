@@ -35,7 +35,7 @@ class ZygoteCore {
                            co::Coroutine* c);
 
   [[noreturn]] static void InvokeMainAfterSpawn(std::string exe, const control::SpawnRequest&& req,
-                                         SymbolTable&& local_symbols);
+                                         std::unique_ptr<SymbolTable> local_symbols);
 
   void Run(const std::string& dso, const std::string& main, const std::vector<std::string>& vars);
   
@@ -55,8 +55,8 @@ class ZygoteCore {
   // invoke the virtual process.  It is only in the child process.
   struct AfterFork {
     control::SpawnRequest req;
-    SymbolTable local_symbols;
-  } after_fork;
+    std::unique_ptr<SymbolTable> local_symbols;
+  } after_fork_;
 };
 
 }  // namespace stagezero

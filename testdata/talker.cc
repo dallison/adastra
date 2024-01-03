@@ -13,7 +13,7 @@ using Message = stagezero::module::Message<T>;
 
 class Talker : public stagezero::module::ProtobufModule {
  public:
-  Talker(stagezero::SymbolTable symbols)
+  Talker(std::unique_ptr<stagezero::SymbolTable> symbols)
       : ProtobufModule(std::move(symbols)) {}
 
   absl::Status Init(int argc, char **argv) override {

@@ -1,10 +1,10 @@
 subsystem {
-  name: "stereo"
+  name: "logger"
   
    module {
-    name: "stereo_processor"
+    name: "ipc_logger"
     zygote: "standard_zygote"
-    dso: "${runfiles_dir}/__main__/robot/vision/stereo.so"
+    dso: "${runfiles_dir}/__main__/robot/logger/logger.so"
     disabled: false
     options {
       sigint_shutdown_timeout_secs: 2
@@ -17,9 +17,7 @@ subsystem {
       where: LOGGER
     }
    }
-  
-   dep: "camera"
 }
 
-interface: "stereo"
-
+interface: "logger"
+autostart: "logger"

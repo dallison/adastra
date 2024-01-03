@@ -40,7 +40,7 @@ using ProtobufPublisher =
 
 class ProtobufModule : public Module {
 public:
-  ProtobufModule(stagezero::SymbolTable &&symbols)
+  ProtobufModule(std::unique_ptr<stagezero::SymbolTable> symbols)
       : Module(std::move(symbols)) {}
 
   template <typename MessageType>

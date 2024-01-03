@@ -48,9 +48,9 @@ constexpr long double operator"" _mhz(uint64_t f) { return f * 1000000.0; }
 template <typename MessageType> class Message {
 public:
   Message() = default;
-  Message(std::shared_ptr<MessageType> msg) : msg_(msg) {}
-  Message(subspace::shared_ptr<MessageType> msg) : msg_(msg) {}
-
+  Message(std::shared_ptr<MessageType> msg) : msg_(std::move(msg)) {}
+  Message(subspace::shared_ptr<MessageType> msg) : msg_(std::move(msg)) {}
+  ~Message() = default;
   MessageType *operator->() const {
     switch (msg_.index()) {
     case 0:
@@ -182,17 +182,19 @@ protected:
 
 // A Subscriber calls a callback when a message arrives on the Subspace channel.
 // It passes the message as a reference to the templated type.  The message is
-// a serialized message that is deserialized before being passed to the callback.
+// a serialized message that is deserialized before being passed to the
+// callback.
 template <typename MessageType, typename Deserialize>
-class SerializingSubscriber : public SubscriberBase,
-                   public std::enable_shared_from_this<
-                       SerializingSubscriber<MessageType, Deserialize>> {
+class SerializingSubscriber
+    : public SubscriberBase,
+      public std::enable_shared_from_this<
+          SerializingSubscriber<MessageType, Deserialize>> {
 public:
-  SerializingSubscriber(Module &module, subspace::Subscriber sub,
-             SubscriberOptions options,
-             std::function<void(const SerializingSubscriber &, Message<const MessageType>,
-                                co::Coroutine *)>
-                 callback)
+  SerializingSubscriber(
+      Module &module, subspace::Subscriber sub, SubscriberOptions options,
+      std::function<void(const SerializingSubscriber &,
+                         Message<const MessageType>, co::Coroutine *)>
+          callback)
       : SubscriberBase(module, std::move(sub), std::move(options)),
         callback_(std::move(callback)) {}
 
@@ -205,7 +207,7 @@ protected:
 };
 
 // A ZeroCopySubscriber calls the callback function with a pointer to the
-// Subspace buffer holding the message data.  The message is not deserialized, 
+// Subspace buffer holding the message data.  The message is not deserialized,
 // but instead a reference to the template typed
 // message is passed intact.  The message is passed as a subspace::shared_ptr
 // and should be converted to a subspace::weak_ptr before being stored if you
@@ -252,7 +254,8 @@ public:
   absl::StatusOr<void *> GetMessageBuffer(size_t size, co::Coroutine *c);
 
 protected:
-  template <typename T, typename L, typename S> friend class SerializingPublisher;
+  template <typename T, typename L, typename S>
+  friend class SerializingPublisher;
   template <typename T> friend class ZeroCopyPublisher;
 
   void BackpressureSubscribers();
@@ -275,16 +278,18 @@ protected:
 template <typename MessageType, typename SerializedLength, typename Serialize>
 class SerializingPublisher : public PublisherBase {
 public:
-  SerializingPublisher(
-      Module &module, subspace::Publisher pub, PublisherOptions options,
-      std::function<bool(const SerializingPublisher &, MessageType &, co::Coroutine *)>
-          callback)
+  SerializingPublisher(Module &module, subspace::Publisher pub,
+                       PublisherOptions options,
+                       std::function<bool(const SerializingPublisher &,
+                                          MessageType &, co::Coroutine *)>
+                           callback)
       : SerializingPublisher<MessageType, SerializedLength, Serialize>(
             module, std::move(pub), std::move(options)) {
     callback_ = std::move(callback);
   }
 
-  SerializingPublisher(Module &module, subspace::Publisher pub, PublisherOptions options)
+  SerializingPublisher(Module &module, subspace::Publisher pub,
+                       PublisherOptions options)
       : PublisherBase(module, std::move(pub), std::move(options)) {}
 
   // Publish message filled in by callback.  Callback must have been specified.
@@ -305,7 +310,8 @@ public:
 private:
   void PublishMessage(const MessageType &msg, co::Coroutine *c);
 
-  std::function<bool(const SerializingPublisher &, MessageType &, co::Coroutine *)>
+  std::function<bool(const SerializingPublisher &, MessageType &,
+                     co::Coroutine *)>
       callback_;
 };
 
@@ -365,7 +371,7 @@ private:
 
 class Module {
 public:
-  Module(stagezero::SymbolTable symbols);
+  Module(std::unique_ptr<stagezero::SymbolTable> symbols);
   virtual ~Module() = default;
 
   absl::Status ModuleInit();
@@ -390,19 +396,23 @@ public:
   const std::string &LookupSymbol(const std::string &name) const;
 
   template <typename MessageType, typename Deserialize>
-  absl::StatusOr<std::shared_ptr<SerializingSubscriber<MessageType, Deserialize>>>
+  absl::StatusOr<
+      std::shared_ptr<SerializingSubscriber<MessageType, Deserialize>>>
   RegisterSerializingSubscriber(
       const std::string &channel, const SubscriberOptions &options,
-      std::function<void(const SerializingSubscriber<MessageType, Deserialize> &,
-                         Message<const MessageType>, co::Coroutine *)>
+      std::function<
+          void(const SerializingSubscriber<MessageType, Deserialize> &,
+               Message<const MessageType>, co::Coroutine *)>
           callback);
 
   template <typename MessageType, typename Deserialize>
-  absl::StatusOr<std::shared_ptr<SerializingSubscriber<MessageType, Deserialize>>>
+  absl::StatusOr<
+      std::shared_ptr<SerializingSubscriber<MessageType, Deserialize>>>
   RegisterSerializingSubscriber(
       const std::string &channel,
-      std::function<void(const SerializingSubscriber<MessageType, Deserialize> &,
-                         Message<const MessageType>, co::Coroutine *)>
+      std::function<
+          void(const SerializingSubscriber<MessageType, Deserialize> &,
+               Message<const MessageType>, co::Coroutine *)>
           callback) {
     return RegisterSerializingSubscriber(channel, {}, std::move(callback));
   }
@@ -426,24 +436,24 @@ public:
   }
 
   template <typename MessageType, typename SerializedLength, typename Serialize>
-  absl::StatusOr<
-      std::shared_ptr<SerializingPublisher<MessageType, SerializedLength, Serialize>>>
+  absl::StatusOr<std::shared_ptr<
+      SerializingPublisher<MessageType, SerializedLength, Serialize>>>
   RegisterSerializingPublisher(
       const std::string &channel, int slot_size, int num_slots,
       const PublisherOptions &options,
-      std::function<
-          bool(const SerializingPublisher<MessageType, SerializedLength, Serialize> &,
-               MessageType &, co::Coroutine *)>
+      std::function<bool(const SerializingPublisher<
+                             MessageType, SerializedLength, Serialize> &,
+                         MessageType &, co::Coroutine *)>
           callback);
 
   template <typename MessageType, typename SerializedLength, typename Serialize>
-  absl::StatusOr<
-      std::shared_ptr<SerializingPublisher<MessageType, SerializedLength, Serialize>>>
+  absl::StatusOr<std::shared_ptr<
+      SerializingPublisher<MessageType, SerializedLength, Serialize>>>
   RegisterSerializingPublisher(
       const std::string &channel, int slot_size, int num_slots,
-      std::function<
-          bool(const SerializingPublisher<MessageType, SerializedLength, Serialize> &,
-               MessageType &, co::Coroutine *)>
+      std::function<bool(const SerializingPublisher<
+                             MessageType, SerializedLength, Serialize> &,
+                         MessageType &, co::Coroutine *)>
           callback) {
     return RegisterSerializingPublisher(channel, slot_size, num_slots, {},
                                         callback);
@@ -451,14 +461,14 @@ public:
 
   // Publisher without callback, message is passed to Publish() directly.
   template <typename MessageType, typename SerializedLength, typename Serialize>
-  absl::StatusOr<
-      std::shared_ptr<SerializingPublisher<MessageType, SerializedLength, Serialize>>>
+  absl::StatusOr<std::shared_ptr<
+      SerializingPublisher<MessageType, SerializedLength, Serialize>>>
   RegisterSerializingPublisher(const std::string &channel, int slot_size,
                                int num_slots, const PublisherOptions &options);
 
   template <typename MessageType, typename SerializedLength, typename Serialize>
-  absl::StatusOr<
-      std::shared_ptr<SerializingPublisher<MessageType, SerializedLength, Serialize>>>
+  absl::StatusOr<std::shared_ptr<
+      SerializingPublisher<MessageType, SerializedLength, Serialize>>>
   RegisterSerializingPublisher(const std::string &channel, int slot_size,
                                int num_slots) {
     return RegisterSerializingPublisher<MessageType, SerializedLength,
@@ -545,12 +555,13 @@ public:
       std::function<void(toolbelt::FileDescriptor, co::Coroutine *)> callback,
       short poll_events = POLLIN);
 
-  absl::Status NotifyStartup(const SymbolTable &symbols);
+  absl::Status NotifyStartup();
 
 protected:
   template <typename T, typename D> friend class SerializingSubscriber;
   template <typename T> friend class ZeroCopySubscriber;
-  template <typename T, typename L, typename S> friend class SerializingPublisher;
+  template <typename T, typename L, typename S>
+  friend class SerializingPublisher;
   template <typename T> friend class ZeroCopyPublisher;
   friend class SubscriberBase;
   friend class PublisherBase;
@@ -559,7 +570,7 @@ protected:
     coroutines_.insert(std::move(c));
   }
 
-  stagezero::SymbolTable symbols_;
+  std::unique_ptr<stagezero::SymbolTable> symbols_;
   subspace::Client subspace_client_;
   char *argv0_;
 
@@ -624,13 +635,17 @@ inline void ZeroCopySubscriber<MessageType>::Run() {
                 sub->sub_.template ReadMessage<const MessageType>(
                     sub->options_.read_mode);
             if (!msg.ok()) {
-              // TODO Log an error here.
+              std::cerr << "Error reading zero-copy message on channel "
+                        << sub->sub_.Name() << ": " << msg.status()
+                        << std::endl;
               return;
             }
-            if (!*msg) {
+            auto shared_msg = std::move(*msg);
+            if (!shared_msg) {
               break;
             }
-            sub->callback_(*sub, Message(*msg), c);
+
+            sub->callback_(*sub, Message(std::move(shared_msg)), c);
           }
         }
       },
@@ -639,7 +654,8 @@ inline void ZeroCopySubscriber<MessageType>::Run() {
 }
 
 template <typename MessageType, typename Deserialize>
-inline absl::StatusOr<std::shared_ptr<SerializingSubscriber<MessageType, Deserialize>>>
+inline absl::StatusOr<
+    std::shared_ptr<SerializingSubscriber<MessageType, Deserialize>>>
 Module::RegisterSerializingSubscriber(
     const std::string &channel, const SubscriberOptions &options,
     std::function<void(const SerializingSubscriber<MessageType, Deserialize> &,
@@ -671,12 +687,21 @@ Module::RegisterZeroCopySubscriber(
     std::function<void(const ZeroCopySubscriber<MessageType> &,
                        Message<const MessageType>, co::Coroutine *)>
         callback) {
+  // Since we pass a shared pointer to the callback function, we
+  // need one more than the user specifies.  If the user didn't
+  // specify, we will need 2.
+  int max_shared_ptrs = options.max_shared_ptrs;
+  if (max_shared_ptrs == 0) {
+    max_shared_ptrs = 1;
+  }
+  max_shared_ptrs++;
+
   absl::StatusOr<subspace::Subscriber> subspace_sub =
-      subspace_client_.CreateSubscriber(
-          channel, subspace::SubscriberOptions()
-                       .SetReliable(options.reliable)
-                       .SetType(options.type)
-                       .SetMaxSharedPtrs(options.max_shared_ptrs + 1));
+      subspace_client_.CreateSubscriber(channel,
+                                        subspace::SubscriberOptions()
+                                            .SetReliable(options.reliable)
+                                            .SetType(options.type)
+                                            .SetMaxSharedPtrs(max_shared_ptrs));
   if (!subspace_sub.ok()) {
     return subspace_sub.status();
   }
@@ -691,7 +716,8 @@ Module::RegisterZeroCopySubscriber(
 }
 
 template <typename MessageType, typename SerializedLength, typename Serialize>
-inline void SerializingPublisher<MessageType, SerializedLength, Serialize>::PublishMessage(
+inline void
+SerializingPublisher<MessageType, SerializedLength, Serialize>::PublishMessage(
     const MessageType &msg, co::Coroutine *c) {
   int64_t length = SerializedLength::Invoke(msg);
   absl::StatusOr<void *> buffer = GetMessageBuffer(length, c);
@@ -715,7 +741,8 @@ inline void SerializingPublisher<MessageType, SerializedLength, Serialize>::Publ
 }
 
 template <typename MessageType, typename SerializedLength, typename Serialize>
-inline void SerializingPublisher<MessageType, SerializedLength, Serialize>::Run() {
+inline void
+SerializingPublisher<MessageType, SerializedLength, Serialize>::Run() {
   co::Coroutine *runner = new co::Coroutine(
       module_.scheduler_,
       [pub = this->shared_from_this()](co::Coroutine * c) {
@@ -727,9 +754,10 @@ inline void SerializingPublisher<MessageType, SerializedLength, Serialize>::Run(
           while (pub->running_ && pub->pending_count_ > 0) {
             pub->pending_count_--;
             MessageType msg;
-            std::shared_ptr<SerializingPublisher<MessageType, SerializedLength, Serialize>>
-                self = std::static_pointer_cast<
-                    SerializingPublisher<MessageType, SerializedLength, Serialize>>(pub);
+            std::shared_ptr<
+                SerializingPublisher<MessageType, SerializedLength, Serialize>>
+                self = std::static_pointer_cast<SerializingPublisher<
+                    MessageType, SerializedLength, Serialize>>(pub);
             bool publish = self->callback_(*self, msg, c);
             if (publish) {
               self->PublishMessage(msg, c);
@@ -775,14 +803,14 @@ inline void ZeroCopyPublisher<MessageType>::Run() {
 }
 
 template <typename MessageType, typename SerializedLength, typename Serialize>
-inline absl::StatusOr<
-    std::shared_ptr<SerializingPublisher<MessageType, SerializedLength, Serialize>>>
+inline absl::StatusOr<std::shared_ptr<
+    SerializingPublisher<MessageType, SerializedLength, Serialize>>>
 Module::RegisterSerializingPublisher(
     const std::string &channel, int slot_size, int num_slots,
     const PublisherOptions &options,
-    std::function<
-        bool(const SerializingPublisher<MessageType, SerializedLength, Serialize> &,
-             MessageType &, co::Coroutine *)>
+    std::function<bool(
+        const SerializingPublisher<MessageType, SerializedLength, Serialize> &,
+        MessageType &, co::Coroutine *)>
         callback) {
   absl::StatusOr<subspace::Publisher> subspace_pub =
       subspace_client_.CreatePublisher(channel, slot_size, num_slots,
@@ -795,18 +823,17 @@ Module::RegisterSerializingPublisher(
     return subspace_pub.status();
   }
 
-  auto pub =
-      std::make_shared<SerializingPublisher<MessageType, SerializedLength, Serialize>>(
-          *this, std::move(*subspace_pub), std::move(options),
-          std::move(callback));
+  auto pub = std::make_shared<
+      SerializingPublisher<MessageType, SerializedLength, Serialize>>(
+      *this, std::move(*subspace_pub), std::move(options), std::move(callback));
 
   pub->Run();
   return pub;
 }
 
 template <typename MessageType, typename SerializedLength, typename Serialize>
-inline absl::StatusOr<
-    std::shared_ptr<SerializingPublisher<MessageType, SerializedLength, Serialize>>>
+inline absl::StatusOr<std::shared_ptr<
+    SerializingPublisher<MessageType, SerializedLength, Serialize>>>
 Module::RegisterSerializingPublisher(const std::string &channel, int slot_size,
                                      int num_slots,
                                      const PublisherOptions &options) {
@@ -821,7 +848,8 @@ Module::RegisterSerializingPublisher(const std::string &channel, int slot_size,
     return subspace_pub.status();
   }
 
-  return std::make_shared<SerializingPublisher<MessageType, SerializedLength, Serialize>>(
+  return std::make_shared<
+      SerializingPublisher<MessageType, SerializedLength, Serialize>>(
       *this, std::move(*subspace_pub), std::move(options));
 }
 
@@ -872,13 +900,17 @@ Module::RegisterZeroCopyPublisher(
 }
 
 #define _DEFINE_MODULE(_type, _main)                                           \
-  extern "C" void _main(stagezero::SymbolTable &&symbols, int argc,            \
+  extern "C" void _main(const char *enc_syms, int syms_len, int argc,          \
                         char **argv) {                                         \
     absl::InitializeSymbolizer(argv[0]);                                       \
                                                                                \
     absl::InstallFailureSignalHandler({                                        \
         .use_alternate_stack = false,                                          \
     });                                                                        \
+    auto symbols = std::make_unique<stagezero::SymbolTable>();                 \
+    std::stringstream symstream;                                               \
+    symstream.write(enc_syms, syms_len);                                       \
+    symbols->Decode(symstream);                                                \
     std::unique_ptr<_type> module =                                            \
         std::make_unique<_type>(std::move(symbols));                           \
     /* Initialize the base module*/                                            \
@@ -893,7 +925,7 @@ Module::RegisterZeroCopyPublisher(
                 << ": " << status.ToString() << std::endl;                     \
       abort();                                                                 \
     }                                                                          \
-    if (absl::Status status = module->NotifyStartup(symbols); !status.ok()) {  \
+    if (absl::Status status = module->NotifyStartup(); !status.ok()) {         \
       std::cerr << "Module startup failed " << status.ToString() << std::endl; \
       abort();                                                                 \
     }                                                                          \

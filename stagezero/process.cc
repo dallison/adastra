@@ -256,7 +256,6 @@ absl::Status StreamFromFileDescriptor(
       }
       return absl::OkStatus();
     }
-    std::cerr << std::string(buffer, n);
     if (absl::Status status = writer(buffer, n); !status.ok()) {
       return status;
     }

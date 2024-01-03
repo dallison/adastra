@@ -79,10 +79,10 @@ public:
 
   static const std::string &Socket() { return socket_; }
 
-  static stagezero::SymbolTable Symbols() {
-    stagezero::SymbolTable symbols;
-    symbols.AddSymbol("name", "test", false);
-    symbols.AddSymbol("subspace_socket", Socket(), false);
+  static std::unique_ptr<stagezero::SymbolTable> Symbols() {
+    auto symbols = std::make_unique<stagezero::SymbolTable>();
+    symbols->AddSymbol("name", "test", false);
+    symbols->AddSymbol("subspace_socket", Socket(), false);
     return symbols;
   }
 
@@ -229,14 +229,18 @@ TEST_F(ModuleTest, PubSubZeroCopy) {
   MyModule mod;
   ASSERT_TRUE(mod.ModuleInit().ok());
 
+  int count = 0;
   auto sub = mod.RegisterZeroCopySubscriber<std::byte>(
-      "foobar",
-      [&mod](const stagezero::module::ZeroCopySubscriber<std::byte> &sub,
-             Message<const std::byte> msg, co::Coroutine *c) {
+      "foobar", [&mod, &count](
+                    const stagezero::module::ZeroCopySubscriber<std::byte> &sub,
+                    Message<const std::byte> msg, co::Coroutine *c) {
         absl::Span<const std::byte> span = msg;
         ASSERT_EQ(6, span.size());
         ASSERT_STREQ("foobar", reinterpret_cast<const char *>(span.data()));
-        mod.Stop();
+        count++;
+        if (count == 5) {
+          mod.Stop();
+        }
       });
   ASSERT_TRUE(sub.ok());
 
@@ -246,11 +250,14 @@ TEST_F(ModuleTest, PubSubZeroCopy) {
   auto pub = std::move(*p);
 
   mod.RunNow([&pub](co::Coroutine *c) {
-    absl::StatusOr<void *> buffer = pub->GetMessageBuffer(20, c);
-    ASSERT_TRUE(buffer.ok());
-    ASSERT_NE(nullptr, *buffer);
-    int length = snprintf(reinterpret_cast<char *>(*buffer), 256, "foobar");
-    pub->Publish(length, c);
+    for (int i = 0; i < 5; i++) {
+      absl::StatusOr<void *> buffer = pub->GetMessageBuffer(20, c);
+      ASSERT_TRUE(buffer.ok());
+      ASSERT_NE(nullptr, *buffer);
+      int length = snprintf(reinterpret_cast<char *>(*buffer), 256, "foobar");
+      pub->Publish(length, c);
+      c->Sleep(1);
+    }
   });
   mod.Run();
 }

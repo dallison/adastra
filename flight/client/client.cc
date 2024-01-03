@@ -96,7 +96,7 @@ absl::Status Client::StopSubsystem(const std::string &name, co::Coroutine *c) {
   auto &stop_resp = resp.stop_subsystem();
   if (!stop_resp.error().empty()) {
     return absl::InternalError(
-        absl::StrFormat("Failed to start subsystem: %s", stop_resp.error()));
+        absl::StrFormat("Failed to stop subsystem: %s", stop_resp.error()));
   }
 
   if (mode_ == ClientMode::kBlocking) {

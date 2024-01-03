@@ -8,6 +8,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <sstream>
 
 namespace stagezero {
 
@@ -21,6 +22,9 @@ public:
   const std::string &Value() const { return value_; }
   void SetValue(std::string value) { value_ = std::move(value); }
   bool Exported() const { return exported_; }
+
+  void Encode(std::stringstream& str);
+  static std::unique_ptr<Symbol> Decode(std::stringstream& str);
 
 private:
   std::string name_;
@@ -61,6 +65,11 @@ public:
   GetSymbols() {
     return symbols_;
   }
+
+  void ClearParent() { parent_ = nullptr; }
+
+  void Encode(std::stringstream& str);
+  void Decode(std::stringstream& str);
 
 private:
   absl::flat_hash_map<std::string, std::unique_ptr<Symbol>> symbols_;

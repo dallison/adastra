@@ -667,7 +667,6 @@ void FlightDirector::FlattenSubsystemGraph(
     FlattenSubsystemGraph(visited, dep, vec);
   }
   vec.push_back(subsystem);
-  std::cerr << "Flattened " << subsystem->name << std::endl;
 }
 
 absl::Status FlightDirector::RegisterCompute(const Compute &compute,

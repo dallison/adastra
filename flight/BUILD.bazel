@@ -45,10 +45,13 @@ cc_binary(
         "command/flight.cc",
         "command/flight.h",
     ],
+    
     data = [
         ":flight_director",
         "//capcom",
         "//stagezero",
+
+        # There has to be a better way to get these built.
         "//stagezero/zygote:standard_zygote",
         "//testdata:flight",
         "//testdata:listener.so",
@@ -56,6 +59,7 @@ cc_binary(
         "//testdata:echoraw",
         "//robot/vision:camera.so",
         "//robot/vision:stereo.so",
+        "//robot/logger:logger.so",
         "@subspace//server:subspace_server",
     ],
     deps = [

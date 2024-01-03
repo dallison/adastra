@@ -179,7 +179,6 @@ void ClientHandler::HandleRemoveCompute(const proto::RemoveComputeRequest &req,
 void ClientHandler::HandleAddSubsystem(const proto::AddSubsystemRequest &req,
                                        proto::AddSubsystemResponse *response,
                                        co::Coroutine *c) {
-                                        std::cerr << req.DebugString();
   // Validate the children.
   std::vector<std::shared_ptr<Subsystem>> children;
   children.reserve(req.children_size());

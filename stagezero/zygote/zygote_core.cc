@@ -105,10 +105,10 @@ absl::Status ZygoteCore::Run() {
   if (forked_) {
     // We want to destruct the ZygoteCore as we don't need it in the
     // child process.
-    AfterFork a = std::move(after_fork);
+    AfterFork a = std::move(after_fork_);
     std::string exe = args_[0];
     ZygoteCore::~ZygoteCore();
-
+    a.local_symbols->ClearParent();
     InvokeMainAfterSpawn(std::move(exe), std::move(a.req),
                          std::move(a.local_symbols));
     // Will never get here.
@@ -141,7 +141,8 @@ void ZygoteCore::WaitForSpawn(co::Coroutine *c) {
   if (request.ParseFromArray(buffer_, *n)) {
     stagezero::control::SpawnResponse response;
 
-    if (absl::Status status = HandleSpawn(request, &response, std::move(fds), c);
+    if (absl::Status status =
+            HandleSpawn(request, &response, std::move(fds), c);
         !status.ok()) {
       response.set_error(status.ToString());
     }
@@ -171,7 +172,7 @@ void ZygoteCore::Run(const std::string &dso, const std::string &main,
   control::SpawnRequest spawn;
   spawn.set_dso(dso);
   spawn.set_main_func(main);
-  SymbolTable symbols(&global_symbols_);
+  auto symbols = std::make_unique<SymbolTable>(&global_symbols_);
   for (auto &var : vars) {
     std::string name;
     std::string value;
@@ -179,20 +180,18 @@ void ZygoteCore::Run(const std::string &dso, const std::string &main,
     if (equal != std::string::npos) {
       name = var.substr(0, equal);
       value = var.substr(equal + 1);
-      symbols.AddSymbol(name, value, false);
+      symbols->AddSymbol(name, value, false);
     } else {
-      symbols.AddSymbol(name, "", false);
+      symbols->AddSymbol(name, "", false);
     }
   }
   InvokeMainAfterSpawn(std::move(args_[0]), std::move(spawn),
                        std::move(symbols));
 }
 
-absl::Status
-ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
-                        control::SpawnResponse *resp,
-                        std::vector<toolbelt::FileDescriptor> &&fds,
-                        co::Coroutine* c) {
+absl::Status ZygoteCore::HandleSpawn(
+    const control::SpawnRequest &req, control::SpawnResponse *resp,
+    std::vector<toolbelt::FileDescriptor> &&fds, co::Coroutine *c) {
   // Update all global symbols.
   for (auto &var : req.global_vars()) {
     auto sym = global_symbols_.FindSymbol(var.name());
@@ -205,16 +204,16 @@ ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
     }
   }
 
-  SymbolTable local_symbols(&global_symbols_);
+  auto local_symbols = std::make_unique<SymbolTable>(&global_symbols_);
   for (auto &var : req.vars()) {
-    local_symbols.AddSymbol(var.name(), var.value(), var.exported());
+    local_symbols->AddSymbol(var.name(), var.value(), var.exported());
   }
 
   // It's better to look for the DSO now as reporting an error later
   // is after the fork and this isn't as good for the user.
   if (!req.dso().empty()) {
     struct stat st;
-    std::string exe = local_symbols.ReplaceSymbols(req.dso());
+    std::string exe = local_symbols->ReplaceSymbols(req.dso());
 
     int e = ::stat(exe.c_str(), &st);
     if (e == -1) {
@@ -229,7 +228,7 @@ ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
     if (req.main_func().empty()) {
       return absl::InternalError("No main_func specifed for virtual process");
     }
-    std::string expanded_main = local_symbols.ReplaceSymbols(req.main_func());
+    std::string expanded_main = local_symbols->ReplaceSymbols(req.main_func());
     void *main_func = dlsym(nullptr, expanded_main.c_str());
     if (main_func == nullptr) {
       return absl::InternalError(
@@ -248,7 +247,7 @@ ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
     // Close control socket.
     control_socket_.reset();
 
-    local_symbols.AddSymbol("pid", absl::StrFormat("%d", getpid()), false);
+    local_symbols->AddSymbol("pid", absl::StrFormat("%d", getpid()), false);
 
     // We want to close all file descriptors that the zygote has opened except
     // all the ones we want.
@@ -268,8 +267,8 @@ ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
       // The zygote's notify fd is in the current environment and we will
       // replace it.
       unsetenv("STAGEZERO_NOTIFY_FD");
-      local_symbols.AddSymbol("STAGEZERO_NOTIFY_FD",
-                              absl::StrFormat("%d", notify_fd.Fd()), true);
+      local_symbols->AddSymbol("STAGEZERO_NOTIFY_FD",
+                               absl::StrFormat("%d", notify_fd.Fd()), true);
     }
 
     for (auto &stream : req.streams()) {
@@ -283,7 +282,7 @@ ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
 
         std::string filename = stream.filename();
         int file_fd =
-            open(local_symbols.ReplaceSymbols(filename).c_str(), oflag, 0777);
+            open(local_symbols->ReplaceSymbols(filename).c_str(), oflag, 0777);
         if (file_fd == -1) {
           std::cerr << "Failed to open file " << filename << ": "
                     << strerror(errno) << std::endl;
@@ -326,8 +325,8 @@ ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
     // coroutine scheduler in the child process and yield the server
     // coroutine.  This will switch to the scheduler's context which will
     // return from Run.
-    after_fork.req = std::move(req);
-    after_fork.local_symbols = std::move(local_symbols);
+    after_fork_.req = std::move(req);
+    after_fork_.local_symbols = std::move(local_symbols);
     forked_ = true;
 
     // Stop the coroutine scheduler in the child process.  This will cause
@@ -353,13 +352,13 @@ ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
 }
 
 // This is called in the child process and does not return.
-void ZygoteCore::InvokeMainAfterSpawn(std::string exe,
-                                      const control::SpawnRequest &&req,
-                                      SymbolTable &&local_symbols) {
+void ZygoteCore::InvokeMainAfterSpawn(
+    std::string exe, const control::SpawnRequest &&req,
+    std::unique_ptr<SymbolTable> local_symbols) {
 
   void *handle = RTLD_DEFAULT;
   if (!req.dso().empty()) {
-    exe = local_symbols.ReplaceSymbols(req.dso());
+    exe = local_symbols->ReplaceSymbols(req.dso());
     handle = dlopen(exe.c_str(), RTLD_LAZY);
     if (handle == nullptr) {
       std::cerr << "Failed to open DSO " << req.dso() << std::endl;
@@ -367,7 +366,7 @@ void ZygoteCore::InvokeMainAfterSpawn(std::string exe,
     }
   }
   void *main_func =
-      dlsym(handle, local_symbols.ReplaceSymbols(req.main_func()).c_str());
+      dlsym(handle, local_symbols->ReplaceSymbols(req.main_func()).c_str());
   if (main_func == nullptr) {
     std::cerr << "Failed to find main function " << req.main_func()
               << std::endl;
@@ -380,7 +379,7 @@ void ZygoteCore::InvokeMainAfterSpawn(std::string exe,
   args.reserve(req.args().size());
 
   for (auto &arg : req.args()) {
-    args.push_back(local_symbols.ReplaceSymbols(arg));
+    args.push_back(local_symbols->ReplaceSymbols(arg));
   }
 
   std::vector<const char *> argv;
@@ -390,7 +389,7 @@ void ZygoteCore::InvokeMainAfterSpawn(std::string exe,
   }
 
   absl::flat_hash_map<std::string, Symbol *> env_vars =
-      local_symbols.GetEnvironmentSymbols();
+      local_symbols->GetEnvironmentSymbols();
   for (auto & [ name, symbol ] : env_vars) {
     setenv(name.c_str(), symbol->Value().c_str(), 1);
   }
@@ -398,10 +397,23 @@ void ZygoteCore::InvokeMainAfterSpawn(std::string exe,
   signal(SIGPIPE, SIG_IGN);
 
   // Convert to a function pointer and call main.
-  using Ptr =
-      int (*)(SymbolTable && local_symbols, int, const char **, const char **);
+  // This is calling a C ABI function.
+  using Ptr = int (*)(const char *, int, int, const char **, const char **);
   Ptr main = reinterpret_cast<Ptr>(main_func);
-  exit(main(std::move(local_symbols), argv.size(), argv.data(), environ));
+
+  // It seems like passing a SymbolTable object to a loaded shared object
+  // doesn't work, at least in optimized mode on Aarch64.  The symptom
+  // is that the FindSymbol function fails to search the flat_hash_map.
+  // No idea why, but instead of passing the symbol table, we encode
+  // it into a string and pass the raw pointer and length.  The function
+  // being invoked has C linkage so passing std::string to it might be
+  // a bad idea.
+  std::stringstream encoded_symbols;
+  local_symbols->Encode(encoded_symbols);
+  local_symbols.reset();
+  
+  exit(main(encoded_symbols.str().data(), int(encoded_symbols.str().size()),
+            argv.size(), argv.data(), environ));
 }
 
 } // namespace stagezero

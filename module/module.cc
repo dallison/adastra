@@ -5,14 +5,20 @@
 #include "module/module.h"
 #include "absl/strings/numbers.h"
 #include <cerrno>
+#include "toolbelt/hexdump.h"
 
 namespace stagezero::module {
 
-Module::Module(stagezero::SymbolTable symbols) : symbols_(std::move(symbols)) {
-}
+Module::Module(std::unique_ptr<stagezero::SymbolTable> symbols)
+    : symbols_(std::move(symbols)) {
+    }
 
 absl::Status Module::ModuleInit() {
-  if (absl::Status status = subspace_client_.Init(SubspaceSocket());
+  const std::string &subspace_socket = SubspaceSocket();
+  if (subspace_socket.empty()) {
+    return absl::InternalError("No subspace_socket specified");
+  }
+  if (absl::Status status = subspace_client_.Init(subspace_socket);
       !status.ok()) {
     return status;
   }
@@ -28,16 +34,16 @@ const std::string &Module::SubspaceSocket() const {
 
 const std::string &Module::LookupSymbol(const std::string &name) const {
   static std::string empty;
-  Symbol *sym = symbols_.FindSymbol(name);
+  Symbol *sym = symbols_->FindSymbol(name);
   if (sym == nullptr) {
     return empty;
   }
   return sym->Value();
 }
 
-absl::Status Module::NotifyStartup(const SymbolTable &symbols) {
+absl::Status Module::NotifyStartup() {
   // Notify stagezero of startup.
-  Symbol *notify = symbols.FindSymbol("STAGEZERO_NOTIFY_FD");
+  Symbol *notify = symbols_->FindSymbol("STAGEZERO_NOTIFY_FD");
   if (notify != nullptr) {
     int notify_fd;
     bool ok = absl::SimpleAtoi(notify->Value(), &notify_fd);
