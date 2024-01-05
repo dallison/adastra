@@ -663,10 +663,9 @@ Module::RegisterSerializingSubscriber(
         callback) {
   absl::StatusOr<subspace::Subscriber> subspace_sub =
       subspace_client_.CreateSubscriber(
-          channel, subspace::SubscriberOptions()
-                       .SetReliable(options.reliable)
-                       .SetType(options.type)
-                       .SetMaxSharedPtrs(options.max_shared_ptrs));
+          channel, {.reliable = options.reliable,
+                    .type = options.type,
+                    .max_shared_ptrs = options.max_shared_ptrs});
   if (!subspace_sub.ok()) {
     return subspace_sub.status();
   }
@@ -697,11 +696,10 @@ Module::RegisterZeroCopySubscriber(
   max_shared_ptrs++;
 
   absl::StatusOr<subspace::Subscriber> subspace_sub =
-      subspace_client_.CreateSubscriber(channel,
-                                        subspace::SubscriberOptions()
-                                            .SetReliable(options.reliable)
-                                            .SetType(options.type)
-                                            .SetMaxSharedPtrs(max_shared_ptrs));
+      subspace_client_.CreateSubscriber(
+          channel, {.reliable = options.reliable,
+                    .type = options.type,
+                    .max_shared_ptrs = options.max_shared_ptrs});
   if (!subspace_sub.ok()) {
     return subspace_sub.status();
   }
@@ -814,11 +812,11 @@ Module::RegisterSerializingPublisher(
         callback) {
   absl::StatusOr<subspace::Publisher> subspace_pub =
       subspace_client_.CreatePublisher(channel, slot_size, num_slots,
-                                       subspace::PublisherOptions()
-                                           .SetReliable(options.reliable)
-                                           .SetType(options.type)
-                                           .SetLocal(options.local)
-                                           .SetFixedSize(options.fixed_size));
+                                       {.local = options.local,
+                                        .reliable = options.reliable,
+                                        .fixed_size = options.fixed_size,
+                                        .type = options.type});
+
   if (!subspace_pub.ok()) {
     return subspace_pub.status();
   }
@@ -839,11 +837,10 @@ Module::RegisterSerializingPublisher(const std::string &channel, int slot_size,
                                      const PublisherOptions &options) {
   absl::StatusOr<subspace::Publisher> subspace_pub =
       subspace_client_.CreatePublisher(channel, slot_size, num_slots,
-                                       subspace::PublisherOptions()
-                                           .SetReliable(options.reliable)
-                                           .SetType(options.type)
-                                           .SetLocal(options.local)
-                                           .SetFixedSize(options.fixed_size));
+                                       {.local = options.local,
+                                        .reliable = options.reliable,
+                                        .fixed_size = options.fixed_size,
+                                        .type = options.type});
   if (!subspace_pub.ok()) {
     return subspace_pub.status();
   }
@@ -860,11 +857,10 @@ Module::RegisterZeroCopyPublisher(const std::string &channel, int slot_size,
                                   const PublisherOptions &options) {
   absl::StatusOr<subspace::Publisher> subspace_pub =
       subspace_client_.CreatePublisher(channel, slot_size, num_slots,
-                                       subspace::PublisherOptions()
-                                           .SetReliable(options.reliable)
-                                           .SetType(options.type)
-                                           .SetLocal(options.local)
-                                           .SetFixedSize(options.fixed_size));
+                                       {.local = options.local,
+                                        .reliable = options.reliable,
+                                        .fixed_size = options.fixed_size,
+                                        .type = options.type});
   if (!subspace_pub.ok()) {
     return subspace_pub.status();
   }
@@ -883,11 +879,10 @@ Module::RegisterZeroCopyPublisher(
         callback) {
   absl::StatusOr<subspace::Publisher> subspace_pub =
       subspace_client_.CreatePublisher(channel, slot_size, num_slots,
-                                       subspace::PublisherOptions()
-                                           .SetReliable(options.reliable)
-                                           .SetType(options.type)
-                                           .SetLocal(options.local)
-                                           .SetFixedSize(options.fixed_size));
+                                       {.local = options.local,
+                                        .reliable = options.reliable,
+                                        .fixed_size = options.fixed_size,
+                                        .type = options.type});
   if (!subspace_pub.ok()) {
     return subspace_pub.status();
   }
