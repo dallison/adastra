@@ -220,8 +220,8 @@ std::function<void(std::shared_ptr<Subsystem>, uint32_t, co::Coroutine *)>
 void Subsystem::EnterState(OperState state, uint32_t client_id) {
   std::string coroutine_name =
       absl::StrFormat("%s/%s", Name(), OperStateName(state));
-  capcom_.Log(Name(), toolbelt::LogLevel::kInfo,
-              "Subsystem %s entering state %s", Name().c_str(),
+  capcom_.Log(Name(), toolbelt::LogLevel::kDebug,
+              "Subsystem %s is %s", Name().c_str(),
               OperStateName(state));
   oper_state_ = state;
   co::Coroutine *coroutine = new co::Coroutine(
@@ -338,6 +338,8 @@ void Subsystem::Offline(uint32_t client_id, co::Coroutine *c) {
   NotifyParents();
   capcom_.SendSubsystemStatusEvent(this);
 
+  capcom_.Log(Name(), toolbelt::LogLevel::kInfo,
+              "Subsystem %s is OFFLINE", Name().c_str());
   OperState next_state = OperState::kOffline;
   RunSubsystemInState(
       c, [ subsystem = shared_from_this(),
@@ -679,6 +681,8 @@ void Subsystem::Online(uint32_t client_id, co::Coroutine *c) {
   NotifyParents();
   capcom_.SendSubsystemStatusEvent(this);
 
+  capcom_.Log(Name(), toolbelt::LogLevel::kInfo,
+              "Subsystem %s is ONLINE", Name().c_str());
   OperState next_state = OperState::kOnline;
   RunSubsystemInState(
       c, [ subsystem = shared_from_this(), &client_id,

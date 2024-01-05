@@ -20,4 +20,3 @@ subsystem {
 }
 
 interface: "logger"
-autostart: "logger"

@@ -146,7 +146,7 @@ StaticProcess::StartInternal(const std::vector<std::string> extra_env_vars,
             (void)read(notify_fd, &val, 8);
             // Nothing to interpret from this (yet?)
 
-            client->Log(proc->Name(), toolbelt::LogLevel::kInfo,
+            client->Log(proc->Name(), toolbelt::LogLevel::kDebug,
                         "Process %s notified us of startup",
                         proc->Name().c_str());
           }
@@ -812,7 +812,7 @@ absl::Status Zygote::Start(co::Coroutine *c) {
     }
     auto zygote = std::static_pointer_cast<Zygote>(proc);
     zygote->SetControlSocket(std::move(*s));
-    client->Log(proc->Name(), toolbelt::LogLevel::kInfo,
+    client->Log(proc->Name(), toolbelt::LogLevel::kDebug,
                 "Zygote control socket open");
     absl::Status eventStatus = client->SendProcessStartEvent(proc->GetId());
     if (!eventStatus.ok()) {
@@ -1056,7 +1056,7 @@ absl::Status VirtualProcess::Start(co::Coroutine *c) {
       (void)read(notify_fd, &val, 8);
       // Nothing to interpret from this (yet?)
 
-      client_->Log(Name(), toolbelt::LogLevel::kInfo,
+      client_->Log(Name(), toolbelt::LogLevel::kDebug,
                    "Process %s notified us of startup", Name().c_str());
     }
   }
