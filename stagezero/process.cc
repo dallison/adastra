@@ -1032,6 +1032,10 @@ absl::Status VirtualProcess::Start(co::Coroutine *c) {
   SetProcessId();
 
   zygote_->AddVirtualProcess(vproc);
+  if (!client_->GetStageZero().AddVirtualProcess(*pid, vproc)) {
+      return absl::InternalError(
+        absl::StrFormat("Failed to add virtual process %s", Name()));
+  }
 
   if (req_.opts().notify()) {
     // Wait for notification from process.

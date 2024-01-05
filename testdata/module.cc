@@ -14,7 +14,7 @@ void Signal(int sig) { printf("Signal %d\n", sig); }
 extern "C" {
 extern char **environ;
 
-int Main(std::unique_ptr<stagezero::SymbolTable> symbols, int argc, char **argv, char **envp) {
+int Main(const char *enc_syms, int syms_len, int argc, char **argv, char **envp) {
   write(1, "foo\n", 4);
    absl::InitializeSymbolizer(argv[0]);
 
@@ -38,12 +38,17 @@ int Main(std::unique_ptr<stagezero::SymbolTable> symbols, int argc, char **argv,
     fflush(stdout);
   }
 
+  std::stringstream symstream;
+  symstream.write(enc_syms, syms_len);
+  stagezero::SymbolTable symbols;
+  symbols.Decode(symstream);
+
   std::cerr << "notifying\n";
 
   // Can do this both with the symbol table or getenv.  Let's do both to
   // make sure it works.
   char* notify_env = getenv("STAGEZERO_NOTIFY_FD");
-  stagezero::Symbol* notify = symbols->FindSymbol("STAGEZERO_NOTIFY_FD");
+  stagezero::Symbol* notify = symbols.FindSymbol("STAGEZERO_NOTIFY_FD");
   if (notify != nullptr) {
     std::cerr << "notify symbol ok\n";
     if (notify_env == nullptr) {
