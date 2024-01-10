@@ -156,9 +156,13 @@ public:
 
   absl::Status Start(co::Coroutine *c) override;
 
+  // Note that this is a completely blocking function that doesn't use
+  // a coroutine.  It is called from other coroutines but since it talks
+  // to a process through a socket, we can't interleave the messages
+  // if multiple spawns happen at the same time.
   absl::StatusOr<int>
   Spawn(const stagezero::control::LaunchVirtualProcessRequest &req,
-        const std::vector<std::shared_ptr<StreamInfo>> &streams, co::Coroutine *c);
+        const std::vector<std::shared_ptr<StreamInfo>> &streams);
 
   bool IsZygote() const override { return true; }
 

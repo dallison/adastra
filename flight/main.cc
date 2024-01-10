@@ -28,12 +28,15 @@ static void Signal(int sig) {
 
 ABSL_FLAG(std::string, config_root_dir, "", "Root director for configuration");
 ABSL_FLAG(int, port, 6524, "TCP listening port");
+ABSL_FLAG(int, notify_fd, -1, "Notification file descriptor");
 ABSL_FLAG(int, capcom_port, 6523, "Capcom client port");
 ABSL_FLAG(bool, silent, false, "Don't log messages to output");
 ABSL_FLAG(std::string, listen_address, "",
           "IP Address or hostname to listen on");
 ABSL_FLAG(std::string, capcom_address, "localhost",
           "IP Address or hostname of capcom process");
+ABSL_FLAG(std::string, log_level, "info",
+          "Log level (verbose, debug, info, warning, error)");
 
 int main(int argc, char **argv) {
   absl::ParseCommandLine(argc, argv);
@@ -45,7 +48,7 @@ int main(int argc, char **argv) {
   signal(SIGTERM, Signal);
   signal(SIGQUIT, Signal);
   signal(SIGPIPE, SIG_IGN);
-  
+
   std::string listen_addr = absl::GetFlag(FLAGS_listen_address);
   int listen_port = absl::GetFlag(FLAGS_port);
   toolbelt::InetAddress flight_addr(
@@ -65,9 +68,9 @@ int main(int argc, char **argv) {
     std::cerr << "--config_root_dir directory not found\n";
     exit(1);
   }
-  stagezero::flight::FlightDirector flight(scheduler, flight_addr, capcom,
-                                           root_dir,
-                                           !absl::GetFlag(FLAGS_silent), -1);
+  stagezero::flight::FlightDirector flight(
+      scheduler, flight_addr, capcom, root_dir, absl::GetFlag(FLAGS_log_level),
+      !absl::GetFlag(FLAGS_silent), absl::GetFlag(FLAGS_notify_fd));
   g_flight = &flight;
   if (absl::Status status = flight.Run(); !status.ok()) {
     std::cerr << "Failed to run FlightDirector: " << status.ToString()

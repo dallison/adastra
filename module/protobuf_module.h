@@ -36,7 +36,7 @@ using ProtobufSubscriber =
 template <typename MessageType>
 using ProtobufPublisher =
     SerializingPublisher<MessageType, ProtobufSerializedLength<MessageType>,
-              ProtobufSerialize<MessageType>>;
+                         ProtobufSerialize<MessageType>>;
 
 class ProtobufModule : public Module {
 public:
@@ -47,7 +47,7 @@ public:
   absl::StatusOr<std::shared_ptr<ProtobufSubscriber<MessageType>>>
   RegisterSubscriber(
       const std::string &channel, const SubscriberOptions &options,
-      std::function<void(const ProtobufSubscriber<MessageType> &,
+      std::function<void(std::shared_ptr<ProtobufSubscriber<MessageType>>,
                          Message<const MessageType>, co::Coroutine *)>
           callback) {
     return RegisterSerializingSubscriber(channel, options, callback);
@@ -57,7 +57,7 @@ public:
   absl::StatusOr<std::shared_ptr<ProtobufSubscriber<MessageType>>>
   RegisterSubscriber(
       const std::string &channel,
-      std::function<void(const ProtobufSubscriber<MessageType> &,
+      std::function<void(std::shared_ptr<ProtobufSubscriber<MessageType>>,
                          Message<const MessageType>, co::Coroutine *)>
           callback) {
     return RegisterSubscriber(channel, {}, std::move(callback));
@@ -65,11 +65,12 @@ public:
 
   template <typename MessageType>
   absl::StatusOr<std::shared_ptr<ProtobufPublisher<MessageType>>>
-  RegisterPublisher(const std::string &channel, int slot_size, int num_slots,
-                    const PublisherOptions &options,
-                    std::function<bool(const ProtobufPublisher<MessageType> &,
-                                       MessageType &, co::Coroutine *)>
-                        callback) {
+  RegisterPublisher(
+      const std::string &channel, int slot_size, int num_slots,
+      const PublisherOptions &options,
+      std::function<bool(std::shared_ptr<ProtobufPublisher<MessageType>>,
+                         MessageType &, co::Coroutine *)>
+          callback) {
     PublisherOptions opts = options;
     const ::google::protobuf::Descriptor *desc = MessageType::descriptor();
     opts.type = absl::StrFormat("protobuf/%s", desc->full_name());
@@ -79,10 +80,11 @@ public:
 
   template <typename MessageType>
   absl::StatusOr<std::shared_ptr<ProtobufPublisher<MessageType>>>
-  RegisterPublisher(const std::string &channel, int slot_size, int num_slots,
-                    std::function<bool(const ProtobufPublisher<MessageType> &,
-                                       MessageType &, co::Coroutine *)>
-                        callback) {
+  RegisterPublisher(
+      const std::string &channel, int slot_size, int num_slots,
+      std::function<bool(std::shared_ptr<ProtobufPublisher<MessageType>>,
+                         MessageType &, co::Coroutine *)>
+          callback) {
     const ::google::protobuf::Descriptor *desc = MessageType::descriptor();
     PublisherOptions opts = {
         .type = absl::StrFormat("protobuf/%s", desc->full_name())};

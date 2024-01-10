@@ -37,6 +37,7 @@ class FlightDirector {
  public:
   FlightDirector(co::CoroutineScheduler &scheduler, toolbelt::InetAddress addr,
                  toolbelt::InetAddress capcom_addr, const std::string &root_dir,
+                 const std::string& log_level,
                  bool log_to_output,
                  int notify_fd);
   ~FlightDirector();

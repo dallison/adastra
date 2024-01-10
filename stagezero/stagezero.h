@@ -24,7 +24,8 @@ class ClientHandler;
 class StageZero {
 public:
   StageZero(co::CoroutineScheduler &scheduler, toolbelt::InetAddress addr,
-            bool log_to_output, const std::string &logdir, int notify_fd = -1);
+            bool log_to_output, const std::string &logdir, const std::string& log_level = "debug", 
+            int notify_fd = -1);
   ~StageZero();
   absl::Status Run();
   void Stop();

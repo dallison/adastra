@@ -12,7 +12,8 @@ template <typename T> using Message = stagezero::module::Message<T>;
 
 class Stereo : public stagezero::module::ProtobufModule {
 public:
-  Stereo(std::unique_ptr<stagezero::SymbolTable> symbols) : ProtobufModule(std::move(symbols)) {}
+  Stereo(std::unique_ptr<stagezero::SymbolTable> symbols)
+      : ProtobufModule(std::move(symbols)) {}
 
   // A stereo image consists of 2 camera images and a disparity
   // image, each of which is 256X256 pixels (RGB).
@@ -22,7 +23,7 @@ public:
   absl::Status Init(int argc, char **argv) override {
     auto stereo = RegisterPublisher<robot::StereoImage>(
         "/stereo", kMaxMessageSize, kNumSlots,
-        [this](const Publisher<robot::StereoImage> &pub,
+        [this](std::shared_ptr<Publisher<robot::StereoImage>> pub,
                robot::StereoImage &msg, co::Coroutine *c) -> bool {
           msg.mutable_header()->set_timestamp(toolbelt::Now());
           // It would be better to move the images into the stereo
@@ -40,23 +41,21 @@ public:
 
     auto left_camera = RegisterSubscriber<robot::CameraImage>(
         "/camera_left",
-        [this](const Subscriber<robot::CameraImage> &sub,
+        [this](std::shared_ptr<Subscriber<robot::CameraImage>> sub,
                Message<const robot::CameraImage> msg,
                co::Coroutine *c) { IncomingLeftCameraImage(msg); });
     if (!left_camera.ok()) {
       return left_camera.status();
     }
-    left_camera_ = std::move(*left_camera);
 
     auto right_camera = RegisterSubscriber<robot::CameraImage>(
         "/camera_right",
-        [this](const Subscriber<robot::CameraImage> &sub,
+        [this](std::shared_ptr<Subscriber<robot::CameraImage>> sub,
                Message<const robot::CameraImage> msg,
                co::Coroutine *c) { IncomingRightCameraImage(msg); });
     if (!right_camera.ok()) {
       return right_camera.status();
     }
-    right_camera_ = std::move(*right_camera);
 
     return absl::OkStatus();
   }
@@ -107,8 +106,6 @@ private:
   }
 
   std::shared_ptr<Publisher<robot::StereoImage>> stereo_;
-  std::shared_ptr<Subscriber<robot::CameraImage>> left_camera_;
-  std::shared_ptr<Subscriber<robot::CameraImage>> right_camera_;
 
   Message<const robot::CameraImage> left_image_;
   Message<const robot::CameraImage> right_image_;

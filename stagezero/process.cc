@@ -46,7 +46,7 @@ void Process::SetProcessId() {
 }
 
 void Process::KillNow() {
-  client_->Log(Name(), toolbelt::LogLevel::kInfo,
+  client_->Log(Name(), toolbelt::LogLevel::kDebug,
                "Killing process %s with pid %d", Name().c_str(), pid_);
   if (pid_ <= 0) {
     return;
@@ -178,11 +178,11 @@ StaticProcess::StartInternal(const std::vector<std::string> extra_env_vars,
           signaled = true;
         }
         if (exited) {
-          client->Log(proc->Name(), toolbelt::LogLevel::kInfo,
+          client->Log(proc->Name(), toolbelt::LogLevel::kDebug,
                       "Static process %s exited with status %d",
                       proc->Name().c_str(), exit_status);
         } else {
-          client->Log(proc->Name(), toolbelt::LogLevel::kInfo,
+          client->Log(proc->Name(), toolbelt::LogLevel::kDebug,
                       "Static process %s received signal %d \"%s\"",
                       proc->Name().c_str(), term_sig, strsignal(term_sig));
         }
@@ -709,7 +709,7 @@ absl::Status Process::Stop(co::Coroutine *c) {
         }
         int timeout = proc->SigIntTimeoutSecs();
         if (timeout > 0) {
-          client->Log(proc->Name(), toolbelt::LogLevel::kInfo,
+          client->Log(proc->Name(), toolbelt::LogLevel::kDebug,
                       "Killing process %s with SIGINT (timeout %d seconds)",
                       proc->Name().c_str(), timeout);
           SafeKill(proc->GetPid(), SIGINT);
@@ -721,7 +721,7 @@ absl::Status Process::Stop(co::Coroutine *c) {
         timeout = proc->SigTermTimeoutSecs();
         if (timeout > 0) {
           SafeKill(proc->GetPid(), SIGTERM);
-          client->Log(proc->Name(), toolbelt::LogLevel::kInfo,
+          client->Log(proc->Name(), toolbelt::LogLevel::kDebug,
                       "Killing process %s with SIGTERM (timeout %d seconds)",
                       proc->Name().c_str(), timeout);
           (void)proc->WaitLoop(c2, std::chrono::seconds(timeout));
@@ -729,7 +729,7 @@ absl::Status Process::Stop(co::Coroutine *c) {
 
         // Always send SIGKILL if it's still running.  It can't ignore this.
         if (proc->IsRunning()) {
-          client->Log(proc->Name(), toolbelt::LogLevel::kInfo,
+          client->Log(proc->Name(), toolbelt::LogLevel::kDebug,
                       "Killing process %s with SIGKILL", proc->Name().c_str());
 
           SafeKill(proc->GetPid(), SIGKILL);
@@ -873,8 +873,7 @@ std::pair<std::string, int> Zygote::BuildZygoteSocketName() {
 
 absl::StatusOr<int>
 Zygote::Spawn(const stagezero::control::LaunchVirtualProcessRequest &req,
-              const std::vector<std::shared_ptr<StreamInfo>> &streams,
-              co::Coroutine *c) {
+              const std::vector<std::shared_ptr<StreamInfo>> &streams) {
   control::SpawnRequest spawn;
   spawn.set_dso(req.proc().dso());
   spawn.set_main_func(req.proc().main_func());
@@ -954,19 +953,19 @@ Zygote::Spawn(const stagezero::control::LaunchVirtualProcessRequest &req,
     return absl::InternalError("Failed to serilize spawn message");
   }
 
-  absl::StatusOr<ssize_t> n = control_socket_.SendMessage(buf, buflen, c);
+  absl::StatusOr<ssize_t> n = control_socket_.SendMessage(buf, buflen);
   if (!n.ok()) {
     control_socket_.Close();
     return n.status();
   }
 
-  if (absl::Status s = control_socket_.SendFds(fds, c); !s.ok()) {
+  if (absl::Status s = control_socket_.SendFds(fds); !s.ok()) {
     control_socket_.Close();
     return s;
   }
 
   // Wait for response and put it in the same buffer we used for send.
-  n = control_socket_.ReceiveMessage(buffer.data(), buffer.size(), c);
+  n = control_socket_.ReceiveMessage(buffer.data(), buffer.size());
   if (!n.ok()) {
     control_socket_.Close();
     return n.status();
@@ -1022,7 +1021,7 @@ absl::Status VirtualProcess::Start(co::Coroutine *c) {
     return status;
   }
 
-  absl::StatusOr<int> pid = zygote_->Spawn(req_, GetStreams(), c);
+  absl::StatusOr<int> pid = zygote_->Spawn(req_, GetStreams());
   if (!pid.ok()) {
     return absl::InternalError(
         absl::StrFormat("Failed to spawn virtual process %s: %s", Name(),
@@ -1090,11 +1089,11 @@ absl::Status VirtualProcess::Start(co::Coroutine *c) {
           signaled = true;
         }
         if (exited) {
-          client->Log(proc->Name(), toolbelt::LogLevel::kInfo,
+          client->Log(proc->Name(), toolbelt::LogLevel::kDebug,
                       "Virtual process %s exited with status %d",
                       proc->Name().c_str(), exit_status);
         } else {
-          client->Log(proc->Name(), toolbelt::LogLevel::kInfo,
+          client->Log(proc->Name(), toolbelt::LogLevel::kDebug,
                       "Virtual process %s received signal %d \"%s\"",
                       proc->Name().c_str(), term_sig, strsignal(term_sig));
         }

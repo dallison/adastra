@@ -398,6 +398,7 @@ private:
   bool running_ = false;
   AdminState admin_state_;
   OperState oper_state_;
+  OperState prev_oper_state_;
 
   toolbelt::TriggerFd interrupt_;
 

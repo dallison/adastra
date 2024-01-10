@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+// This is an example of an RPC service that serves up map
+// segments to other modules upon request.  It is not meant
+// to be a fully fleshed out mapping system, just shows how
+// it can be done.
+package robot;
+
+import "robot/proto/header.proto";
+
+message OpenChannelRequest {
+  string client_name = 1;
+}
+
+message OpenChannelResponse {
+  string error = 1;
+  string request_channel = 2;
+  string response_channel = 3;
+}
+
+message CloseChannelRequest {
+  string client_name = 1;
+}
+
+message CloseChannelResponse {
+  string error = 1;
+}
+
+message LoadMapSegmentRequest {
+  int32 region_id = 1;
+  int32 x = 2;
+  int32 y = 3;
+  int32 width = 4;
+  int32 height = 5;
+}
+
+message LoadMapSegmentResponse {
+  message Tile {
+    int32 id = 1;
+    bytes data = 2;
+  }
+  string error = 1;
+  Tile tile = 2;
+  bool last_tile = 3;
+}
+
+message MapRequest {
+  MessageHeader header = 1;
+  int32 request_id = 2;
+  oneof req {
+    OpenChannelRequest open = 3;
+    CloseChannelRequest close = 4;
+    LoadMapSegmentRequest load = 5;
+  }
+}
+
+message MapResponse {
+  MessageHeader header = 1;
+  int32 response_id = 2;
+  string error = 3;
+  oneof resp {
+    OpenChannelResponse open = 4;
+    CloseChannelResponse close = 5;
+    LoadMapSegmentResponse load = 6;
+  }
+}

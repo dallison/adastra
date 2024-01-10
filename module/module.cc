@@ -4,14 +4,14 @@
 
 #include "module/module.h"
 #include "absl/strings/numbers.h"
-#include <cerrno>
 #include "toolbelt/hexdump.h"
+#include <cerrno>
+#include <signal.h>
 
 namespace stagezero::module {
 
 Module::Module(std::unique_ptr<stagezero::SymbolTable> symbols)
-    : symbols_(std::move(symbols)) {
-    }
+    : symbols_(std::move(symbols)) {}
 
 absl::Status Module::ModuleInit() {
   const std::string &subspace_socket = SubspaceSocket();
@@ -149,7 +149,48 @@ void Module::RunOnEventWithTimeout(
       "event"));
 }
 
+void Module::RemoveSubscriber(const std::shared_ptr<SubscriberBase> sub) {
+  RemoveSubscriber(*sub);
+}
+
+void Module::RemovePublisher(const std::shared_ptr<PublisherBase> pub) {
+  RemovePublisher(*pub);
+}
+
+void Module::RemoveSubscriber(SubscriberBase& sub) {
+  for (auto it = subscribers_.begin(); it != subscribers_.end(); ++it) {
+    if (it->get() == &sub) {
+      sub.Stop();
+      subscribers_.erase(it);
+      return;
+    }
+  }
+}
+
+void Module::RemovePublisher(PublisherBase& pub) {
+  for (auto it = publishers_.begin(); it != publishers_.end(); ++it) {
+    if (it->get() == &pub) {
+      pub.Stop();
+      publishers_.erase(it);
+      return;
+    }
+  }
+}
+static co::CoroutineScheduler* g_scheduler;
+
+static void Signal(int sig) {
+  if (sig == SIGQUIT && g_scheduler != nullptr) {
+    g_scheduler->Show();
+  }
+  signal(sig, SIG_DFL);
+  raise(sig);
+}
+
 void Module::Run() {
+  g_scheduler = &scheduler_;
+  signal(SIGQUIT, Signal);
+  signal(SIGPIPE, SIG_IGN);
+
   // Register a callback to be called when a coroutine completes.  The
   // server keeps track of all coroutines created.
   // This deletes them when they are done.

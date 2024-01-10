@@ -23,3 +23,41 @@ cc_proto_library(
     deps = [":vision_proto"],
 )
 
+proto_library(
+    name = "map_proto",
+    srcs = ["map.proto"],
+    deps = [
+        ":header_proto",
+    ],
+)
+
+cc_proto_library(
+    name = "map_cc_proto",
+    deps = [":map_proto"],
+)
+
+proto_library(
+    name = "localizer_proto",
+    srcs = ["localizer.proto"],
+    deps = [
+        ":header_proto",
+    ],
+)
+
+cc_proto_library(
+    name = "localizer_cc_proto",
+    deps = [":localizer_proto"],
+)
+
+proto_library(
+    name = "gps_proto",
+    srcs = ["gps.proto"],
+    deps = [
+        ":header_proto",
+    ],
+)
+
+cc_proto_library(
+    name = "gps_cc_proto",
+    deps = [":gps_proto"],
+)

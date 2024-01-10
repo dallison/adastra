@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package robot;
+
+import "robot/proto/header.proto";
+
+message GpsLocation {
+  MessageHeader header = 1;
+  double latitude = 2;
+  double longitude = 3;
+}

@@ -60,6 +60,9 @@ cc_binary(
         "//robot/vision:camera.so",
         "//robot/vision:stereo.so",
         "//robot/logger:logger.so",
+        "//robot/mapper:map_server.so",
+        "//robot/localization:gps.so",
+        "//robot/localization:localizer.so",
         "@subspace//server:subspace_server",
     ],
     deps = [

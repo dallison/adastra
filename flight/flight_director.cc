@@ -16,7 +16,9 @@ namespace stagezero::flight {
 FlightDirector::FlightDirector(co::CoroutineScheduler &scheduler,
                                toolbelt::InetAddress addr,
                                toolbelt::InetAddress capcom_addr,
-                               const std::string &root_dir, bool log_to_output,
+                               const std::string &root_dir, 
+                               const std::string& log_level, 
+                               bool log_to_output,
                                int notify_fd)
     : co_scheduler_(scheduler), addr_(std::move(addr)),
       capcom_addr_(capcom_addr), root_dir_(root_dir),
@@ -25,7 +27,9 @@ FlightDirector::FlightDirector(co::CoroutineScheduler &scheduler,
       autostart_capcom_client_(
           std::make_unique<stagezero::capcom::client::Client>(
               stagezero::capcom::client::ClientMode::kNonBlocking)),
-      logger_("flight") {}
+      logger_("flight") {
+        logger_.SetLogLevel(log_level);
+      }
 
 FlightDirector::~FlightDirector() {
   // Clear this before other data members get destroyed.

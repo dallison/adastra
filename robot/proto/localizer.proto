@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package robot;
+
+import "robot/proto/header.proto";
+
+message LocalizationStatus {
+  enum State {
+    NOT_LOCALIZED = 0;
+    PARTIALLY_LOCALIZED = 1;
+    FULLY_LOCALIZED = 2;
+  }
+  MessageHeader header = 1;
+  State state = 2;
+  int32 map_id = 3;
+  double lat = 4;
+  double long = 5;
+}

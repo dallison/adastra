@@ -1,0 +1,22 @@
+subsystem {
+  name: "gps"
+  
+   module {
+    name: "gps"
+    zygote: "standard_zygote"
+    dso: "${runfiles_dir}/__main__/robot/localization/gps.so"
+    disabled: false
+    options {
+      sigint_shutdown_timeout_secs: 2
+      sigterm_shutdown_timeout_secs: 10
+    }
+    stdout {
+      where: LOGGER
+    }
+    stderr {
+      where: LOGGER
+    }
+   }
+}
+
+interface: "gps"

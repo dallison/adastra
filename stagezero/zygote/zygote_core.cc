@@ -340,11 +340,12 @@ absl::Status ZygoteCore::HandleSpawn(
   }
 
   for (auto &stream : req.streams()) {
-    if (stream.has_filename()) {
-      // These are opened locally, not passed from streamzero.
+    if (stream.has_filename() || stream.close()) {
       continue;
     }
-    fds[stream.index()].Reset();
+    if (stream.index() < fds.size()) {
+      fds[stream.index()].Reset();
+    }
   }
 
   resp->set_pid(pid);
@@ -411,7 +412,7 @@ void ZygoteCore::InvokeMainAfterSpawn(
   std::stringstream encoded_symbols;
   local_symbols->Encode(encoded_symbols);
   local_symbols.reset();
-  
+
   exit(main(encoded_symbols.str().data(), int(encoded_symbols.str().size()),
             argv.size(), argv.data(), environ));
 }

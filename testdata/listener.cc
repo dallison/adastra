@@ -2,17 +2,15 @@
 #include "module/protobuf_module.h"
 #include "testdata/proto/chat.pb.h"
 
-template <typename T>
-using Publisher = stagezero::module::ProtobufPublisher<T>;
+template <typename T> using Publisher = stagezero::module::ProtobufPublisher<T>;
 
 template <typename T>
 using Subscriber = stagezero::module::ProtobufSubscriber<T>;
 
-template <typename T>
-using Message = stagezero::module::Message<T>;
+template <typename T> using Message = stagezero::module::Message<T>;
 
 class Listener : public stagezero::module::ProtobufModule {
- public:
+public:
   Listener(std::unique_ptr<stagezero::SymbolTable> symbols)
       : ProtobufModule(std::move(symbols)) {}
 
@@ -25,7 +23,7 @@ class Listener : public stagezero::module::ProtobufModule {
 
     auto sub = RegisterSubscriber<chat::Question>(
         "question",
-        [this](const Subscriber<chat::Question> &sub,
+        [this](std::shared_ptr<Subscriber<chat::Question>> sub,
                Message<const chat::Question> msg, co::Coroutine *c) {
           std::cout << msg->text() << std::endl;
           chat::Answer ans;
@@ -39,7 +37,7 @@ class Listener : public stagezero::module::ProtobufModule {
     return absl::OkStatus();
   }
 
- private:
+private:
   std::shared_ptr<Publisher<chat::Answer>> pub_;
   std::shared_ptr<Subscriber<chat::Question>> sub_;
 };

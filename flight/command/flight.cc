@@ -23,6 +23,7 @@
 ABSL_FLAG(std::string, hostname, "localhost",
           "Flight Director hostname (or IP address)");
 ABSL_FLAG(int, port, 6524, "Flight Director listening port");
+ABSL_FLAG(std::string, log_level, "debug", "Log level (verbose, debug, info, warning, error)");
 
 namespace stagezero::flight {
 
@@ -208,6 +209,7 @@ absl::Status AbortCommand::Execute(flight::client::Client *client, int argc,
 absl::Status LogCommand::Execute(flight::client::Client *client, int argc,
                                  char **argv) const {
   toolbelt::Logger logger("flight");
+  logger.SetLogLevel(absl::GetFlag(FLAGS_log_level));
   if (argc == 3) {
     // Log from file.
     std::ifstream in(argv[2]);

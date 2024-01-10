@@ -30,7 +30,7 @@ public:
     std::string channel_name = absl::StrFormat("/camera_%s", name->Value());
     auto pub = RegisterPublisher<robot::CameraImage>(
         channel_name, kMaxMessageSize, kNumSlots,
-        [](const Publisher<robot::CameraImage> &pub, robot::CameraImage &msg,
+        [](std::shared_ptr< Publisher<robot::CameraImage> >pub, robot::CameraImage &msg,
            co::Coroutine *c) -> bool {
           msg.mutable_header()->set_timestamp(toolbelt::Now());
           msg.set_rows(1024);
@@ -45,15 +45,11 @@ public:
     if (!pub.ok()) {
       return pub.status();
     }
-    pub_ = std::move(*pub);
 
     // Send the camera images at 10Hz.
-    RunPeriodically(10, [this](co::Coroutine *c) { pub_->Publish(); });
+    RunPeriodically(10, [pub = *pub](co::Coroutine *c) { pub->Publish(); });
     return absl::OkStatus();
   }
-
-private:
-  std::shared_ptr<Publisher<robot::CameraImage>> pub_;
 };
 
 DEFINE_MODULE(Camera);

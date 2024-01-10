@@ -20,9 +20,10 @@ namespace stagezero {
 
 StageZero::StageZero(co::CoroutineScheduler &scheduler,
                      toolbelt::InetAddress addr, bool log_to_output,
-                     const std::string &logdir, int notify_fd)
+                     const std::string &logdir, const std::string& log_level, int notify_fd)
     : co_scheduler_(scheduler), addr_(addr), notify_fd_(notify_fd),
       logger_("stagezero", log_to_output) {
+  logger_.SetLogLevel(log_level);
   // Add a global symbol for where we want log files.
   global_symbols_.AddSymbol("logdir", logdir, false);
 }

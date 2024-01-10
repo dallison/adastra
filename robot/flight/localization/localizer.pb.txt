@@ -1,0 +1,25 @@
+subsystem {
+  name: "localizer"
+  
+   module {
+    name: "localizer"
+    zygote: "standard_zygote"
+    dso: "${runfiles_dir}/__main__/robot/localization/localizer.so"
+    disabled: false
+    options {
+      sigint_shutdown_timeout_secs: 2
+      sigterm_shutdown_timeout_secs: 10
+    }
+    stdout {
+      where: LOGGER
+    }
+    stderr {
+      where: LOGGER
+    }
+   }
+   dep: "gps"
+   dep: "mapper"
+   dep: "stereo"
+}
+
+interface: "localizer"

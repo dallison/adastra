@@ -28,12 +28,15 @@ static void Signal(int sig) {
 }
 
 ABSL_FLAG(int, port, 6523, "TCP listening port");
+ABSL_FLAG(int, notify_fd, -1, "Notification file descriptor");
 ABSL_FLAG(int, local_stagezero_port, 6522, "Local StageZero listening port");
 ABSL_FLAG(std::string, log_file, "", "Capcom log file");
 ABSL_FLAG(std::string, listen_address, "",
           "IP Address or hostname to listen on");
 ABSL_FLAG(bool, silent, false, "Don't log messages to output");
 ABSL_FLAG(bool, test_mode, false, "Exit if any subsystem fails (no restarts)");
+ABSL_FLAG(std::string, log_level, "debug",
+          "Log level (verbose, debug, info, warning, error)");
 
 int main(int argc, char **argv) {
   absl::ParseCommandLine(argc, argv);
@@ -56,7 +59,8 @@ int main(int argc, char **argv) {
   stagezero::capcom::Capcom capcom(
       scheduler, capcom_addr, !absl::GetFlag(FLAGS_silent),
       absl::GetFlag(FLAGS_local_stagezero_port), absl::GetFlag(FLAGS_log_file),
-      absl::GetFlag(FLAGS_test_mode), -1);
+      absl::GetFlag(FLAGS_log_level), absl::GetFlag(FLAGS_test_mode),
+      absl::GetFlag(FLAGS_notify_fd));
   g_capcom = &capcom;
 
   if (absl::Status status = capcom.Run(); !status.ok()) {

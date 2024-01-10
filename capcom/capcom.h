@@ -39,6 +39,7 @@ public:
   Capcom(co::CoroutineScheduler &scheduler, toolbelt::InetAddress addr,
          bool log_to_output, int local_stagezero_port,
         std::string log_file_name = "",
+        std::string log_level = "",
          bool test_mode = false,
          int notify_fd = -1);
   ~Capcom();

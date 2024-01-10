@@ -51,6 +51,7 @@ public:
     stagezero_addr_ = toolbelt::InetAddress("localhost", port);
     stagezero_ = std::make_unique<stagezero::StageZero>(
         stagezero_scheduler_, stagezero_addr_, true, "/tmp",
+        "debug",
         stagezero_pipe_[1]);
 
     // Start stagezero running in a thread.
@@ -79,7 +80,7 @@ public:
 
     capcom_addr_ = toolbelt::InetAddress("localhost", port);
     capcom_ = std::make_unique<stagezero::capcom::Capcom>(
-        capcom_scheduler_, capcom_addr_, true, stagezero_port, "", false,
+        capcom_scheduler_, capcom_addr_, true, stagezero_port, "", "debug", false,
         capcom_pipe_[1]);
 
     // Start capcom running in a thread.

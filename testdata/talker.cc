@@ -2,17 +2,15 @@
 #include "module/protobuf_module.h"
 #include "testdata/proto/chat.pb.h"
 
-template <typename T>
-using Publisher = stagezero::module::ProtobufPublisher<T>;
+template <typename T> using Publisher = stagezero::module::ProtobufPublisher<T>;
 
 template <typename T>
 using Subscriber = stagezero::module::ProtobufSubscriber<T>;
 
-template <typename T>
-using Message = stagezero::module::Message<T>;
+template <typename T> using Message = stagezero::module::Message<T>;
 
 class Talker : public stagezero::module::ProtobufModule {
- public:
+public:
   Talker(std::unique_ptr<stagezero::SymbolTable> symbols)
       : ProtobufModule(std::move(symbols)) {}
 
@@ -20,8 +18,8 @@ class Talker : public stagezero::module::ProtobufModule {
     std::cout << "Running on " << LookupSymbol("compute") << std::endl;
     auto pub = RegisterPublisher<chat::Question>(
         "question", 256, 10,
-        [this](const Publisher<chat::Question> &pub, chat::Question &msg,
-               co::Coroutine *c) -> bool {
+        [this](std::shared_ptr<Publisher<chat::Question>> pub,
+               chat::Question &msg, co::Coroutine *c) -> bool {
           msg.set_x(++count_);
           msg.set_y(3);
           msg.set_text(absl::StrFormat("What is %d times %d", count_, 3));
@@ -33,7 +31,7 @@ class Talker : public stagezero::module::ProtobufModule {
     pub_ = std::move(*pub);
 
     auto sub = RegisterSubscriber<chat::Answer>(
-        "answer", [](const Subscriber<chat::Answer> &sub,
+        "answer", [](std::shared_ptr<Subscriber<chat::Answer>> sub,
                      Message<const chat::Answer> msg, co::Coroutine *c) {
           std::cout << " The answer is " << msg->text() << std::endl;
         });
@@ -47,7 +45,7 @@ class Talker : public stagezero::module::ProtobufModule {
     return absl::OkStatus();
   }
 
- private:
+private:
   int count_ = 0;
   std::shared_ptr<Publisher<chat::Question>> pub_;
   std::shared_ptr<Subscriber<chat::Answer>> sub_;

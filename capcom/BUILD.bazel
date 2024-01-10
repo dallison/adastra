@@ -6,6 +6,7 @@ cc_library(
         "capcom.cc",
         "client_handler.cc",
         "subsystem.cc",
+        "state_machine.cc",
     ],
     hdrs = [
         "bitset.h",
