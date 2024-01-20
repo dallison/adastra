@@ -49,8 +49,8 @@ void Subsystem::Run() {
   admin_state_ = AdminState::kOffline;
   prev_oper_state_ = OperState::kOffline;
   EnterState(OperState::kOffline, kNoClient);
-  capcom_.Log(Name(), toolbelt::LogLevel::kDebug, "Subsystem %s is now ready to receive commands",
-              Name().c_str());
+  capcom_.Log(Name(), toolbelt::LogLevel::kDebug,
+              "Subsystem %s is now ready to receive commands", Name().c_str());
 }
 
 void Subsystem::Stop() {
@@ -209,7 +209,6 @@ void Subsystem::StopProcesses(co::Coroutine *c) {
   }
 }
 
-
 void Subsystem::SendOutput(int fd, const std::string &data, co::Coroutine *c) {
   c->Wait(interactive_output_.Fd(), POLLOUT);
   int e = ::write(interactive_output_.Fd(), data.data(), data.size());
@@ -221,12 +220,12 @@ void Subsystem::SendOutput(int fd, const std::string &data, co::Coroutine *c) {
 
 Process *Subsystem::FindInteractiveProcess() { return nullptr; }
 
-
-
 void Subsystem::RaiseAlarm(const Alarm &alarm) {
   alarm_ = alarm;
+  alarm_.id = absl::StrFormat("%s/%d", alarm.name, alarm.type);
   capcom_.SendAlarm(alarm_);
   alarm_raised_ = true;
+  alarm_count_++;
 }
 
 void Subsystem::ClearAlarm() {
@@ -256,7 +255,7 @@ absl::Status Subsystem::AddStaticProcess(
   }
 
   auto p = std::make_unique<StaticProcess>(
-      capcom_, options.name(), proc.executable(), options, streams, *client);
+      capcom_, options.name(), compute->name, proc.executable(), options, streams, *client);
   AddProcess(std::move(p));
 
   return absl::OkStatus();
@@ -285,7 +284,7 @@ absl::Status Subsystem::AddZygote(
         absl::StrFormat("Zygote %s already exists", options.name()));
   }
 
-  auto p = std::make_unique<Zygote>(capcom_, options.name(), proc.executable(),
+  auto p = std::make_unique<Zygote>(capcom_, options.name(), compute->name, proc.executable(),
                                     options, streams, *client);
   capcom_.AddZygote(options.name(), p.get());
 
@@ -325,7 +324,7 @@ absl::Status Subsystem::AddVirtualProcess(
   }
 
   auto p = std::make_unique<VirtualProcess>(
-      capcom_, options.name(), proc.zygote(), proc.dso(), proc.main_func(),
+      capcom_, options.name(), compute->name, proc.zygote(), proc.dso(), proc.main_func(),
       options, streams, *client);
   AddProcess(std::move(p));
 
@@ -370,6 +369,8 @@ void Subsystem::BuildStatus(stagezero::proto::SubsystemStatus *status) {
     status->set_oper_state(stagezero::proto::OPER_BROKEN);
     break;
   }
+  status->set_alarm_count(alarm_count_);
+  status->set_restart_count(restart_count_);
 
   // Processes.
   for (auto &proc : processes_) {
@@ -378,6 +379,16 @@ void Subsystem::BuildStatus(stagezero::proto::SubsystemStatus *status) {
     p->set_process_id(proc->GetProcessId());
     p->set_pid(proc->GetPid());
     p->set_running(proc->IsRunning());
+    p->set_compute(proc->Compute());
+    p->set_subsystem(name_);
+    p->set_alarm_count(proc->AlarmCount());
+    if (proc->IsZygote()) {
+      p->set_type(stagezero::proto::SubsystemStatus::ZYGOTE);
+    } else if (proc->IsVirtual()) {
+      p->set_type(stagezero::proto::SubsystemStatus::VIRTUAL);
+    } else {
+      p->set_type(stagezero::proto::SubsystemStatus::STATIC);
+    }
   }
 }
 
@@ -445,8 +456,10 @@ absl::Status Process::Stop(co::Coroutine *c) {
 
 void Process::RaiseAlarm(Capcom &capcom, const Alarm &alarm) {
   alarm_ = alarm;
+  alarm_.id = absl::StrFormat("%s/%d", alarm.name, alarm.type);
   capcom.SendAlarm(alarm_);
   alarm_raised_ = true;
+  alarm_count_++;
 }
 
 void Process::ClearAlarm(Capcom &capcom) {
@@ -459,12 +472,12 @@ void Process::ClearAlarm(Capcom &capcom) {
 }
 
 StaticProcess::StaticProcess(
-    Capcom &capcom, std::string name, std::string executable,
-    const stagezero::config::ProcessOptions &options,
+    Capcom &capcom, std::string name, std::string compute,
+    std::string executable, const stagezero::config::ProcessOptions &options,
     const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
         &streams,
     std::shared_ptr<stagezero::Client> client)
-    : Process(capcom, std::move(name), std::move(client)),
+    : Process(capcom, std::move(name), std::move(compute), std::move(client)),
       executable_(std::move(executable)) {
   ParseOptions(options);
   ParseStreams(streams);
@@ -545,13 +558,14 @@ absl::Status Zygote::Launch(Subsystem *subsystem, co::Coroutine *c) {
 }
 
 VirtualProcess::VirtualProcess(
-    Capcom &capcom, std::string name, std::string zygote_name, std::string dso,
-    std::string main_func, const stagezero::config::ProcessOptions &options,
+    Capcom &capcom, std::string name, std::string compute,
+    std::string zygote_name, std::string dso, std::string main_func,
+    const stagezero::config::ProcessOptions &options,
     const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
         &streams,
     std::shared_ptr<stagezero::Client> client)
-    : Process(capcom, name, std::move(client)), zygote_name_(zygote_name),
-      dso_(dso), main_func_(main_func) {
+    : Process(capcom, std::move(name), std::move(compute), std::move(client)),
+      zygote_name_(std::move(zygote_name)), dso_(dso), main_func_(main_func) {
   ParseOptions(options);
   ParseStreams(streams);
 }

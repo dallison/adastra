@@ -12,16 +12,20 @@
 
 namespace stagezero::module {
 
+// Template function to calulate the serialized length of a protobuf message.
 template <typename MessageType> struct ProtobufSerializedLength {
   static uint64_t Invoke(const MessageType &msg) { return msg.ByteSizeLong(); }
 };
 
+// Template function to serialize a protobuf message to an array.
 template <typename MessageType> struct ProtobufSerialize {
   static uint64_t Invoke(const MessageType &msg, void *buffer, size_t buflen) {
     return msg.SerializeToArray(buffer, buflen);
   }
 };
 
+// Template function to calulate the deserialize a protobuf message from
+// an array.
 template <typename MessageType> struct ProtobufDeserialize {
   static uint64_t Invoke(MessageType &msg, const void *buffer, size_t buflen) {
     return msg.ParseFromArray(buffer, buflen);
@@ -38,6 +42,10 @@ using ProtobufPublisher =
     SerializingPublisher<MessageType, ProtobufSerializedLength<MessageType>,
                          ProtobufSerialize<MessageType>>;
 
+// A protobuf module is a module that uses the serializing publishers
+// and subscribers to send and receive messages over Subspace.
+// Despite all the C++ template syntax line noise, it's really a simple
+// type wrapper around the Module's template functions.
 class ProtobufModule : public Module {
 public:
   ProtobufModule(std::unique_ptr<stagezero::SymbolTable> symbols)

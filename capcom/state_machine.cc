@@ -581,7 +581,7 @@ void Subsystem::Online(uint32_t client_id, co::Coroutine *c) {
                    break;
                  case Message::kReportOper:
                    subsystem->capcom_.Log(
-                       subsystem->Name(), toolbelt::LogLevel::kDebug,
+                       subsystem->Name(), toolbelt::LogLevel::kInfo,
                        "Subsystem %s has reported oper state change to %s",
                        message->sender->Name().c_str(),
                        OperStateName(message->state.oper));
@@ -979,7 +979,7 @@ Subsystem::StateTransition Subsystem::RestartIfPossibleAfterProcessCrash(
                              .severity = Alarm::Severity::kWarning,
                              .reason = Alarm::Reason::kCrashed,
                              .status = Alarm::Status::kRaised,
-                             .details = absl::StrFormat("Process %s has exited",
+                             .details = absl::StrFormat("Process %s is being restarted",
                                                         proc->Name())});
 
   // Delay before restarting.
@@ -1017,6 +1017,7 @@ Subsystem::StateTransition Subsystem::Abort(bool emergency) {
 }
 
 void Subsystem::Restarting(uint32_t client_id, co::Coroutine *c) {
+  restart_count_++;
   capcom_.SendSubsystemStatusEvent(this);
   if (AllProcessesStopped()) {
     if (parents_.empty()) {

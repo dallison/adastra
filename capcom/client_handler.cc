@@ -44,6 +44,7 @@ absl::Status ClientHandler::SendAlarm(const Alarm &alarm) {
   auto event = std::make_shared<stagezero::proto::Event>();
   auto a = event->mutable_alarm();
   alarm.ToProto(a);
+  Log("capcom", toolbelt::LogLevel::kInfo, "Alarm: %s", a->DebugString().c_str());
   return QueueEvent(std::move(event));
 }
 

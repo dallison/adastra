@@ -25,15 +25,27 @@ enum OperState {
 }
 
 message SubsystemStatus {
+  enum ProcessType {
+    STATIC = 0;
+    ZYGOTE = 1;
+    VIRTUAL = 2;
+  }
+
   message Process {
     string name = 1;
     string process_id = 2;
     int32 pid = 3;
     bool running = 4;
+    ProcessType type = 5;
+    string compute = 6;
+    string subsystem = 7;
+    int32 alarm_count = 8;
   }
 
   string name = 1;
   AdminState admin_state = 2;
   OperState oper_state = 3;
   repeated Process processes = 4;
+  int32 alarm_count = 5;      // Total subsystem alarms raised.
+  int32 restart_count = 6;
 }

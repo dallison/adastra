@@ -486,9 +486,7 @@ TEST_F(ModuleTest, ReliablePubSub) {
   int pub_count = 1;
   auto p = mod.RegisterPublisher<moduletest::TestMessage>(
       "foobar", 256, 10, {.reliable = true},
-      [&pub_count](
-          std::shared_ptr<Publisher<moduletest::TestMessage>> pub,
-          moduletest::TestMessage &msg, co::Coroutine *c) -> bool {
+      [&pub_count](auto pub, auto &msg, auto c) -> bool {
         msg.set_x(pub_count++);
         msg.set_s("dave");
         return true;
@@ -499,9 +497,7 @@ TEST_F(ModuleTest, ReliablePubSub) {
   int sub_count = 0;
   auto sub = mod.RegisterSubscriber<moduletest::TestMessage>(
       "foobar", {.reliable = true},
-      [&mod, &sub_count](
-          std::shared_ptr<Subscriber<moduletest::TestMessage>> sub,
-          Message<const moduletest::TestMessage> msg, co::Coroutine *c) {
+      [&mod, &sub_count](auto sub, auto msg, auto c) {
         sub_count++;
         if (sub_count == kNumMessages) {
           mod.Stop();

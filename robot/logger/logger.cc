@@ -42,9 +42,7 @@ public:
     // all channels.
     auto directory = RegisterSubscriber<subspace::ChannelDirectory>(
         "/subspace/ChannelDirectory",
-        [this](std::shared_ptr<Subscriber<subspace::ChannelDirectory>> sub,
-               Message<const subspace::ChannelDirectory> msg,
-               co::Coroutine *c) { IncomingChannelDirectory(msg); });
+        [this](auto sub, auto msg, auto c) { IncomingChannelDirectory(msg); });
     if (!directory.ok()) {
       return directory.status();
     }
@@ -78,11 +76,7 @@ private:
           return;
         }
         auto sub = RegisterZeroCopySubscriber<std::byte>(
-            name, [this, log_file](
-                      std::shared_ptr<
-                          stagezero::module::ZeroCopySubscriber<std::byte>>
-                          sub,
-                      Message<const std::byte> msg, co::Coroutine *c) {
+            name, [this, log_file](auto sub, auto msg, auto c) {
               absl::Span<const std::byte> span = msg;
               if (absl::Status status = WriteLogEntry(*log_file, span);
                   !status.ok()) {

@@ -62,9 +62,9 @@ struct Message {
 
 class Process {
 public:
-  Process(Capcom &capcom, std::string name,
+  Process(Capcom &capcom, std::string name, std::string compute,
           std::shared_ptr<stagezero::Client> client)
-      : capcom_(capcom), name_(name), client_(client) {}
+      : capcom_(capcom), name_(name), compute_(compute), client_(client) {}
   virtual ~Process() = default;
   virtual absl::Status Launch(Subsystem *subsystem, co::Coroutine *c) = 0;
   absl::Status Stop(co::Coroutine *c);
@@ -76,6 +76,7 @@ public:
   bool IsRunning() const { return running_; }
 
   const std::string &GetProcessId() const { return process_id_; }
+  const std::string& Compute() const { return compute_; }
 
   int GetPid() const { return pid_; }
 
@@ -90,6 +91,7 @@ public:
   }
 
   virtual bool IsZygote() const { return false; }
+  virtual bool IsVirtual() const { return false; }
 
   absl::Status SendInput(int fd, const std::string &data, co::Coroutine *c);
 
@@ -97,6 +99,8 @@ public:
 
   bool IsCritical() const { return critical_; }
   bool IsOneShot() const { return oneshot_; }
+
+  int AlarmCount() const { return alarm_count_; }
 
 protected:
   void ParseOptions(const stagezero::config::ProcessOptions &options);
@@ -106,6 +110,7 @@ protected:
 
   Capcom &capcom_;
   std::string name_;
+  std::string compute_;
   std::string description_;
   std::vector<Variable> vars_;
   std::vector<std::string> args_;
@@ -119,6 +124,7 @@ protected:
   int pid_;
   Alarm alarm_;
   bool alarm_raised_ = false;
+  int alarm_count_ = 0;
   std::shared_ptr<stagezero::Client> client_;
   std::vector<Stream> streams_;
   bool interactive_ = false;
@@ -131,7 +137,7 @@ protected:
 class StaticProcess : public Process {
 public:
   StaticProcess(
-      Capcom &capcom, std::string name, std::string executable,
+      Capcom &capcom, std::string name, std::string compute, std::string executable,
       const stagezero::config::ProcessOptions &options,
       const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
           &streams,
@@ -145,12 +151,12 @@ protected:
 class Zygote : public StaticProcess {
 public:
   Zygote(
-      Capcom &capcom, std::string name, std::string executable,
+      Capcom &capcom, std::string name, std::string compute, std::string executable,
       const stagezero::config::ProcessOptions &options,
       const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
           &streams,
       std::shared_ptr<stagezero::Client> client)
-      : StaticProcess(capcom, name, executable, options, streams,
+      : StaticProcess(capcom, name, compute, executable, options, streams,
                       std::move(client)) {}
   absl::Status Launch(Subsystem *subsystem, co::Coroutine *c) override;
   bool IsZygote() const override { return true; }
@@ -159,13 +165,14 @@ public:
 class VirtualProcess : public Process {
 public:
   VirtualProcess(
-      Capcom &capcom, std::string name, std::string zygote_name,
+      Capcom &capcom, std::string name, std::string compute, std::string zygote_name,
       std::string dso, std::string main_func,
       const stagezero::config::ProcessOptions &options,
       const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
           &streams,
       std::shared_ptr<stagezero::Client> client);
   absl::Status Launch(Subsystem *subsystem, co::Coroutine *c) override;
+  bool IsVirtual() const override { return true; }
 
 private:
   std::string zygote_name_;
@@ -419,9 +426,11 @@ private:
   int num_restarts_ = 0;
   int max_restarts_ = kDefaultMaxRestarts;
   bool critical_ = false;
-
+  int restart_count_ = 0;
+  
   Alarm alarm_;
   bool alarm_raised_ = false;
+  int alarm_count_ = 0;
 
   static constexpr std::chrono::duration<int> kMaxRestartDelay = 32s;
   std::chrono::duration<int> restart_delay_ = 1s;

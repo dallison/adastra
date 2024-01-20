@@ -39,17 +39,15 @@ public:
     status_publisher_ = std::move(*status_publisher);
 
     auto stereo_image_subscriber = RegisterSubscriber<robot::StereoImage>(
-        kStereo, [this](std::shared_ptr<Subscriber<robot::StereoImage>> sub,
-                        Message<const robot::StereoImage> msg,
-                        co::Coroutine *c) { IncomingStereoImage(msg, c); });
+        kStereo,
+        [this](auto sub, auto msg, auto c) { IncomingStereoImage(msg, c); });
     if (!stereo_image_subscriber.ok()) {
       return stereo_image_subscriber.status();
     }
 
     auto gps_subscriber = RegisterSubscriber<robot::GpsLocation>(
-        kGps, [this](std::shared_ptr<Subscriber<robot::GpsLocation>> sub,
-                     Message<const robot::GpsLocation> msg,
-                     co::Coroutine *c) { IncomingGpsLocation(msg, c); });
+        kGps,
+        [this](auto sub, auto msg, auto c) { IncomingGpsLocation(msg, c); });
     if (!gps_subscriber.ok()) {
       return gps_subscriber.status();
     }
@@ -76,8 +74,7 @@ private:
   absl::Status LoadMap(co::Coroutine *c) {
     auto open_req = RegisterPublisher<robot::MapRequest>(
         kMapRequestChannel, 32, 16, {.reliable = true},
-        [](std::shared_ptr<Publisher<robot::MapRequest>> pub,
-           robot::MapRequest &msg, co::Coroutine *c) -> bool {
+        [](auto pub, auto &msg, auto c) -> bool {
           std::cout << "opening map server\n";
           auto open = msg.mutable_open();
           open->set_client_name("localizer");
@@ -91,9 +88,7 @@ private:
 
     auto open_resp = RegisterSubscriber<robot::MapResponse>(
         kMapResponseChannel,
-        [ this, open_req = *open_req ](
-            std::shared_ptr<Subscriber<robot::MapResponse>> sub,
-            Message<const robot::MapResponse> msg, co::Coroutine * c) {
+        [ this, open_req = *open_req ](auto sub, auto msg, auto c) {
           // We don't need the open request publisher or subscriber now.
           RemovePublisher(open_req);
           RemoveSubscriber(sub);
@@ -109,8 +104,7 @@ private:
 
             auto load_req = RegisterPublisher<robot::MapRequest>(
                 request_channel, 32, 16, {.reliable = true},
-                [](std::shared_ptr<Publisher<robot::MapRequest>> pub,
-                   robot::MapRequest &msg, co::Coroutine *c) -> bool {
+                [](auto pub, auto &msg, auto c) -> bool {
                   std::cout << "loading map\n";
                   auto load = msg.mutable_load();
                   msg.mutable_header()->set_timestamp(toolbelt::Now());
@@ -130,9 +124,7 @@ private:
 
             auto load_resp = RegisterSubscriber<robot::MapResponse>(
                 response_channel,
-                [ this, load_req = *load_req ](
-                    std::shared_ptr<Subscriber<robot::MapResponse>> sub,
-                    Message<const robot::MapResponse> msg, co::Coroutine * c) {
+                [ this, load_req = *load_req ](auto sub, auto msg, auto c) {
                   IncomingMapTile(load_req, sub, msg);
                 });
             if (!load_resp.ok()) {
@@ -173,8 +165,7 @@ private:
       // Close the map request.
       auto close_req = RegisterPublisher<robot::MapRequest>(
           kMapRequestChannel, 32, 16, {.reliable = true},
-          [](std::shared_ptr<Publisher<robot::MapRequest>> pub,
-             robot::MapRequest &msg, co::Coroutine *c) -> bool {
+          [](auto pub, auto &msg, auto c) -> bool {
             std::cout << "closing connection\n";
             auto close = msg.mutable_close();
             close->set_client_name("localizer");
@@ -189,9 +180,7 @@ private:
 
       auto close_resp = RegisterSubscriber<robot::MapResponse>(
           kMapResponseChannel,
-          [ this, close_req = *close_req ](
-              std::shared_ptr<Subscriber<robot::MapResponse>> sub,
-              Message<const robot::MapResponse> msg, co::Coroutine * c) {
+          [ this, close_req = *close_req ](auto sub, auto msg, auto c) {
             RemovePublisher(close_req);
             RemoveSubscriber(sub);
             if (!msg->close().error().empty()) {

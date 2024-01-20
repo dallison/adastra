@@ -161,6 +161,9 @@ public:
   // callback will be invoked on a coroutine owned by the subscriber.
   //
   // This overload provides a set of options for the subscriber.
+  //
+  // You can use "auto" for the arguments of a lambda for the callback
+  // function if you don't like repeating all the template arguments.
   template <typename MessageType>
   absl::StatusOr<std::shared_ptr<ZeroCopySubscriber<MessageType>>>
   RegisterZeroCopySubscriber(
@@ -175,6 +178,9 @@ public:
   // callback will be invoked on a coroutine owned by the subscriber.
   //
   // This overload uses the default subscriber options.
+  //
+  // You can use "auto" for the arguments of a lambda for the callback
+  // function if you don't like repeating all the template arguments.
   template <typename MessageType>
   absl::StatusOr<std::shared_ptr<ZeroCopySubscriber<MessageType>>>
   RegisterZeroCopySubscriber(
@@ -195,6 +201,11 @@ public:
   // This works for both reliable and unreliable publishers.
   //
   // This overload allows publisher options to be set.
+  //
+  // NOTE: When registering a publisher with a callback, you can use "auto"
+  // for the arguments of the lambda, but if you do you MUST use "auto&" for
+  // the 'msg' argument otherwise the lambda will get a copy of the message
+  // and that won't work.
   template <typename MessageType, typename SerializedLength, typename Serialize>
   absl::StatusOr<std::shared_ptr<
       SerializingPublisher<MessageType, SerializedLength, Serialize>>>
@@ -216,6 +227,11 @@ public:
   // This works for both reliable and unreliable publishers.
   //
   // This overload uses the default publisher options.
+  //
+  // NOTE: When registering a publisher with a callback, you can use "auto"
+  // for the arguments of the lambda, but if you do you MUST use "auto&" for
+  // the 'msg' argument otherwise the lambda will get a copy of the message
+  // and that won't work.
   template <typename MessageType, typename SerializedLength, typename Serialize>
   absl::StatusOr<std::shared_ptr<
       SerializingPublisher<MessageType, SerializedLength, Serialize>>>
@@ -261,6 +277,11 @@ public:
   //
   // Both callback and non-callback overloads are provided with the same
   // usage and constraints as the serializing publisher functions.
+  //
+  // NOTE: When registering a publisher with a callback, you can use "auto"
+  // for the arguments of the lambda, but if you do you MUST use "auto&" for
+  // the 'msg' argument otherwise the lambda will get a copy of the message
+  // and that won't work.
   template <typename MessageType>
   absl::StatusOr<std::shared_ptr<ZeroCopyPublisher<MessageType>>>
   RegisterZeroCopyPublisher(

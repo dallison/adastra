@@ -177,19 +177,19 @@ void Capcom::LoggerFlushCoroutine(co::Coroutine *c) {
     for (auto & [ timestamp, msg ] : log_buffer_) {
       toolbelt::LogLevel level;
       switch (msg->level()) {
-      case stagezero::proto::LogMessage::VERBOSE:
+      case stagezero::proto::LogMessage::LOG_VERBOSE:
         level = toolbelt::LogLevel::kVerboseDebug;
         break;
-      case stagezero::proto::LogMessage::DBG:
+      case stagezero::proto::LogMessage::LOG_DBG:
         level = toolbelt::LogLevel::kDebug;
         break;
-      case stagezero::proto::LogMessage::INFO:
+      case stagezero::proto::LogMessage::LOG_INFO:
         level = toolbelt::LogLevel::kInfo;
         break;
-      case stagezero::proto::LogMessage::WARNING:
+      case stagezero::proto::LogMessage::LOG_WARNING:
         level = toolbelt::LogLevel::kWarning;
         break;
-      case stagezero::proto::LogMessage::ERR:
+      case stagezero::proto::LogMessage::LOG_ERR:
         level = toolbelt::LogLevel::kError;
         break;
       default:

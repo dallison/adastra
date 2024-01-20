@@ -16,9 +16,8 @@ namespace stagezero::flight {
 FlightDirector::FlightDirector(co::CoroutineScheduler &scheduler,
                                toolbelt::InetAddress addr,
                                toolbelt::InetAddress capcom_addr,
-                               const std::string &root_dir, 
-                               const std::string& log_level, 
-                               bool log_to_output,
+                               const std::string &root_dir,
+                               const std::string &log_level, bool log_to_output,
                                int notify_fd)
     : co_scheduler_(scheduler), addr_(std::move(addr)),
       capcom_addr_(capcom_addr), root_dir_(root_dir),
@@ -28,8 +27,8 @@ FlightDirector::FlightDirector(co::CoroutineScheduler &scheduler,
           std::make_unique<stagezero::capcom::client::Client>(
               stagezero::capcom::client::ClientMode::kNonBlocking)),
       logger_("flight") {
-        logger_.SetLogLevel(log_level);
-      }
+  logger_.SetLogLevel(log_level);
+}
 
 FlightDirector::~FlightDirector() {
   // Clear this before other data members get destroyed.
@@ -174,8 +173,8 @@ absl::Status FlightDirector::Run() {
           }
         }
 
-        // We flatten the subsystem graph so that all dependencies are registered
-        // before the subsystems that depend on them.
+        // We flatten the subsystem graph so that all dependencies are
+        // registered before the subsystems that depend on them.
         std::vector<Subsystem *> flattened_graph;
         absl::flat_hash_set<Subsystem *> visited;
         for (auto & [ name, subsystem ] : interfaces_) {
@@ -460,7 +459,7 @@ absl::Status FlightDirector::LoadSubsystemGraph(
 
     subsystem->max_restarts = capcom::client::kDefaultMaxRestarts;
     if (s.has_max_restarts()) {
-       subsystem->max_restarts = s.max_restarts();
+      subsystem->max_restarts = s.max_restarts();
     }
     subsystem->critical = s.critical();
 
@@ -808,16 +807,7 @@ void FlightDirector::EventMonitorCoroutine(co::Coroutine *c) {
         break;
       }
     }
-    if (!send_event_to_client) {
-      // We can ignore most events if the client doesn't want them
-      // but we will want to report log events to the logger.  Capcom will
-      // probably have written to a file, but we will want to see them
-      // on the screen.
-      if ((*event)->type == EventType::kLog && log_to_output_) {
-        LogMessage log = std::get<3>((*event)->event);
-        logger_.Log(log.level, log.timestamp, log.source, log.text);
-      }
-    } else {
+    if (send_event_to_client) {
       auto proto_event = std::make_shared<stagezero::proto::Event>();
       (*event)->ToProto(proto_event.get());
       for (auto &handler : client_handlers_) {
@@ -827,6 +817,14 @@ void FlightDirector::EventMonitorCoroutine(co::Coroutine *c) {
                       status.ToString().c_str());
         }
       }
+    }
+    // We can ignore most events if the client doesn't want them
+    // but we will want to report log events to the logger.  Capcom will
+    // probably have written to a file, but we will want to see them
+    // on the screen.
+    if ((*event)->type == EventType::kLog && log_to_output_) {
+      LogMessage log = std::get<3>((*event)->event);
+      logger_.Log(log.level, log.timestamp, log.source, log.text);
     }
 
     if ((*event)->type == EventType::kAlarm) {

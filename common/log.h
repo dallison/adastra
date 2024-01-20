@@ -20,20 +20,20 @@ struct LogMessage {
     dest->set_timestamp(timestamp);
     switch (level) {
     case toolbelt::LogLevel::kDebug:
-      dest->set_level(stagezero::proto::LogMessage::DBG);
+      dest->set_level(stagezero::proto::LogMessage::LOG_DBG);
       break;
     case toolbelt::LogLevel::kVerboseDebug:
-      dest->set_level(stagezero::proto::LogMessage::VERBOSE);
+      dest->set_level(stagezero::proto::LogMessage::LOG_VERBOSE);
       break;
     case toolbelt::LogLevel::kInfo:
-      dest->set_level(stagezero::proto::LogMessage::INFO);
+      dest->set_level(stagezero::proto::LogMessage::LOG_INFO);
       break;
     case toolbelt::LogLevel::kWarning:
-      dest->set_level(stagezero::proto::LogMessage::WARNING);
+      dest->set_level(stagezero::proto::LogMessage::LOG_WARNING);
       break;
     case toolbelt::LogLevel::kError:
     case toolbelt::LogLevel::kFatal:
-      dest->set_level(stagezero::proto::LogMessage::ERR);
+      dest->set_level(stagezero::proto::LogMessage::LOG_ERR);
       break;
     }
   }
@@ -43,23 +43,23 @@ struct LogMessage {
     text = src.text();
     timestamp = src.timestamp();
     switch (src.level()) {
-    case stagezero::proto::LogMessage::DBG:
+    case stagezero::proto::LogMessage::LOG_DBG:
       level = toolbelt::LogLevel::kDebug;
       break;
-    case stagezero::proto::LogMessage::VERBOSE:
+    case stagezero::proto::LogMessage::LOG_VERBOSE:
       level = toolbelt::LogLevel::kVerboseDebug;
       break;
-    case stagezero::proto::LogMessage::INFO:
+    case stagezero::proto::LogMessage::LOG_INFO:
       level = toolbelt::LogLevel::kInfo;
       break;
-    case stagezero::proto::LogMessage::WARNING:
+    case stagezero::proto::LogMessage::LOG_WARNING:
       level = toolbelt::LogLevel::kWarning;
       break;
-    case stagezero::proto::LogMessage::ERR:
+    case stagezero::proto::LogMessage::LOG_ERR:
       level = toolbelt::LogLevel::kError;
       break;
     default:
-    case stagezero::proto::LogMessage::UNKNOWN:
+    case stagezero::proto::LogMessage::LOG_UNKNOWN:
       level = toolbelt::LogLevel::kVerboseDebug;
       break;
     }

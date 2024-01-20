@@ -4,12 +4,12 @@ package stagezero.proto;
 
 message LogMessage {
   enum LogLevel {
-    UNKNOWN = 0;
-    VERBOSE = 1;
-    DBG = 2;
-    INFO = 3;
-    WARNING = 4;
-    ERR = 5;
+    LOG_UNKNOWN = 0;
+    LOG_VERBOSE = 1;
+    LOG_DBG = 2;
+    LOG_INFO = 3;
+    LOG_WARNING = 4;
+    LOG_ERR = 5;
   }
   string source = 1;
   LogLevel level = 2;

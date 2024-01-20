@@ -37,8 +37,7 @@ public:
 
     auto pub = RegisterPublisher<robot::GpsLocation>(
         "/gps", kMaxMessageSize, kNumSlots,
-        [this](std::shared_ptr<Publisher<robot::GpsLocation>> pub,
-               robot::GpsLocation &msg, co::Coroutine *c) -> bool {
+        [this](auto pub, auto &msg, auto c) -> bool {
           msg.mutable_header()->set_timestamp(toolbelt::Now());
           msg.set_latitude(lat_);
           msg.set_longitude(long_);

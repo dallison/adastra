@@ -33,9 +33,7 @@ public:
   absl::Status Init(int argc, char **argv) override {
     auto resp = RegisterPublisher<robot::MapResponse>(
         kMapResponseChannel, kMaxResponseMessageSize, kNumResponseSlots,
-        {.reliable = true},
-        [this](std::shared_ptr<Publisher<robot::MapResponse>> pub,
-               robot::MapResponse &msg, co::Coroutine *c) -> bool {
+        {.reliable = true}, [this](auto pub, auto &msg, auto c) -> bool {
           if (pending_responses_.empty()) {
             return false;
           }
@@ -51,9 +49,7 @@ public:
 
     auto req = RegisterSubscriber<robot::MapRequest>(
         kMapRequestChannel, {.reliable = true},
-        [this](std::shared_ptr<Subscriber<robot::MapRequest>> sub,
-               Message<const robot::MapRequest> msg,
-               co::Coroutine *c) { IncomingRequest(msg, c); });
+        [this](auto sub, auto msg, auto c) { IncomingRequest(msg, c); });
     if (!req.ok()) {
       return req.status();
     }
@@ -129,9 +125,7 @@ private:
     auto resp = RegisterPublisher<robot::MapResponse>(
         resp_channel_name, kMaxResponseMessageSize, kNumResponseSlots,
         {.reliable = true},
-        [this,
-         channel_handler](std::shared_ptr<Publisher<robot::MapResponse>> pub,
-                          robot::MapResponse &msg, co::Coroutine *c) -> bool {
+        [this, channel_handler](auto pub, auto &msg, auto c) -> bool {
           SendTile(msg, channel_handler);
           return true;
         });
@@ -144,9 +138,8 @@ private:
 
     auto sub = RegisterSubscriber<robot::MapRequest>(
         req_channel_name, {.reliable = true},
-        [ this, resp = std::move(*resp), channel_handler ](
-            std::shared_ptr<Subscriber<robot::MapRequest>> sub,
-            Message<const robot::MapRequest> msg, co::Coroutine * c) {
+        [ this, resp = std::move(*resp), channel_handler ](auto sub, auto msg,
+                                                           auto c) {
           // Incoming request on the open channel.
           switch (msg->req_case()) {
           case robot::MapRequest::kLoad: {

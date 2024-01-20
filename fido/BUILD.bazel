@@ -1,0 +1,57 @@
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "fidolib",
+    srcs = [
+        "alarms.cc",
+        "event_mux.cc",
+        "fido.cc",
+        "screen.cc",
+        "subspace_stats.cc",
+        "subsystems.cc",
+        "processes.cc",
+        "table.cc",
+        "table_window.cc",
+        "window.cc",
+        "log_window.cc",
+    ],
+    hdrs = [
+        "alarms.h",
+        "event_mux.h",
+        "fido.h",
+        "screen.h",
+        "subspace_stats.h",
+        "subsystems.h",
+        "processes.h",
+        "table.h",
+        "table_window.h",
+        "window.h",
+        "log_window.h",
+    ],
+    linkopts = [
+        "-lncurses",
+    ],
+    deps = [
+        "//common",
+        "//flight/client",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings:str_format",
+        "@coroutines//:co",
+        "@subspace//client:subspace_client",
+        "@subspace//proto:subspace_cc_proto",
+        "@toolbelt//toolbelt",
+    ],
+)
+
+cc_binary(
+    name = "fido",
+    srcs = ["main.cc"],
+    deps = [
+        ":fidolib",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
+    ],
+)

@@ -23,8 +23,7 @@ public:
   absl::Status Init(int argc, char **argv) override {
     auto stereo = RegisterPublisher<robot::StereoImage>(
         "/stereo", kMaxMessageSize, kNumSlots,
-        [this](std::shared_ptr<Publisher<robot::StereoImage>> pub,
-               robot::StereoImage &msg, co::Coroutine *c) -> bool {
+        [this](auto pub, auto &msg, auto c) -> bool {
           msg.mutable_header()->set_timestamp(toolbelt::Now());
           // It would be better to move the images into the stereo
           // image, but protobuf doesn't provide a way to do that
@@ -41,18 +40,14 @@ public:
 
     auto left_camera = RegisterSubscriber<robot::CameraImage>(
         "/camera_left",
-        [this](std::shared_ptr<Subscriber<robot::CameraImage>> sub,
-               Message<const robot::CameraImage> msg,
-               co::Coroutine *c) { IncomingLeftCameraImage(msg); });
+        [this](auto sub, auto msg, auto c) { IncomingLeftCameraImage(msg); });
     if (!left_camera.ok()) {
       return left_camera.status();
     }
 
     auto right_camera = RegisterSubscriber<robot::CameraImage>(
         "/camera_right",
-        [this](std::shared_ptr<Subscriber<robot::CameraImage>> sub,
-               Message<const robot::CameraImage> msg,
-               co::Coroutine *c) { IncomingRightCameraImage(msg); });
+        [this](auto sub, auto msg, auto c) { IncomingRightCameraImage(msg); });
     if (!right_camera.ok()) {
       return right_camera.status();
     }

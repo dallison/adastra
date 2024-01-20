@@ -30,8 +30,7 @@ public:
     std::string channel_name = absl::StrFormat("/camera_%s", name->Value());
     auto pub = RegisterPublisher<robot::CameraImage>(
         channel_name, kMaxMessageSize, kNumSlots,
-        [](std::shared_ptr< Publisher<robot::CameraImage> >pub, robot::CameraImage &msg,
-           co::Coroutine *c) -> bool {
+        [](auto pub, auto &msg, auto c) -> bool {
           msg.mutable_header()->set_timestamp(toolbelt::Now());
           msg.set_rows(1024);
           msg.set_cols(1024);
