@@ -1,6 +1,6 @@
 #pragma once
 
-#include "fido/window.h"
+#include "fido/panel.h"
 #include "fido/event_mux.h"
 #include "common/event.h"
 #include "common/log.h"
@@ -9,14 +9,14 @@
 
 namespace fido {
 
-class LogWindow : public Window {
+class LogWindow : public Panel {
 public:
   LogWindow(Screen *screen, EventMux& mux);
   ~LogWindow() = default;
 
   void Run() override;
 
-  void Draw() override;
+  void Draw(bool refresh = true) override;
 
   void SetLogLevel(toolbelt::LogLevel level) {
     log_level_ = level;

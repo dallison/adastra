@@ -1,21 +1,24 @@
 #pragma once
 
-#include "fido/window.h"
+#include "fido/panel.h"
 
 namespace fido {
 
-class TableWindow : public Window {
+class TableWindow : public Panel {
 public:
   TableWindow(Screen *screen, WindowOptions opts,
               const std::vector<std::string> &titles)
-      : Window(screen, opts), display_table_(this, titles) {}
+      : Panel(screen, opts), display_table_(this, titles) {}
   TableWindow(Window *win, WindowOptions opts,
               const std::vector<std::string> &titles)
-      : Window(win, opts), display_table_(this, titles) {}
+      : Panel(win, opts), display_table_(this, titles) {}
   ~TableWindow() = default;
 
-  void Draw() override {
-    Window::Draw();
+  void Draw(bool refresh = true) override {
+    if (paused_) {
+      return;
+    }
+    Panel::Draw(refresh);
     display_table_.Draw();
   }
 

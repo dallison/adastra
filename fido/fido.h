@@ -7,6 +7,7 @@
 #include "fido/subsystems.h"
 #include "fido/processes.h"
 #include "fido/log_window.h"
+#include "fido/dialog.h"
 
 #include "coroutine.h"
 #include "absl/container/flat_hash_set.h"
@@ -30,6 +31,9 @@ class Application {
   co::CoroutineScheduler& Scheduler() {
     return scheduler_;
   }
+
+  void Pause();
+  void Resume();
   
 private:
   void UserInputCoroutine(co::Coroutine* c);
@@ -47,5 +51,6 @@ private:
   std::unique_ptr<SubspaceStatsWindow> subspace_stats_;
   std::unique_ptr<AlarmsWindow> alarms_;
   std::unique_ptr<LogWindow> log_;
+  std::unique_ptr<YesNoDialog> quit_dialog_;
 };
 }

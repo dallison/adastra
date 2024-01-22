@@ -28,6 +28,11 @@ void Screen::Open() {
   init_pair(kColorPairMagenta, COLOR_MAGENTA, background);
   init_pair(kColorPairCyan, COLOR_CYAN, background);
   init_pair(kColorPairWhite, COLOR_WHITE, background);
+  init_pair(kColorYes, COLOR_GREEN, background);
+  init_pair(kColorNo, COLOR_RED, background);
+  init_pair(kColorYesHighlight, COLOR_WHITE, COLOR_GREEN);
+  init_pair(kColorNoHighlight, COLOR_WHITE, COLOR_RED);
+
   is_open_ = true;
 }
 

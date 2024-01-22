@@ -129,7 +129,13 @@ Subsystem::HandleAdminCommand(const Message &message,
 void Subsystem::Offline(uint32_t client_id, co::Coroutine *c) {
   NotifyParents();
   capcom_.SendSubsystemStatusEvent(this);
+  restart_count_ = 0;
+  alarm_count_ = 0;
 
+  for (auto& proc : processes_) {
+    proc->ResetAlarmCount();
+  }
+  
   // Only log an info message if the state has changed.  Seeing "Foo is OFFLINE"
   // at startup isn't helpful as an info message, but there is a debug message
   // that shows it.
@@ -207,7 +213,7 @@ void Subsystem::Offline(uint32_t client_id, co::Coroutine *c) {
                  case Message::kReportOper:
                    subsystem->capcom_.Log(
                        subsystem->Name(), toolbelt::LogLevel::kDebug,
-                       "Subsystem %s has reported oper state change to %s",
+                       "Subsystem %s has reported oper state as %s",
                        message->sender->Name().c_str(),
                        OperStateName(message->state.oper));
                    subsystem->NotifyParents();
@@ -308,7 +314,7 @@ void Subsystem::StartingChildren(uint32_t client_id, co::Coroutine *c) {
               case Message::kReportOper:
                 subsystem->capcom_.Log(
                     subsystem->Name(), toolbelt::LogLevel::kDebug,
-                    "Subsystem %s has reported oper state change to %s",
+                    "Subsystem %s has reported oper state as %s",
                     message->sender->Name().c_str(),
                     OperStateName(message->state.oper));
                 if (message->state.oper == OperState::kOnline) {
@@ -451,7 +457,7 @@ void Subsystem::StartingProcesses(uint32_t client_id, co::Coroutine *c) {
                  case Message::kReportOper:
                    subsystem->capcom_.Log(
                        subsystem->Name(), toolbelt::LogLevel::kDebug,
-                       "Subsystem %s has reported oper state change to %s",
+                       "Subsystem %s has reported oper state as %s",
                        message->sender->Name().c_str(),
                        OperStateName(message->state.oper));
                    subsystem->NotifyParents();
@@ -581,8 +587,8 @@ void Subsystem::Online(uint32_t client_id, co::Coroutine *c) {
                    break;
                  case Message::kReportOper:
                    subsystem->capcom_.Log(
-                       subsystem->Name(), toolbelt::LogLevel::kInfo,
-                       "Subsystem %s has reported oper state change to %s",
+                       subsystem->Name(), toolbelt::LogLevel::kDebug,
+                       "Subsystem %s has reported oper state as %s",
                        message->sender->Name().c_str(),
                        OperStateName(message->state.oper));
                    if (message->state.oper == OperState::kRestarting) {
@@ -694,7 +700,7 @@ void Subsystem::StoppingProcesses(uint32_t client_id, co::Coroutine *c) {
                  case Message::kReportOper:
                    subsystem->capcom_.Log(
                        subsystem->Name(), toolbelt::LogLevel::kDebug,
-                       "Subsystem %s has reported oper state change to %s",
+                       "Subsystem %s has reported oper state as %s",
                        message->sender->Name().c_str(),
                        OperStateName(message->state.oper));
                    subsystem->NotifyParents();
@@ -810,7 +816,7 @@ void Subsystem::StoppingChildren(uint32_t client_id, co::Coroutine *c) {
               case Message::kReportOper:
                 subsystem->capcom_.Log(
                     subsystem->Name(), toolbelt::LogLevel::kDebug,
-                    "Subsystem %s has reported oper state change to %s",
+                    "Subsystem %s has reported oper state as %s",
                     message->sender->Name().c_str(),
                     OperStateName(message->state.oper));
 
@@ -1104,7 +1110,7 @@ void Subsystem::Restarting(uint32_t client_id, co::Coroutine *c) {
                    subsystem->capcom_.Log(
                        subsystem->Name(), toolbelt::LogLevel::kError,
                        "Subsystem %s has reported oper state "
-                       "change to %s while in restarting state",
+                       "as %s while in restarting state",
                        message->sender->Name().c_str(),
                        OperStateName(message->state.oper));
                    break;
@@ -1155,6 +1161,7 @@ void Subsystem::Broken(uint32_t client_id, co::Coroutine *c) {
                  switch (message->code) {
                  case Message::kChangeAdmin:
                    subsystem->num_restarts_ = 0; // Reset restart counter.
+                   subsystem->restart_count_ = 0;
                    if (message->state.admin == AdminState::kOnline) {
                      subsystem->active_clients_.Set(client_id);
                      subsystem->EnterState(OperState::kStartingChildren,
@@ -1171,7 +1178,7 @@ void Subsystem::Broken(uint32_t client_id, co::Coroutine *c) {
                    subsystem->capcom_.Log(
                        subsystem->Name(), toolbelt::LogLevel::kInfo,
                        "Subsystem %s has reported oper state "
-                       "change to %s while it is broken",
+                       "as %s while it is broken",
                        message->sender->Name().c_str(),
                        OperStateName(message->state.oper));
                    break;

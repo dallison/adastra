@@ -25,7 +25,7 @@ public:
   Window(Window *parent, WindowOptions opts);
   virtual ~Window();
 
-  virtual void Draw();
+  virtual void Draw(bool refresh = true);
   virtual void Run() {}
 
   void EraseCanvas();
@@ -71,7 +71,11 @@ public:
 
   co::CoroutineScheduler& Scheduler();
 
+  void Pause() { paused_ = true; }
+  void Resume() { paused_ = false; }
+  
 protected:
+  friend class Panel;
   void PrintTitle() const;
 
   Application *app_;
@@ -83,5 +87,6 @@ protected:
     Window *parent_;
   };
   bool is_subwin_;
+  bool paused_ = false;
 };
 } // namespace fido

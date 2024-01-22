@@ -19,23 +19,39 @@ constexpr int kColorPairMagenta = 6;
 constexpr int kColorPairCyan = 7;
 constexpr int kColorPairWhite = 8;
 
+// YesNoDialog button colors.
+constexpr int kColorYes = 9;
+constexpr int kColorNo = 10;
+constexpr int kColorYesHighlight = 11;
+constexpr int kColorNoHighlight = 12;
+
+// InfoDialog OK button.
+constexpr int kColorOk = kColorYesHighlight;
+
 class Screen {
 public:
-  Screen(Application& app);
+  Screen(Application &app);
   ~Screen();
 
   void Open();
   void Close();
 
-  void PrintAt(int row, int col, const std::string &s, int color = kColorPairNormal);
-  void PrintInMiddle(int row, const std::string &s, int color = kColorPairNormal);
+  void PrintAt(int row, int col, const std::string &s,
+               int color = kColorPairNormal);
+  void PrintInMiddle(int row, const std::string &s,
+                     int color = kColorPairNormal);
 
   int Width() const;
   int Height() const;
 
-  Application& App() const { return app_; }
+  void Redraw() {
+    redrawwin(win_);
+    refresh();
+  }
 
-void ColorOn(int color) {
+  Application &App() const { return app_; }
+
+  void ColorOn(int color) {
     if (color != kColorPairNormal) {
       attron(COLOR_PAIR(color) | A_BOLD);
     } else {
@@ -43,17 +59,17 @@ void ColorOn(int color) {
     }
   }
 
- void ColorOff(int color) {
+  void ColorOff(int color) {
     if (color != kColorPairNormal) {
       attroff(COLOR_PAIR(color) | A_BOLD);
-   } else {
+    } else {
       attroff(A_BOLD);
     }
   }
-  
+
 private:
   friend class Window;
-  Application& app_;
+  Application &app_;
   WINDOW *win_;
   bool is_open_ = false;
 };

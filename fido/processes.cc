@@ -71,12 +71,13 @@ void ProcessesWindow::PopulateTable() {
   for (auto & [ name, proc ] : processes_) {
     table.AddRow();
 
-    table.SetCell(0, Table::MakeCell(proc.name));
-    table.SetCell(1, Table::MakeCell(ProcessType(proc.type)));
-    table.SetCell(2, Table::MakeCell(proc.subsystem));
-    table.SetCell(3, Table::MakeCell(proc.compute));
-    table.SetCell(4, Table::MakeCell(absl::StrFormat("%d", proc.pid)));
-    table.SetCell(5, Table::MakeCell(absl::StrFormat("%d", proc.alarm_count)));
+    int color = proc.alarm_count == 0 ? kColorPairNormal : kColorPairMagenta;
+    table.SetCell(0, Table::MakeCell(proc.name, color));
+    table.SetCell(1, Table::MakeCell(ProcessType(proc.type), color));
+    table.SetCell(2, Table::MakeCell(proc.subsystem, color));
+    table.SetCell(3, Table::MakeCell(proc.compute, color));
+    table.SetCell(4, Table::MakeCell(absl::StrFormat("%d", proc.pid), color));
+    table.SetCell(5, Table::MakeCell(absl::StrFormat("%d", proc.alarm_count), color));
   }
   Draw();
 }

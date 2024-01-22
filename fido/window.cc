@@ -27,11 +27,16 @@ void Window::PrintTitle() const {
   wattroff(win_, COLOR_PAIR(kColorPairGreen) | A_BOLD);
 }
 
-void Window::Draw() {
+void Window::Draw(bool refresh) {
+  if (paused_) {
+    return;
+  }
   EraseCanvas();
   wborder(win_, 0, 0, 0, 0, 0, 0, 0, 0);
   PrintTitle();
-  Refresh();
+  if (refresh) {
+    Refresh();
+  }
 }
 
 void Window::EraseCanvas() { werase(win_); }

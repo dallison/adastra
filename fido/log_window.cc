@@ -7,11 +7,11 @@
 namespace fido {
 
 LogWindow::LogWindow(Screen *screen, EventMux &mux)
-    : Window(screen, {.title = "Log Messages",
-                      .nlines = screen->Height() - 33,
-                      .ncols = screen->Width(),
-                      .x = 0,
-                      .y = 33}) {
+    : Panel(screen, {.title = "Log Messages",
+                     .nlines = screen->Height() - 33,
+                     .ncols = screen->Width(),
+                     .x = 0,
+                     .y = 33}) {
   auto p = toolbelt::SharedPtrPipe<stagezero::Event>::Create();
   if (!p.ok()) {
     std::cerr << "Failed to create event pipe: " << strerror(errno)
@@ -62,10 +62,12 @@ void LogWindow::RunnerCoroutine(co::Coroutine *c) {
   }
 }
 
-void LogWindow::Draw() {
+void LogWindow::Draw(bool refresh) {
   wborder(win_, 0, 0, 0, 0, 0, 0, 0, 0);
   PrintTitle();
-  Refresh();
+  if (refresh) {
+    Refresh();
+  }
 }
 
 // We start at the most recent log message and work backwards
@@ -89,17 +91,18 @@ void LogWindow::Render() {
   }
   EraseCanvas();
 
-  // We place the lines in the windows from the bottom up.  
+  // We place the lines in the windows from the bottom up.
   int row = 1 + std::min(total_rows, available_rows);
- 
+
   for (auto it = lines.rbegin(); it != lines.rend(); it++) {
     auto &line = *it;
 
     // Each field has a row number which is relative to the message lines.  The
     // first is row 0 and each subsequent row increments it.
     // The 'row' variable is where we want to place the last row in the lines.
-    for (auto field_it = line.fields.rbegin(); field_it != line.fields.rend(); field_it++) {
-      auto& field = *field_it;
+    for (auto field_it = line.fields.rbegin(); field_it != line.fields.rend();
+         field_it++) {
+      auto &field = *field_it;
 
       int dest_row = row - line.num_rows + field.row;
       if (dest_row < 1) {
@@ -172,15 +175,14 @@ LogWindow::RenderMessage(const stagezero::LogMessage &msg) {
   // We don't know the start row until we render the log message as that can
   // take up multiple lines.  We will assign the start rows after the number
   // of rows are known.
-  
+
   // Field 0: time
   lines.fields.push_back({.col = col, .color = colors_[0], .data = timebuf});
   col += column_widths_[0];
 
   // Field 1: log level
-  lines.fields.push_back({.col = col,
-                    .color = colors_[1],
-                    .data = LogLevelAsString(msg.level)});
+  lines.fields.push_back(
+      {.col = col, .color = colors_[1], .data = LogLevelAsString(msg.level)});
   col += column_widths_[1];
 
   // Field 2: source.
@@ -218,8 +220,10 @@ LogWindow::RenderMessage(const stagezero::LogMessage &msg) {
         segment = segment.substr(0, i);
       }
     }
-    lines.fields.push_back(
-        {.row = lines.num_rows, .col = prefix_length, .color = colors_[3], .data = segment});
+    lines.fields.push_back({.row = lines.num_rows,
+                            .col = prefix_length,
+                            .color = colors_[3],
+                            .data = segment});
     lines.num_rows++;
     start += segment.size();
 

@@ -90,6 +90,10 @@ public:
     return nullptr;
   }
 
+  void ResetAlarmCount() {
+    alarm_count_ = 0;
+  }
+
   virtual bool IsZygote() const { return false; }
   virtual bool IsVirtual() const { return false; }
 
@@ -427,7 +431,7 @@ private:
   int max_restarts_ = kDefaultMaxRestarts;
   bool critical_ = false;
   int restart_count_ = 0;
-  
+
   Alarm alarm_;
   bool alarm_raised_ = false;
   int alarm_count_ = 0;
