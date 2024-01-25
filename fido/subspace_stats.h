@@ -1,17 +1,19 @@
 #pragma once
 
-#include "fido/screen.h"
-#include "fido/table_window.h"
 #include "client/client.h"
+#include "retro/screen.h"
+#include "retro/table_window.h"
 #include "proto/subspace.pb.h"
 
 namespace fido {
 
-class SubspaceStatsWindow : public TableWindow {
+class SubspaceStatsWindow : public retro::TableWindow {
 public:
-  SubspaceStatsWindow(Screen *screen, const std::string& subspace_socket);
+  SubspaceStatsWindow(retro::Screen *screen, const std::string &subspace_socket);
   ~SubspaceStatsWindow() = default;
-  
+
+  void ApplyFilter() override;
+
 private:
   struct Stats {
     uint64_t sample_time;
@@ -27,9 +29,9 @@ private:
   };
 
   void RunnerCoroutine(co::Coroutine *c) override;
-  void IncomingChannelStats(const subspace::Statistics& stats);
+  void IncomingChannelStats(const subspace::Statistics &stats);
   void PopulateTable();
-  void AgerCoroutine(co::Coroutine* c);
+  void AgerCoroutine(co::Coroutine *c);
 
   std::string subspace_socket_;
   std::unique_ptr<subspace::Client> client_;

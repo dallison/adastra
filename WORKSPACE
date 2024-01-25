@@ -132,8 +132,23 @@ http_archive(
 #   sha256 = "213a89907da644a2ffd1d8c26d1afef99450e856ff5fcbcd1112358456d3e51b"
 # )
 
-# For local debugging of toolbelt subspace library.
+# For local debugging of subspace library.
 local_repository(
     name = "subspace",
     path = "../subspace",
 )
+
+# For local debugging of retro library.
+local_repository(
+    name = "retro",
+    path = "../retro",
+)
+
+# http_archive(
+#   name = "retro",
+#   urls = ["https://github.com/dallison/retro/archive/refs/tags/1.0.0.tar.gz"],
+#   strip_prefix = "retro-1.0.0",
+#   sha256 = "664d8c71c66643cee2e132a8c75981c6bca198eb22f063860ebfc9d5770d5976"
+# )
+
+

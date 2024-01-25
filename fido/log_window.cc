@@ -1,25 +1,23 @@
+// Copyright 2024 David Allison
+// All Rights Reserved
+// See LICENSE file for licensing information.
+
 #include "fido/log_window.h"
 #include "fido/fido.h"
+#include "toolbelt/triggerfd.h"
 #include <inttypes.h>
 #include <stdio.h>
 #include <time.h>
 
 namespace fido {
 
-LogWindow::LogWindow(Screen *screen, EventMux &mux)
-    : Panel(screen, {.title = "Log Messages",
+LogWindow::LogWindow(retro::Screen *screen, EventMux &mux)
+    : Panel(screen, {.title = "[5] Log Messages",
                      .nlines = screen->Height() - 33,
                      .ncols = screen->Width(),
                      .x = 0,
-                     .y = 33}) {
-  auto p = toolbelt::SharedPtrPipe<stagezero::Event>::Create();
-  if (!p.ok()) {
-    std::cerr << "Failed to create event pipe: " << strerror(errno)
-              << std::endl;
-  }
-  event_pipe_ = std::move(*p);
-  mux.AddOutput(&event_pipe_);
-
+                     .y = 33}),
+      mux_(mux) {
   // Divide the window into columns.
   column_widths_[0] = 30; // Timestamp.
   column_widths_[1] = 3;  // Log level
@@ -30,9 +28,9 @@ LogWindow::LogWindow(Screen *screen, EventMux &mux)
   }
   column_widths_[3] = remaining - 1;
 
-  colors_[0] = kColorPairCyan;
+  colors_[0] = retro::kColorPairCyan;
   // Column 1 color depends on the log level.
-  colors_[2] = kColorPairYellow;
+  colors_[2] = retro::kColorPairYellow;
   // Column 3 color depends on the log level.
 }
 
@@ -43,14 +41,43 @@ void LogWindow::Run() {
 }
 
 void LogWindow::RunnerCoroutine(co::Coroutine *c) {
+  bool connected = false;
+  auto p = toolbelt::SharedPtrPipe<stagezero::Event>::Create();
+  if (!p.ok()) {
+    return;
+  }
+  event_pipe_ = std::move(*p);
+  mux_.AddSink(&event_pipe_);
+  toolbelt::TriggerFd interrupt;
+  if (absl::Status status = interrupt.Open(); !status.ok()) {
+    return;
+  }
+  mux_.AddListener([&connected, &interrupt](MuxStatus s) {
+    connected = s == MuxStatus::kConnected;
+    interrupt.Trigger();
+  });
+
   for (;;) {
+    if (!connected) {
+      DrawErrorBanner("CONNECTING TO FLIGHT");
+      c->Sleep(2);
+      logs_.clear();
+      Draw();
+      continue;
+    }
     // Wait for incoming event.
-    c->Wait(event_pipe_.ReadFd().Fd(), POLLIN);
+    int fd = c->Wait({event_pipe_.ReadFd().Fd(), interrupt.GetPollFd().Fd()},
+                     POLLIN);
+    if (fd == interrupt.GetPollFd().Fd()) {
+      interrupt.Clear();
+      continue;
+    }
     absl::StatusOr<std::shared_ptr<stagezero::Event>> pevent =
         event_pipe_.Read();
     if (!pevent.ok()) {
       // Print an error.
-      return;
+      connected = false;
+      continue;
     }
     auto event = std::move(*pevent);
     if (event->type != stagezero::EventType::kLog) {
@@ -69,6 +96,8 @@ void LogWindow::Draw(bool refresh) {
     Refresh();
   }
 }
+
+void LogWindow::ApplyFilter() { Render(); }
 
 // We start at the most recent log message and work backwards
 // until we fill the window.  Each log message might occupy multiple
@@ -140,26 +169,34 @@ static const char *LogLevelAsString(toolbelt::LogLevel level) {
 static int ColorForLogLevel(toolbelt::LogLevel level) {
   switch (level) {
   case toolbelt::LogLevel::kVerboseDebug:
-    return kColorPairGreen;
+    return retro::kColorPairGreen;
   case toolbelt::LogLevel::kDebug:
-    return kColorPairGreen;
+    return retro::kColorPairGreen;
   case toolbelt::LogLevel::kInfo:
-    return kColorPairNormal;
+    return retro::kColorPairNormal;
   case toolbelt::LogLevel::kWarning:
-    return kColorPairMagenta;
+    return retro::kColorPairMagenta;
   case toolbelt::LogLevel::kError:
-    return kColorPairRed;
+    return retro::kColorPairRed;
   case toolbelt::LogLevel::kFatal:
-    return kColorPairRed;
+    return retro::kColorPairRed;
   }
 
-  return kColorPairCyan;
+  return retro::kColorPairCyan;
 }
 
 LogWindow::MessageLines
 LogWindow::RenderMessage(const stagezero::LogMessage &msg) {
   MessageLines lines = {.num_rows = 0};
   int col = 0;
+
+  if (!display_filter_.empty()) {
+    // We can filter on the source or the text.
+    if (msg.source.find(display_filter_) == std::string::npos &&
+        msg.text.find(display_filter_) == std::string::npos) {
+      return lines;
+    }
+  }
 
   // Add the fixed width fields.
   char timebuf[64];

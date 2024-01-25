@@ -3,38 +3,64 @@
 
 namespace fido {
 
-EventMux::EventMux(Application &app, toolbelt::InetAddress flight_addr)
-    : app_(app), flight_addr_(flight_addr),
-      client_(stagezero::flight::client::ClientMode::kBlocking) {}
+EventMux::EventMux(retro::Application &app, toolbelt::InetAddress flight_addr)
+    : app_(app), flight_addr_(flight_addr) {}
 
-absl::Status EventMux::Init() {
-  if (absl::Status status = client_.Init(flight_addr_, "FDO",
-                                         stagezero::kSubsystemStatusEvents |
-                                             stagezero::kLogMessageEvents |
-                                             stagezero::kAlarmEvents);
-      !status.ok()) {
-    return absl::InternalError(
-        absl::StrFormat("Can't connect to FlightDirector at address %s: %s",
-                        flight_addr_.ToString(), status.ToString()));
-  }
+void EventMux::Init() {
   app_.AddCoroutine(std::make_unique<co::Coroutine>(
       app_.Scheduler(), [this](co::Coroutine *c) { RunnerCoroutine(c); }));
-  return absl::OkStatus();
+}
+
+void EventMux::AddListener(std::function<void(MuxStatus)> listener) {
+  if (client_ != nullptr) {
+    listener(MuxStatus::kConnected);
+  }
+  listeners_.push_back(std::move(listener));
+}
+
+void EventMux::AddSink(toolbelt::SharedPtrPipe<stagezero::Event> *sink) {
+  sinks_.push_back(sink);
+}
+
+void EventMux::NotifyListeners(MuxStatus status) {
+  for (auto& listener : listeners_) {
+    listener(status);
+  }
 }
 
 // Read events from flight and distribute them to the outputs.
 void EventMux::RunnerCoroutine(co::Coroutine *c) {
+  bool connected = false;
   for (;;) {
-    absl::StatusOr<std::shared_ptr<stagezero::Event>> event =
-        client_.WaitForEvent(c);
-    if (!event.ok()) {
-      // Report an error
-      return;
+    if (!connected) {
+      client_ = std::make_unique<stagezero::flight::client::Client>(
+          stagezero::flight::client::ClientMode::kBlocking);
+
+      if (absl::Status status = client_->Init(
+              flight_addr_, "FDO",
+              stagezero::kSubsystemStatusEvents | stagezero::kLogMessageEvents |
+                  stagezero::kAlarmEvents);
+          !status.ok()) {
+        client_.reset();
+        c->Sleep(2);
+        continue;
+      }
+      NotifyListeners(MuxStatus::kConnected);
+      connected = true;
     }
-    for (auto &output : outputs_) {
-      absl::Status status = output->Write(*event);
+    absl::StatusOr<std::shared_ptr<stagezero::Event>> event =
+        client_->WaitForEvent(c);
+    if (!event.ok()) {
+      client_.reset();
+      NotifyListeners(MuxStatus::kDisconnected);
+      c->Sleep(2);
+      connected = false;
+      continue;
+    }
+    for (auto &sink : sinks_) {
+      absl::Status status = sink->Write(*event);
       if (!status.ok()) {
-        // Report error
+        return;
       }
     }
   }

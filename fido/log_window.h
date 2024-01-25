@@ -1,6 +1,10 @@
+// Copyright 2024 David Allison
+// All Rights Reserved
+// See LICENSE file for licensing information.
+
 #pragma once
 
-#include "fido/panel.h"
+#include "retro/panel.h"
 #include "fido/event_mux.h"
 #include "common/event.h"
 #include "common/log.h"
@@ -9,9 +13,9 @@
 
 namespace fido {
 
-class LogWindow : public Panel {
+class LogWindow : public retro::Panel {
 public:
-  LogWindow(Screen *screen, EventMux& mux);
+  LogWindow(retro::Screen *screen, EventMux& mux);
   ~LogWindow() = default;
 
   void Run() override;
@@ -21,6 +25,8 @@ public:
   void SetLogLevel(toolbelt::LogLevel level) {
     log_level_ = level;
   }
+
+  void ApplyFilter() override;
 
 private:
   struct Field {
@@ -39,6 +45,7 @@ private:
   void Render();
   MessageLines RenderMessage(const stagezero::LogMessage& msg);
 
+  EventMux& mux_;
   toolbelt::SharedPtrPipe<stagezero::Event> event_pipe_;
   std::list<stagezero::LogMessage> logs_;
 

@@ -3,20 +3,42 @@
 #include "fido/fido.h"
 #include "toolbelt/clock.h"
 
+#include <fstream>
+#include <stdlib.h>
+
 namespace fido {
 
-SubspaceStatsWindow::SubspaceStatsWindow(Screen *screen,
+SubspaceStatsWindow::SubspaceStatsWindow(retro::Screen *screen,
                                          const std::string &subspace_socket)
     : TableWindow(screen,
-                  {.title = "Subspace Channels",
+                  {.title = "[3] Subspace Channels",
                    .nlines = 16,
                    .ncols = screen->Width() * 9 / 16 - 1,
                    .x = 0,
                    .y = 17},
-                  {"channel", "freq", "bps", "bytes", "msgs", "size",
-                   "slots", "pubs", "subs"}),
-      subspace_socket_(subspace_socket) {}
+                  {"channel", "freq", "bps", "bytes", "msgs", "size", "slots",
+                   "pubs", "subs"}),
+      subspace_socket_(subspace_socket) {
+  // Sort the display by frequency with the highest frequency at the top.
+  display_table_.SortBy(1,
+                        [](const std::string &a, const std::string &b) -> bool {
+                          // The display for this column is "%.2fXHz".  The
+                          // strtod function conveniently ignores anything not
+                          // part of a floating point number.
+                          if (a.find("nan") != std::string::npos ||
+                              b.find("nan") != std::string::npos) {
+                            return false;
+                          }
+                          if (a.empty() || b.empty()) {
+                            return false;
+                          }
+                          double x = strtod(a.c_str(), nullptr);
+                          double y = strtod(b.c_str(), nullptr);
+                          return x > y;
+                        });
+}
 
+// This ages out channels that no longer exist.
 void SubspaceStatsWindow::AgerCoroutine(co::Coroutine *c) {
   for (;;) {
     uint64_t before_sleep = toolbelt::Now();
@@ -35,32 +57,40 @@ void SubspaceStatsWindow::AgerCoroutine(co::Coroutine *c) {
 }
 
 void SubspaceStatsWindow::RunnerCoroutine(co::Coroutine *c) {
-  client_ = std::make_unique<subspace::Client>(c);
-  if (absl::Status status = client_->Init(subspace_socket_); !status.ok()) {
-    std::cerr << "Failed to connect to subspace server " << subspace_socket_
-              << "\n";
-    return;
-  }
+  bool connected = false;
 
   // Start the ager coroutine.
   App().AddCoroutine(std::make_unique<co::Coroutine>(
       Scheduler(), [this](co::Coroutine *c) { AgerCoroutine(c); }));
 
-  absl::StatusOr<subspace::Subscriber> sub =
-      client_->CreateSubscriber("/subspace/Statistics");
-  if (!sub.ok()) {
-    std::cerr << "Failed to subscribe to channel statistics\n";
-    return;
-  }
+  absl::StatusOr<subspace::Subscriber> sub;
   for (;;) {
+    if (!connected) {
+      DrawErrorBanner("CONNECTING TO SUBSPACE");
+      client_ = std::make_unique<subspace::Client>(c);
+      if (absl::Status status = client_->Init(subspace_socket_); !status.ok()) {
+        c->Sleep(2);
+        Draw();
+        continue;
+      }
+
+      sub = client_->CreateSubscriber("/subspace/Statistics");
+      if (!sub.ok()) {
+        c->Sleep(2);
+        continue;
+      }
+      connected = true;
+    }
     if (absl::Status status = sub->Wait(c); !status.ok()) {
-      std::cerr << "Failed to wait for subscriber\n";
-      return;
+      connected = false;
+      client_.reset();
+      continue;
     }
     for (;;) {
       absl::StatusOr<const subspace::Message> msg = sub->ReadMessage();
       if (!msg.ok()) {
-        std::cerr << "Read error " << msg.status() << std::endl;
+        connected = false;
+        client_.reset();
         continue;
       }
       if (msg->length == 0) {
@@ -68,8 +98,9 @@ void SubspaceStatsWindow::RunnerCoroutine(co::Coroutine *c) {
       }
       subspace::Statistics stats;
       if (!stats.ParseFromArray(msg->buffer, msg->length)) {
-        std::cerr << "Failed to parse channel stats message\n";
-        break;
+        connected = false;
+        client_.reset();
+        continue;
       }
       IncomingChannelStats(stats);
     }
@@ -125,25 +156,36 @@ static std::string ToHz(double f) {
   return absl::StrFormat("%.2fGHz", f / 1000000000000.0);
 }
 
+void SubspaceStatsWindow::ApplyFilter() { PopulateTable(); }
+
 void SubspaceStatsWindow::PopulateTable() {
-  Table &table = display_table_;
+  retro::Table &table = display_table_;
   table.Clear();
   for (auto & [ name, stats ] : channels_) {
+    if (!display_filter_.empty() &&
+        name.find(display_filter_) == std::string::npos) {
+      continue;
+    }
     table.AddRow();
 
     // Time diff is in nanoseconds.
     double freq = stats.msgs_diff * 1000000000.0 / stats.time_diff;
     double bps = stats.bytes_diff * 1000000000.0 / stats.time_diff;
-    int freq_color = freq > 0 ? kColorPairGreen : kColorPairRed;
-    table.SetCell(0, Table::MakeCell(name));
-    table.SetCell(1, Table::MakeCell(ToHz(freq), freq_color));
-    table.SetCell(2, Table::MakeCell(absl::StrFormat("%.2g", bps)));
-    table.SetCell(3, Table::MakeCell(absl::StrFormat("%.2g", double(stats.bytes))));
-    table.SetCell(4, Table::MakeCell(absl::StrFormat("%d", stats.msgs)));
-    table.SetCell(5, Table::MakeCell(absl::StrFormat("%.2g", double(stats.slot_size))));
-    table.SetCell(6, Table::MakeCell(absl::StrFormat("%d", stats.num_slots)));
-    table.SetCell(7, Table::MakeCell(absl::StrFormat("%d", stats.num_pubs)));
-    table.SetCell(8, Table::MakeCell(absl::StrFormat("%d", stats.num_subs)));
+    int freq_color = freq > 0 ? retro::kColorPairGreen : retro::kColorPairRed;
+    table.SetCell(0, retro::Table::MakeCell(name));
+    table.SetCell(1, retro::Table::MakeCell(ToHz(freq), freq_color));
+    table.SetCell(2, retro::Table::MakeCell(absl::StrFormat("%.2g", bps)));
+    table.SetCell(3, retro::Table::MakeCell(
+                         absl::StrFormat("%.2g", double(stats.bytes))));
+    table.SetCell(4, retro::Table::MakeCell(absl::StrFormat("%d", stats.msgs)));
+    table.SetCell(5, retro::Table::MakeCell(
+                         absl::StrFormat("%.2g", double(stats.slot_size))));
+    table.SetCell(
+        6, retro::Table::MakeCell(absl::StrFormat("%d", stats.num_slots)));
+    table.SetCell(
+        7, retro::Table::MakeCell(absl::StrFormat("%d", stats.num_pubs)));
+    table.SetCell(
+        8, retro::Table::MakeCell(absl::StrFormat("%d", stats.num_subs)));
   }
   Draw();
 }

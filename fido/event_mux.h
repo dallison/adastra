@@ -4,29 +4,38 @@
 #include "toolbelt/pipe.h"
 #include "toolbelt/sockets.h"
 #include <vector>
+#include "retro/app.h"
+
+#include <functional>
 
 namespace fido {
 
 class Application;
 
+enum class MuxStatus {
+  kConnected,
+  kDisconnected,
+};
+
 class EventMux {
 public:
-  EventMux(Application& app, toolbelt::InetAddress flight_addr);
+  EventMux(retro::Application& app, toolbelt::InetAddress flight_addr);
   ~EventMux() = default;
 
-  absl::Status Init();
+  void Init();
   
-  void AddOutput(toolbelt::SharedPtrPipe<stagezero::Event>* output) {
-    outputs_.push_back(std::move(output));
-  }
+  void AddListener(std::function<void(MuxStatus)> callback);
+  void AddSink(toolbelt::SharedPtrPipe<stagezero::Event>* sink);
 
 private:
   void RunnerCoroutine(co::Coroutine* c);
+  void NotifyListeners(MuxStatus status);
 
-  Application& app_;
+  retro::Application& app_;
   toolbelt::InetAddress flight_addr_;
-  stagezero::flight::client::Client client_;
-  std::vector<toolbelt::SharedPtrPipe<stagezero::Event>*> outputs_;
+  std::unique_ptr<stagezero::flight::client::Client> client_;
+  std::vector<std::function<void(MuxStatus)>> listeners_;
+  std::vector<toolbelt::SharedPtrPipe<stagezero::Event>*> sinks_;
 };
 
 } // namespace fido

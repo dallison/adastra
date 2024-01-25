@@ -1,38 +1,65 @@
+// Copyright 2024 David Allison
+// All Rights Reserved
+// See LICENSE file for licensing information.
+
 #include "fido/alarms.h"
+#include "toolbelt/triggerfd.h"
 
 namespace fido {
 
-AlarmsWindow::AlarmsWindow(Screen *screen, EventMux &mux)
+AlarmsWindow::AlarmsWindow(retro::Screen *screen, EventMux &mux)
     : TableWindow(screen,
-                  {.title = "Current Alarms",
+                  {.title = "[4] Current Alarms",
                    .nlines = 16,
                    .ncols = screen->Width() * 7 / 16,
                    .x = screen->Width() * 9 / 16,
                    .y = 17},
-                  {"name", "type", "severity", "reason", "details"}) {
-  auto p = toolbelt::SharedPtrPipe<stagezero::Event>::Create();
-  if (!p.ok()) {
-    std::cerr << "Failed to create event pipe: " << strerror(errno)
-              << std::endl;
-  }
-  event_pipe_ = std::move(*p);
-  mux.AddOutput(&event_pipe_);
-
-  // What is a good width for the details column?  Use the expected max widths for the
-  // other columns to work it out.  It will wrap but we want to avoid unnecessary wraps.
+                  {"name", "type", "severity", "reason", "details"}),
+      mux_(mux) {
+  // What is a good width for the details column?  Use the expected max widths
+  // for the other columns to work it out.  It will wrap but we want to avoid
+  // unnecessary wraps.
   int kDetailsWidth = Width() - (16 + 10 + 9 + 9);
   display_table_.SetWrapColumn(4, kDetailsWidth);
 }
 
 void AlarmsWindow::RunnerCoroutine(co::Coroutine *c) {
+  bool connected = false;
+  auto p = toolbelt::SharedPtrPipe<stagezero::Event>::Create();
+  if (!p.ok()) {
+    return;
+  }
+  event_pipe_ = std::move(*p);
+  mux_.AddSink(&event_pipe_);
+  toolbelt::TriggerFd interrupt;
+  if (absl::Status status = interrupt.Open(); !status.ok()) {
+    return;
+  }
+  mux_.AddListener([&connected, &interrupt](MuxStatus s) {
+    connected = s == MuxStatus::kConnected;
+    interrupt.Trigger();
+  });
+
   for (;;) {
+    if (!connected) {
+      DrawErrorBanner("CONNECTING TO FLIGHT");
+      c->Sleep(2);
+      display_table_.Clear();
+      Draw();
+      continue;
+    }
     // Wait for incoming event.
-    c->Wait(event_pipe_.ReadFd().Fd(), POLLIN);
+    int fd = c->Wait({event_pipe_.ReadFd().Fd(), interrupt.GetPollFd().Fd()},
+                     POLLIN);
+    if (fd == interrupt.GetPollFd().Fd()) {
+      interrupt.Clear();
+      continue;
+    }
     absl::StatusOr<std::shared_ptr<stagezero::Event>> pevent =
         event_pipe_.Read();
     if (!pevent.ok()) {
-      // Print an error.
-      return;
+      connected = false;
+      continue;
     }
     auto event = std::move(*pevent);
     if (event->type != stagezero::EventType::kAlarm) {
@@ -91,28 +118,35 @@ static const char *AlarmReason(stagezero::Alarm::Reason r) {
 static int ColorForSeverity(stagezero::Alarm::Severity s) {
   switch (s) {
   case stagezero::Alarm::Severity::kWarning:
-    return kColorPairCyan;
+    return retro::kColorPairCyan;
   case stagezero::Alarm::Severity::kError:
-    return kColorPairMagenta;
+    return retro::kColorPairMagenta;
   case stagezero::Alarm::Severity::kCritical:
-    return kColorPairRed;
+    return retro::kColorPairRed;
   case stagezero::Alarm::Severity::kUnknown:
-    return kColorPairNormal;
+    return retro::kColorPairNormal;
   }
 }
 
+void AlarmsWindow::ApplyFilter() { PopulateTable(); }
+
 void AlarmsWindow::PopulateTable() {
-  Table &table = display_table_;
+  retro::Table &table = display_table_;
   table.Clear();
   for (auto & [ name, alarm ] : alarms_) {
+    if (!display_filter_.empty() &&
+        alarm.name.find(display_filter_) == std::string::npos) {
+      continue;
+    }
     table.AddRow();
 
     int color = ColorForSeverity(alarm.severity);
-    table.SetCell(0, Table::MakeCell(alarm.name, color));
-    table.SetCell(1, Table::MakeCell(AlarmType(alarm.type), color));
-    table.SetCell(2, Table::MakeCell(AlarmSeverity(alarm.severity), color));
-    table.SetCell(3, Table::MakeCell(AlarmReason(alarm.reason), color));
-    table.SetCell(4, Table::MakeCell(alarm.details, color));
+    table.SetCell(0, retro::Table::MakeCell(alarm.name, color));
+    table.SetCell(1, retro::Table::MakeCell(AlarmType(alarm.type), color));
+    table.SetCell(2,
+                  retro::Table::MakeCell(AlarmSeverity(alarm.severity), color));
+    table.SetCell(3, retro::Table::MakeCell(AlarmReason(alarm.reason), color));
+    table.SetCell(4, retro::Table::MakeCell(alarm.details, color));
   }
   Draw();
 }

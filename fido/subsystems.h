@@ -1,7 +1,11 @@
+// Copyright 2024 David Allison
+// All Rights Reserved
+// See LICENSE file for licensing information.
+
 #pragma once
 
-#include "fido/screen.h"
-#include "fido/table_window.h"
+#include "retro/screen.h"
+#include "retro/table_window.h"
 #include "fido/event_mux.h"
 #include "common/event.h"
 #include "common/subsystem_status.h"
@@ -10,15 +14,18 @@
 
 namespace fido {
 
-class SubsystemsWindow : public TableWindow {
+class SubsystemsWindow : public retro::TableWindow {
 public:
-  SubsystemsWindow(Screen *screen, EventMux& mux);
+  SubsystemsWindow(retro::Screen *screen, EventMux& mux);
   ~SubsystemsWindow() = default;
+
+  void ApplyFilter() override;
 
 private:
   void RunnerCoroutine(co::Coroutine *c) override;
   void PopulateTable();
 
+  EventMux& mux_;
   toolbelt::SharedPtrPipe<stagezero::Event> event_pipe_;
   absl::flat_hash_map<std::string, stagezero::SubsystemStatus> subsystems_;
 };
