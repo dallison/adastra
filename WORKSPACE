@@ -66,31 +66,31 @@ http_archive(
   strip_prefix = "googletest-5ab508a01f9eb089207ee87fd547d290da39d015",
 )
 
-# http_archive(
-#   name = "toolbelt",
-#   urls = ["https://github.com/dallison/cpp_toolbelt/archive/refs/tags/1.1.1.tar.gz"],
-#   strip_prefix = "cpp_toolbelt-1.1.1",
-#   sha256 = "8c2a99448ea2776ffd400a4a85b5355c19f0506f4b4306cdeff67d1ba20474fb"
-# )
+http_archive(
+  name = "toolbelt",
+  urls = ["https://github.com/dallison/cpp_toolbelt/archive/refs/tags/1.1.5.tar.gz"],
+  strip_prefix = "cpp_toolbelt-1.1.5",
+  sha256 = "27429e66e47812da8c8bc18a823a27462277499029e9091be206f3844a7b05cc"
+)
 
 # For local debugging of toolbelt coroutine library.
-local_repository(
-    name = "toolbelt",
-    path = "../cpp_toolbelt",
-)
-
-# http_archive(
-#   name = "coroutines",
-#   urls = ["https://github.com/dallison/co/archive/refs/tags/1.3.4.tar.gz"],
-#   strip_prefix = "co-1.3.4",
-#   sha256 = "00b036fcecd0256356bc09b47b049e29f6df34dc97792143630df83591de2c1b"
+# local_repository(
+#     name = "toolbelt",
+#     path = "../cpp_toolbelt",
 # )
 
-# For local debugging of co coroutine library.
-local_repository(
-    name = "coroutines",
-    path = "../co",
+http_archive(
+  name = "coroutines",
+  urls = ["https://github.com/dallison/co/archive/refs/tags/1.3.5.tar.gz"],
+  strip_prefix = "co-1.3.5",
+  sha256 = "132ec0f47008a10f43dbc3dea6c31db954ea6f808245127e99af80ffebb58768"
 )
+
+# For local debugging of co coroutine library.
+# local_repository(
+#     name = "coroutines",
+#     path = "../co",
+# )
 
 # Bazel python rules.
 http_archive(
@@ -125,30 +125,30 @@ http_archive(
   urls = ["https://github.com/pybind/pybind11/archive/refs/tags/v2.10.0.zip"],
 )
 
-# http_archive(
-#   name = "subspace",
-#   urls = ["https://github.com/dallison/subspace/archive/refs/tags/1.3.1.tar.gz"],
-#   strip_prefix = "subspace-1.3.1",
-#   sha256 = "213a89907da644a2ffd1d8c26d1afef99450e856ff5fcbcd1112358456d3e51b"
-# )
+http_archive(
+  name = "subspace",
+  urls = ["https://github.com/dallison/subspace/archive/refs/tags/1.3.2.tar.gz"],
+  strip_prefix = "subspace-1.3.2",
+  sha256 = "810ea8315020708a6ef4a5eeddcd627694a932d4f91cf74785ba23cfedc91de5"
+)
 
 # For local debugging of subspace library.
-local_repository(
-    name = "subspace",
-    path = "../subspace",
-)
+# local_repository(
+#     name = "subspace",
+#     path = "../subspace",
+# )
 
 # For local debugging of retro library.
-local_repository(
-    name = "retro",
-    path = "../retro",
-)
-
-# http_archive(
-#   name = "retro",
-#   urls = ["https://github.com/dallison/retro/archive/refs/tags/1.0.0.tar.gz"],
-#   strip_prefix = "retro-1.0.0",
-#   sha256 = "664d8c71c66643cee2e132a8c75981c6bca198eb22f063860ebfc9d5770d5976"
+# local_repository(
+#     name = "retro",
+#     path = "../retro",
 # )
+
+http_archive(
+  name = "retro",
+  urls = ["https://github.com/dallison/retro/archive/refs/tags/1.0.1.tar.gz"],
+  strip_prefix = "retro-1.0.1",
+  sha256 = "9cc2dfc3f1a5a52ab3c3891167b7f31a041255c9d2ce0c949cea44e0b72ebff1"
+)
 
 
