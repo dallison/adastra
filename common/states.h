@@ -7,7 +7,7 @@
 
 #include <iostream>
 
-namespace stagezero {
+namespace adastra {
 
 class Capcom;
 class Subsystem;
@@ -68,4 +68,4 @@ inline std::ostream& operator<<(std::ostream& os, OperState s) {
   return os;
 }
 
-}  // namespace stagezero
+}  // namespace adastra

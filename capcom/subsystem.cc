@@ -7,7 +7,7 @@
 
 #include <unistd.h>
 
-namespace stagezero::capcom {
+namespace adastra::capcom {
 Subsystem::Subsystem(std::string name, Capcom &capcom,
                      std::vector<Variable> vars, std::vector<Stream> streams,
                      int max_restarts, bool critical)
@@ -331,42 +331,42 @@ absl::Status Subsystem::AddVirtualProcess(
   return absl::OkStatus();
 }
 
-void Subsystem::BuildStatus(stagezero::proto::SubsystemStatus *status) {
+void Subsystem::BuildStatus(adastra::proto::SubsystemStatus *status) {
   status->set_name(name_);
 
   switch (admin_state_) {
   case AdminState::kOffline:
-    status->set_admin_state(stagezero::proto::ADMIN_OFFLINE);
+    status->set_admin_state(adastra::proto::ADMIN_OFFLINE);
     break;
   case AdminState::kOnline:
-    status->set_admin_state(stagezero::proto::ADMIN_ONLINE);
+    status->set_admin_state(adastra::proto::ADMIN_ONLINE);
     break;
   }
 
   switch (oper_state_) {
   case OperState::kOffline:
-    status->set_oper_state(stagezero::proto::OPER_OFFLINE);
+    status->set_oper_state(adastra::proto::OPER_OFFLINE);
     break;
   case OperState::kStartingChildren:
-    status->set_oper_state(stagezero::proto::OPER_STARTING_CHILDREN);
+    status->set_oper_state(adastra::proto::OPER_STARTING_CHILDREN);
     break;
   case OperState::kStartingProcesses:
-    status->set_oper_state(stagezero::proto::OPER_STARTING_PROCESSES);
+    status->set_oper_state(adastra::proto::OPER_STARTING_PROCESSES);
     break;
   case OperState::kOnline:
-    status->set_oper_state(stagezero::proto::OPER_ONLINE);
+    status->set_oper_state(adastra::proto::OPER_ONLINE);
     break;
   case OperState::kStoppingChildren:
-    status->set_oper_state(stagezero::proto::OPER_STOPPING_CHILDREN);
+    status->set_oper_state(adastra::proto::OPER_STOPPING_CHILDREN);
     break;
   case OperState::kStoppingProcesses:
-    status->set_oper_state(stagezero::proto::OPER_STOPPING_PROCESSES);
+    status->set_oper_state(adastra::proto::OPER_STOPPING_PROCESSES);
     break;
   case OperState::kRestarting:
-    status->set_oper_state(stagezero::proto::OPER_RESTARTING);
+    status->set_oper_state(adastra::proto::OPER_RESTARTING);
     break;
   case OperState::kBroken:
-    status->set_oper_state(stagezero::proto::OPER_BROKEN);
+    status->set_oper_state(adastra::proto::OPER_BROKEN);
     break;
   }
   status->set_alarm_count(alarm_count_);
@@ -383,11 +383,11 @@ void Subsystem::BuildStatus(stagezero::proto::SubsystemStatus *status) {
     p->set_subsystem(name_);
     p->set_alarm_count(proc->AlarmCount());
     if (proc->IsZygote()) {
-      p->set_type(stagezero::proto::SubsystemStatus::ZYGOTE);
+      p->set_type(adastra::proto::SubsystemStatus::ZYGOTE);
     } else if (proc->IsVirtual()) {
-      p->set_type(stagezero::proto::SubsystemStatus::VIRTUAL);
+      p->set_type(adastra::proto::SubsystemStatus::VIRTUAL);
     } else {
-      p->set_type(stagezero::proto::SubsystemStatus::STATIC);
+      p->set_type(adastra::proto::SubsystemStatus::STATIC);
     }
   }
 }
@@ -606,4 +606,4 @@ absl::Status VirtualProcess::Launch(Subsystem *subsystem, co::Coroutine *c) {
   return absl::OkStatus();
 }
 
-} // namespace stagezero::capcom
+} // namespace adastra::capcom

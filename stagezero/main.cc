@@ -10,7 +10,7 @@
 #include <iostream>
 #include <signal.h>
 
-stagezero::StageZero *g_stagezero;
+adastra::stagezero::StageZero *g_stagezero;
 co::CoroutineScheduler *g_scheduler;
 
 ABSL_FLAG(int, port, 6522, "TCP listening port");
@@ -55,7 +55,7 @@ int main(int argc, char **argv) {
       listen_addr.empty() ? toolbelt::InetAddress::AnyAddress(listen_port)
                           : toolbelt::InetAddress(listen_addr, listen_port));
 
-  stagezero::StageZero stagezero(
+  adastra::stagezero::StageZero stagezero(
       scheduler, stagezero_addr, !absl::GetFlag(FLAGS_silent),
       absl::GetFlag(FLAGS_logdir), absl::GetFlag(FLAGS_log_level),
       absl::GetFlag(FLAGS_notify_fd));

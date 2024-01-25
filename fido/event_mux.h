@@ -8,7 +8,7 @@
 
 #include <functional>
 
-namespace fido {
+namespace adastra::fido {
 
 class Application;
 
@@ -25,7 +25,7 @@ public:
   void Init();
   
   void AddListener(std::function<void(MuxStatus)> callback);
-  void AddSink(toolbelt::SharedPtrPipe<stagezero::Event>* sink);
+  void AddSink(toolbelt::SharedPtrPipe<adastra::Event>* sink);
 
 private:
   void RunnerCoroutine(co::Coroutine* c);
@@ -33,9 +33,9 @@ private:
 
   retro::Application& app_;
   toolbelt::InetAddress flight_addr_;
-  std::unique_ptr<stagezero::flight::client::Client> client_;
+  std::unique_ptr<adastra::flight::client::Client> client_;
   std::vector<std::function<void(MuxStatus)>> listeners_;
-  std::vector<toolbelt::SharedPtrPipe<stagezero::Event>*> sinks_;
+  std::vector<toolbelt::SharedPtrPipe<adastra::Event>*> sinks_;
 };
 
-} // namespace fido
+} // namespace adastra::fido

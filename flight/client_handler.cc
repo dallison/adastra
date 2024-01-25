@@ -9,7 +9,7 @@
 
 #include <iostream>
 
-namespace stagezero::flight {
+namespace adastra::flight {
 
 ClientHandler::~ClientHandler() {}
 
@@ -95,8 +95,8 @@ void ClientHandler::HandleStartSubsystem(
   if (absl::Status status = flight_.capcom_client_.StartSubsystem(
           req.subsystem(),
           req.interactive()
-              ? stagezero::capcom::client::RunMode::kInteractive
-              : stagezero::capcom::client::RunMode::kNoninteractive,
+              ? adastra::capcom::client::RunMode::kInteractive
+              : adastra::capcom::client::RunMode::kNoninteractive,
           terminal.IsPresent() ? &terminal : nullptr, c);
       !status.ok()) {
     response->set_error(status.ToString());
@@ -215,12 +215,12 @@ void ClientHandler::HandleCloseFd(const proto::CloseFdRequest &req,
 }
 
 absl::Status
-ClientHandler::SendEvent(std::shared_ptr<stagezero::Event> event) {
+ClientHandler::SendEvent(std::shared_ptr<adastra::Event> event) {
   if (!event->IsMaskedIn(event_mask_)) {
     return absl::OkStatus();
   }
-  auto proto_event = std::make_shared<stagezero::proto::Event>();
+  auto proto_event = std::make_shared<adastra::proto::Event>();
   event->ToProto(proto_event.get());
   return QueueEvent(std::move(proto_event));
 }
-} // namespace stagezero::flight
+} // namespace adastra::flight

@@ -4,7 +4,7 @@
 
 syntax = "proto3";
 
-package stagezero.capcom.proto;
+package adastra.capcom.proto;
 
 import "proto/config.proto";
 import "proto/event.proto";
@@ -21,7 +21,7 @@ message InitResponse {
   int32 event_port = 2;
 }
 
-message AddComputeRequest { config.Compute compute = 1; }
+message AddComputeRequest { stagezero.config.Compute compute = 1; }
 
 message AddComputeResponse { string error = 1; }
 
@@ -30,12 +30,12 @@ message RemoveComputeRequest { string name = 1; }
 message RemoveComputeResponse { string error = 1; }
 
 message Process {
-  config.ProcessOptions options = 1;
+  stagezero.config.ProcessOptions options = 1;
 
   oneof proc {
-    config.StaticProcess static_process = 2;
-    config.StaticProcess zygote = 3;
-    config.VirtualProcess virtual_process = 4;
+    stagezero.config.StaticProcess static_process = 2;
+    stagezero.config.StaticProcess zygote = 3;
+    stagezero.config.VirtualProcess virtual_process = 4;
   }
 
   // Where this process will be run.  Leave empty for localhost.
@@ -52,7 +52,7 @@ message AddSubsystemRequest {
   repeated Process processes = 2;
 
   // Variables common to this subsystem.
-  repeated config.Variable vars = 3;
+  repeated stagezero.config.Variable vars = 3;
 
   // Args to pass to all processes in this subsystem.
   repeated string args = 4;
@@ -94,14 +94,14 @@ message GetSubsystemsRequest {}
 
 message GetSubsystemsResponse {
   string error = 1;
-  repeated stagezero.proto.SubsystemStatus subsystems = 2;
+  repeated adastra.proto.SubsystemStatus subsystems = 2;
 }
 
 message GetAlarmsRequest {}
 
 message GetAlarmsResponse {
   string error = 1;
-  repeated stagezero.proto.Alarm alarms = 2;
+  repeated adastra.proto.Alarm alarms = 2;
 }
 
 message AbortRequest {
@@ -111,7 +111,7 @@ message AbortRequest {
 
 message AbortResponse { string error = 1; }
 
-message AddGlobalVariableRequest { config.Variable var = 1; }
+message AddGlobalVariableRequest { stagezero.config.Variable var = 1; }
 
 message AddGlobalVariableResponse { string error = 1; }
 

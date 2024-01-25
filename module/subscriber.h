@@ -5,7 +5,7 @@
 #include "google/protobuf/message.h"
 #include "toolbelt/triggerfd.h"
 
-namespace stagezero::module {
+namespace adastra::module {
 
 class Module;
 
@@ -88,4 +88,4 @@ private:
                      Message<const MessageType>, co::Coroutine *)>
       callback_;
 };
-} // namespace stagezero::module
+} // namespace adastra::module

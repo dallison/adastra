@@ -24,7 +24,7 @@
 #include "toolbelt/logging.h"
 #include "toolbelt/triggerfd.h"
 
-namespace stagezero::capcom {
+namespace adastra::capcom {
 
 using namespace std::chrono_literals;
 
@@ -224,7 +224,7 @@ public:
 
   bool CheckRemove(bool recursive);
 
-  void BuildStatus(stagezero::proto::SubsystemStatus *status);
+  void BuildStatus(adastra::proto::SubsystemStatus *status);
 
   void AddChild(std::shared_ptr<Subsystem> child) {
     children_.push_back(child);
@@ -450,4 +450,4 @@ private:
   Terminal interactive_terminal_;
 };
 
-} // namespace stagezero::capcom
+} // namespace adastra::capcom

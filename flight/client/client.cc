@@ -5,7 +5,7 @@
 #include "flight/client/client.h"
 #include "toolbelt/hexdump.h"
 
-namespace stagezero::flight::client {
+namespace adastra::flight::client {
 
 absl::Status Client::Init(toolbelt::InetAddress addr, const std::string &name,
 int event_mask,
@@ -30,7 +30,7 @@ int event_mask,
 }
 
 absl::StatusOr<std::shared_ptr<Event>> Client::ReadEvent(co::Coroutine *c) {
-  absl::StatusOr<std::shared_ptr<stagezero::proto::Event>> proto_event =
+  absl::StatusOr<std::shared_ptr<adastra::proto::Event>> proto_event =
       ReadProtoEvent(c);
   if (!proto_event.ok()) {
     return proto_event.status();
@@ -52,14 +52,14 @@ absl::Status Client::StartSubsystem(const std::string &name, RunMode mode,
         "Using interactive with a blocking client is "
         "racy as both the client and the caller will be processing events");
   }
-  stagezero::flight::proto::Request req;
+  adastra::flight::proto::Request req;
   auto s = req.mutable_start_subsystem();
   s->set_subsystem(name);
   s->set_interactive(mode == RunMode::kInteractive);
   if (terminal != nullptr) {
     terminal->ToProto(s->mutable_interactive_terminal());
   }
-  stagezero::flight::proto::Response resp;
+  adastra::flight::proto::Response resp;
   absl::Status status = SendRequestReceiveResponse(req, resp, c);
   if (!status.ok()) {
     return status;
@@ -83,11 +83,11 @@ absl::Status Client::StopSubsystem(const std::string &name, co::Coroutine *c) {
   if (c == nullptr) {
     c = co_;
   }
-  stagezero::flight::proto::Request req;
+  adastra::flight::proto::Request req;
   auto s = req.mutable_stop_subsystem();
   s->set_subsystem(name);
 
-  stagezero::flight::proto::Response resp;
+  adastra::flight::proto::Response resp;
   absl::Status status = SendRequestReceiveResponse(req, resp, c);
   if (!status.ok()) {
     return status;
@@ -142,12 +142,12 @@ absl::Status Client::Abort(const std::string &reason, bool emergency, co::Corout
   if (c == nullptr) {
     c = co_;
   }
-  stagezero::flight::proto::Request req;
+  adastra::flight::proto::Request req;
   auto abort = req.mutable_abort();
   abort->set_reason(reason);
   abort->set_emergency(emergency);
 
-  stagezero::flight::proto::Response resp;
+  adastra::flight::proto::Response resp;
   if (absl::Status status = SendRequestReceiveResponse(req, resp, c);
       !status.ok()) {
     return status;
@@ -165,10 +165,10 @@ Client::GetSubsystems(co::Coroutine *c) {
   if (c == nullptr) {
     c = co_;
   }
-  stagezero::flight::proto::Request req;
+  adastra::flight::proto::Request req;
   (void)req.mutable_get_subsystems();
 
-  stagezero::flight::proto::Response resp;
+  adastra::flight::proto::Response resp;
   if (absl::Status status = SendRequestReceiveResponse(req, resp, c);
       !status.ok()) {
     return status;
@@ -194,10 +194,10 @@ absl::StatusOr<std::vector<Alarm>> Client::GetAlarms(co::Coroutine *c) {
   if (c == nullptr) {
     c = co_;
   }
-  stagezero::flight::proto::Request req;
+  adastra::flight::proto::Request req;
   (void)req.mutable_get_alarms();
 
-  stagezero::flight::proto::Response resp;
+  adastra::flight::proto::Response resp;
   if (absl::Status status = SendRequestReceiveResponse(req, resp, c);
       !status.ok()) {
     return status;
@@ -222,13 +222,13 @@ absl::Status Client::SendInput(const std::string &subsystem, int fd,
   if (c == nullptr) {
     c = co_;
   }
-  stagezero::flight::proto::Request req;
+  adastra::flight::proto::Request req;
   auto input = req.mutable_input();
   input->set_subsystem(subsystem);
   input->set_fd(fd);
   input->set_data(data);
 
-  stagezero::flight::proto::Response resp;
+  adastra::flight::proto::Response resp;
   if (absl::Status status = SendRequestReceiveResponse(req, resp, c);
       !status.ok()) {
     return status;
@@ -245,13 +245,13 @@ absl::Status Client::AddGlobalVariable(const Variable &var, co::Coroutine *c) {
   if (c == nullptr) {
     c = co_;
   }
-  stagezero::flight::proto::Request req;
+  adastra::flight::proto::Request req;
   auto *v = req.mutable_add_global_variable()->mutable_var();
   v->set_name(var.name);
   v->set_value(var.value);
   v->set_exported(var.exported);
 
-  stagezero::flight::proto::Response resp;
+  adastra::flight::proto::Response resp;
   if (absl::Status status = SendRequestReceiveResponse(req, resp, c);
       !status.ok()) {
     return status;
@@ -269,12 +269,12 @@ absl::Status Client::CloseFd(const std::string &subsystem, int fd,
   if (c == nullptr) {
     c = co_;
   }
-  stagezero::flight::proto::Request req;
+  adastra::flight::proto::Request req;
   auto close = req.mutable_close_fd();
   close->set_subsystem(subsystem);
   close->set_fd(fd);
 
-  stagezero::flight::proto::Response resp;
+  adastra::flight::proto::Response resp;
   if (absl::Status status = SendRequestReceiveResponse(req, resp, c);
       !status.ok()) {
     return status;
@@ -286,4 +286,4 @@ absl::Status Client::CloseFd(const std::string &subsystem, int fd,
   }
   return absl::OkStatus();
 }
-} // namespace stagezero::flight::client
+} // namespace adastra::flight::client

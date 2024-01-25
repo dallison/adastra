@@ -17,13 +17,13 @@
 
 #include "coroutine.h"
 
-namespace stagezero::capcom {
+namespace adastra::capcom {
 
 class Capcom;
 
 class ClientHandler
     : public common::TCPClientHandler<proto::Request, proto::Response,
-                                      stagezero::proto::Event> {
+                                      adastra::proto::Event> {
 public:
   ClientHandler(Capcom &capcom, toolbelt::TCPSocket socket, uint32_t id)
       : TCPClientHandler(std::move(socket)), capcom_(capcom), id_(id) {}
@@ -41,7 +41,7 @@ public:
   absl::Status SendOutputEvent(const std::string &process, int fd,
                                const char *data, size_t size);
 
-  absl::Status SendLogEvent(std::shared_ptr<stagezero::proto::LogMessage> msg);
+  absl::Status SendLogEvent(std::shared_ptr<adastra::proto::LogMessage> msg);
 
   void Shutdown() override;
 
@@ -49,7 +49,7 @@ private:
   std::shared_ptr<ClientHandler> shared_from_this() {
     return std::static_pointer_cast<ClientHandler>(
         TCPClientHandler<proto::Request, proto::Response,
-                         stagezero::proto::Event>::shared_from_this());
+                         adastra::proto::Event>::shared_from_this());
   }
 
   absl::Status HandleMessage(const proto::Request &req, proto::Response &resp,
@@ -101,4 +101,4 @@ private:
   Capcom &capcom_;
   uint32_t id_;
 };
-} // namespace stagezero::capcom
+} // namespace adastra::capcom

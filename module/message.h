@@ -4,7 +4,7 @@
 #include "google/protobuf/message.h"
 #include "client/client.h"
 
-namespace stagezero::module {
+namespace adastra::module {
 
 // This is a message received from IPC.  It is either a pointer to
 // a deserialized protobuf message or a pointer to a message held

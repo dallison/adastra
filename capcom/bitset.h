@@ -10,7 +10,7 @@
 #include <cstdlib>
 #include <vector>
 
-namespace stagezero::capcom {
+namespace adastra::capcom {
 
 class BitSet {
  public:
@@ -116,4 +116,4 @@ inline void BitSet::ClearAll() {
     bits_[i] = 0LL;
   }
 }
-}  // namespace stagezero::capcom
+}  // namespace adastra::capcom

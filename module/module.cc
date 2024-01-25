@@ -8,9 +8,9 @@
 #include <cerrno>
 #include <signal.h>
 
-namespace stagezero::module {
+namespace adastra::module {
 
-Module::Module(std::unique_ptr<stagezero::SymbolTable> symbols)
+Module::Module(std::unique_ptr<adastra::stagezero::SymbolTable> symbols)
     : symbols_(std::move(symbols)) {}
 
 absl::Status Module::ModuleInit() {
@@ -34,7 +34,7 @@ const std::string &Module::SubspaceSocket() const {
 
 const std::string &Module::LookupSymbol(const std::string &name) const {
   static std::string empty;
-  Symbol *sym = symbols_->FindSymbol(name);
+  stagezero::Symbol *sym = symbols_->FindSymbol(name);
   if (sym == nullptr) {
     return empty;
   }
@@ -42,8 +42,8 @@ const std::string &Module::LookupSymbol(const std::string &name) const {
 }
 
 absl::Status Module::NotifyStartup() {
-  // Notify stagezero of startup.
-  Symbol *notify = symbols_->FindSymbol("STAGEZERO_NOTIFY_FD");
+  // Notify adastra of startup.
+  stagezero::Symbol *notify = symbols_->FindSymbol("STAGEZERO_NOTIFY_FD");
   if (notify != nullptr) {
     int notify_fd;
     bool ok = absl::SimpleAtoi(notify->Value(), &notify_fd);
@@ -284,4 +284,4 @@ void PublisherBase::ReleaseSubscribers() {
   }
 }
 
-} // namespace stagezero::module
+} // namespace adastra::module

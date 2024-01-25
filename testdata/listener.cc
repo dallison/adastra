@@ -2,16 +2,16 @@
 #include "module/protobuf_module.h"
 #include "testdata/proto/chat.pb.h"
 
-template <typename T> using Publisher = stagezero::module::ProtobufPublisher<T>;
+template <typename T> using Publisher = adastra::module::ProtobufPublisher<T>;
 
 template <typename T>
-using Subscriber = stagezero::module::ProtobufSubscriber<T>;
+using Subscriber = adastra::module::ProtobufSubscriber<T>;
 
-template <typename T> using Message = stagezero::module::Message<T>;
+template <typename T> using Message = adastra::module::Message<T>;
 
-class Listener : public stagezero::module::ProtobufModule {
+class Listener : public adastra::module::ProtobufModule {
 public:
-  Listener(std::unique_ptr<stagezero::SymbolTable> symbols)
+  Listener(std::unique_ptr<adastra::stagezero::SymbolTable> symbols)
       : ProtobufModule(std::move(symbols)) {}
 
   absl::Status Init(int argc, char **argv) override {

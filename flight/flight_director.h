@@ -17,7 +17,7 @@
 #include <memory>
 #include <string>
 
-namespace stagezero::flight {
+namespace adastra::flight {
 
 constexpr int64_t kReady = 1;
 constexpr int64_t kStopped = 2;
@@ -109,7 +109,7 @@ class FlightDirector {
 
   Process* FindInteractiveProcess(Subsystem* subsystem) const;
 
-  void CacheEvent(std::shared_ptr<stagezero::Event> event);
+  void CacheEvent(std::shared_ptr<adastra::Event> event);
   void DumpEventCache(ClientHandler* handler);
 
   co::CoroutineScheduler &co_scheduler_;
@@ -138,7 +138,7 @@ class FlightDirector {
   toolbelt::Logger logger_;
 
   static constexpr size_t kMaxEvents = 16384;
-  std::list<std::shared_ptr<stagezero::Event>> event_cache_;
+  std::list<std::shared_ptr<adastra::Event>> event_cache_;
   size_t num_cached_events_ = 0;
 };
-}  // namespace stagezero::flight
+}  // namespace adastra::flight

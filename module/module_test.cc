@@ -19,15 +19,15 @@
 #include <sys/resource.h>
 #include <thread>
 
-using namespace stagezero::module::frequency_literals;
+using namespace adastra::module::frequency_literals;
 
 void SignalHandler(int sig) { printf("Signal %d", sig); }
 
-template <typename T> using Message = stagezero::module::Message<T>;
+template <typename T> using Message = adastra::module::Message<T>;
 template <typename T>
-using Subscriber = stagezero::module::ProtobufSubscriber<T>;
-template <typename T> using Publisher = stagezero::module::ProtobufPublisher<T>;
-using ProtobufModule = stagezero::module::ProtobufModule;
+using Subscriber = adastra::module::ProtobufSubscriber<T>;
+template <typename T> using Publisher = adastra::module::ProtobufPublisher<T>;
+using ProtobufModule = adastra::module::ProtobufModule;
 using namespace std::chrono_literals;
 
 class ModuleTest : public ::testing::Test {
@@ -79,8 +79,8 @@ public:
 
   static const std::string &Socket() { return socket_; }
 
-  static std::unique_ptr<stagezero::SymbolTable> Symbols() {
-    auto symbols = std::make_unique<stagezero::SymbolTable>();
+  static std::unique_ptr<adastra::stagezero::SymbolTable> Symbols() {
+    auto symbols = std::make_unique<adastra::stagezero::SymbolTable>();
     symbols->AddSymbol("name", "test", false);
     symbols->AddSymbol("subspace_socket", Socket(), false);
     return symbols;
@@ -233,7 +233,7 @@ TEST_F(ModuleTest, PubSubZeroCopy) {
   auto sub = mod.RegisterZeroCopySubscriber<std::byte>(
       "foobar",
       [&mod, &count](
-          std::shared_ptr<stagezero::module::ZeroCopySubscriber<std::byte>> sub,
+          std::shared_ptr<adastra::module::ZeroCopySubscriber<std::byte>> sub,
           Message<const std::byte> msg, co::Coroutine *c) {
         absl::Span<const std::byte> span = msg;
         ASSERT_EQ(6, span.size());
@@ -275,7 +275,7 @@ TEST_F(ModuleTest, PubSubZeroCopyStruct) {
   auto sub = mod.RegisterZeroCopySubscriber<MyMessage>(
       "foobar",
       [&mod](
-          std::shared_ptr<stagezero::module::ZeroCopySubscriber<MyMessage>> sub,
+          std::shared_ptr<adastra::module::ZeroCopySubscriber<MyMessage>> sub,
           Message<const MyMessage> msg, co::Coroutine *c) {
         ASSERT_EQ(1234, msg->x);
         ASSERT_STREQ("foobar", msg->s);
@@ -311,7 +311,7 @@ TEST_F(ModuleTest, PubSubZeroCopyStructCallback) {
   auto sub = mod.RegisterZeroCopySubscriber<MyMessage>(
       "foobar",
       [&mod](
-          std::shared_ptr<stagezero::module::ZeroCopySubscriber<MyMessage>> sub,
+          std::shared_ptr<adastra::module::ZeroCopySubscriber<MyMessage>> sub,
           Message<const MyMessage> msg, co::Coroutine *c) {
         ASSERT_EQ(1234, msg->x);
         ASSERT_STREQ("foobar", msg->s);
@@ -321,7 +321,7 @@ TEST_F(ModuleTest, PubSubZeroCopyStructCallback) {
 
   auto p = mod.RegisterZeroCopyPublisher<MyMessage>(
       "foobar", 256, 10,
-      [](std::shared_ptr<stagezero::module::ZeroCopyPublisher<MyMessage>> pub,
+      [](std::shared_ptr<adastra::module::ZeroCopyPublisher<MyMessage>> pub,
          MyMessage &msg, co::Coroutine *c) -> bool {
         msg.x = 1234;
         strcpy(msg.s, "foobar");

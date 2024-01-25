@@ -3,19 +3,19 @@
 #include "robot/proto/vision.pb.h"
 #include "toolbelt/clock.h"
 
-template <typename T> using Publisher = stagezero::module::ProtobufPublisher<T>;
+template <typename T> using Publisher = adastra::module::ProtobufPublisher<T>;
 
 template <typename T>
-using Subscriber = stagezero::module::ProtobufSubscriber<T>;
+using Subscriber = adastra::module::ProtobufSubscriber<T>;
 
-template <typename T> using Message = stagezero::module::Message<T>;
+template <typename T> using Message = adastra::module::Message<T>;
 
-class Camera : public stagezero::module::ProtobufModule {
+class Camera : public adastra::module::ProtobufModule {
 public:
-  Camera(std::unique_ptr<stagezero::SymbolTable> symbols) : ProtobufModule(std::move(symbols)) {}
+  Camera(std::unique_ptr<adastra::stagezero::SymbolTable> symbols) : ProtobufModule(std::move(symbols)) {}
 
   absl::Status Init(int argc, char **argv) override {
-    stagezero::Symbol *name = symbols_->FindSymbol("camera_name");
+    adastra::stagezero::Symbol *name = symbols_->FindSymbol("camera_name");
     if (name == nullptr) {
       std::cerr << "No camera name supplied\n";
       abort();

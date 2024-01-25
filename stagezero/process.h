@@ -21,7 +21,7 @@
 #include <signal.h>
 #include "absl/container/flat_hash_set.h"
 
-namespace stagezero {
+namespace adastra::stagezero {
 
 class ClientHandler;
 
@@ -223,4 +223,4 @@ private:
   std::shared_ptr<Zygote> zygote_;
 };
 
-} // namespace stagezero
+} // namespace adastra::stagezero

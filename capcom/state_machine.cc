@@ -6,7 +6,7 @@
 
 #include <unistd.h>
 
-namespace stagezero::capcom {
+namespace adastra::capcom {
 
 // NOTE: Keep this array up to date with OperState.  If you add a new
 // operational state, make sure to add something to this array, in the
@@ -153,7 +153,7 @@ void Subsystem::Offline(uint32_t client_id, co::Coroutine *c) {
                switch (event_source) {
                case EventSource::kStageZero: {
                  // Event from stagezero.
-                 absl::StatusOr<std::shared_ptr<stagezero::control::Event>> e =
+                 absl::StatusOr<std::shared_ptr<adastra::stagezero::control::Event>> e =
                      stagezero_client->ReadEvent(c);
                  if (!e.ok()) {
                    subsystem->capcom_.Log(subsystem->Name(),
@@ -161,21 +161,21 @@ void Subsystem::Offline(uint32_t client_id, co::Coroutine *c) {
                                           "Failed to read event %s",
                                           e.status().ToString().c_str());
                  }
-                 std::shared_ptr<stagezero::control::Event> event = *e;
+                 std::shared_ptr<adastra::stagezero::control::Event> event = *e;
                  switch (event->event_case()) {
-                 case stagezero::control::Event::kStart: {
+                 case adastra::stagezero::control::Event::kStart: {
                    break;
                  }
-                 case stagezero::control::Event::kStop:
+                 case adastra::stagezero::control::Event::kStop:
                    break;
-                 case stagezero::control::Event::kOutput:
+                 case adastra::stagezero::control::Event::kOutput:
                    subsystem->SendOutput(event->output().fd(),
                                          event->output().data(), c);
                    break;
-                 case stagezero::control::Event::kLog:
+                 case adastra::stagezero::control::Event::kLog:
                    subsystem->capcom_.Log(event->log());
                    break;
-                 case stagezero::control::Event::EVENT_NOT_SET:
+                 case adastra::stagezero::control::Event::EVENT_NOT_SET:
                    break;
                  }
                  break;
@@ -262,33 +262,33 @@ void Subsystem::StartingChildren(uint32_t client_id, co::Coroutine *c) {
             switch (event_source) {
             case EventSource::kStageZero: {
               // Event from stagezero.
-              absl::StatusOr<std::shared_ptr<stagezero::control::Event>> e =
+              absl::StatusOr<std::shared_ptr<adastra::stagezero::control::Event>> e =
                   stagezero_client->ReadEvent(c);
               if (!e.ok()) {
                 subsystem->capcom_.Log(
                     subsystem->Name(), toolbelt::LogLevel::kError,
                     "Failed to read event %s", e.status().ToString().c_str());
               }
-              std::shared_ptr<stagezero::control::Event> event = *e;
+              std::shared_ptr<adastra::stagezero::control::Event> event = *e;
 
               switch (event->event_case()) {
-              case stagezero::control::Event::kStart: {
+              case adastra::stagezero::control::Event::kStart: {
                 break;
               }
-              case stagezero::control::Event::kStop:
+              case adastra::stagezero::control::Event::kStop:
                 // One of our processes crashed while starting the children.
                 // Since nothing should be running this is a late message.
                 // Igore it.
                 return StateTransition::kStay;
 
-              case stagezero::control::Event::kOutput:
+              case adastra::stagezero::control::Event::kOutput:
                 subsystem->SendOutput(event->output().fd(),
                                       event->output().data(), c);
                 break;
-              case stagezero::control::Event::kLog:
+              case adastra::stagezero::control::Event::kLog:
                 subsystem->capcom_.Log(event->log());
                 break;
-              case stagezero::control::Event::EVENT_NOT_SET:
+              case adastra::stagezero::control::Event::EVENT_NOT_SET:
                 break;
               }
               break;
@@ -381,7 +381,7 @@ void Subsystem::StartingProcesses(uint32_t client_id, co::Coroutine *c) {
                switch (event_source) {
                case EventSource::kStageZero: {
                  // Event from stagezero.
-                 absl::StatusOr<std::shared_ptr<stagezero::control::Event>> e =
+                 absl::StatusOr<std::shared_ptr<adastra::stagezero::control::Event>> e =
                      stagezero_client->ReadEvent(c);
                  if (!e.ok()) {
                    subsystem->capcom_.Log(subsystem->Name(),
@@ -389,9 +389,9 @@ void Subsystem::StartingProcesses(uint32_t client_id, co::Coroutine *c) {
                                           "Failed to read event %s",
                                           e.status().ToString().c_str());
                  }
-                 std::shared_ptr<stagezero::control::Event> event = *e;
+                 std::shared_ptr<adastra::stagezero::control::Event> event = *e;
                  switch (event->event_case()) {
-                 case stagezero::control::Event::kStart: {
+                 case adastra::stagezero::control::Event::kStart: {
                    Process *proc =
                        subsystem->FindProcess(event->start().process_id());
                    if (proc != nullptr) {
@@ -400,10 +400,10 @@ void Subsystem::StartingProcesses(uint32_t client_id, co::Coroutine *c) {
                    }
                    break;
                  }
-                 case stagezero::control::Event::kStop: {
+                 case adastra::stagezero::control::Event::kStop: {
                    // Process failed to start.
                    if (!subsystem->capcom_.IsEmergencyAborting()) {
-                     const control::StopEvent &stop = event->stop();
+                     const stagezero::control::StopEvent &stop = event->stop();
                      Process *proc = subsystem->FindProcess(stop.process_id());
                      if (proc == nullptr) {
                        subsystem->capcom_.Log(
@@ -417,21 +417,21 @@ void Subsystem::StartingProcesses(uint32_t client_id, co::Coroutine *c) {
                            "Process %s has crashed", stop.process_id().c_str());
                      }
                      int signal_or_status = stop.sig_or_status();
-                     bool exited = stop.reason() != control::StopEvent::SIGNAL;
+                     bool exited = stop.reason() != stagezero::control::StopEvent::SIGNAL;
                      return subsystem->RestartIfPossibleAfterProcessCrash(
                          stop.process_id(), client_id, exited, signal_or_status,
                          c);
                    }
                    return StateTransition::kStay;
                  }
-                 case stagezero::control::Event::kOutput:
+                 case adastra::stagezero::control::Event::kOutput:
                    subsystem->SendOutput(event->output().fd(),
                                          event->output().data(), c);
                    break;
-                 case stagezero::control::Event::kLog:
+                 case adastra::stagezero::control::Event::kLog:
                    subsystem->capcom_.Log(event->log());
                    break;
-                 case stagezero::control::Event::EVENT_NOT_SET:
+                 case adastra::stagezero::control::Event::EVENT_NOT_SET:
                    break;
                  }
                  break;
@@ -496,7 +496,7 @@ void Subsystem::Online(uint32_t client_id, co::Coroutine *c) {
                switch (event_source) {
                case EventSource::kStageZero: {
                  // Event from stagezero.
-                 absl::StatusOr<std::shared_ptr<stagezero::control::Event>> e =
+                 absl::StatusOr<std::shared_ptr<adastra::stagezero::control::Event>> e =
                      stagezero_client->ReadEvent(c);
                  if (!e.ok()) {
                    subsystem->capcom_.Log(subsystem->Name(),
@@ -504,14 +504,14 @@ void Subsystem::Online(uint32_t client_id, co::Coroutine *c) {
                                           "Failed to read event %s",
                                           e.status().ToString().c_str());
                  }
-                 std::shared_ptr<stagezero::control::Event> event = *e;
+                 std::shared_ptr<adastra::stagezero::control::Event> event = *e;
                  switch (event->event_case()) {
-                 case stagezero::control::Event::kStart: {
+                 case adastra::stagezero::control::Event::kStart: {
                    // We aren't going to get these as all processes are
                    // running.
                    break;
                  }
-                 case stagezero::control::Event::kStop: {
+                 case adastra::stagezero::control::Event::kStop: {
                    if (subsystem->interactive_) {
                      Process *proc =
                          subsystem->FindProcess(event->stop().process_id());
@@ -534,7 +534,7 @@ void Subsystem::Online(uint32_t client_id, co::Coroutine *c) {
 
                    // Non-interative process crashed.  Restart.
                    if (!subsystem->capcom_.IsEmergencyAborting()) {
-                     const control::StopEvent &stop = event->stop();
+                     const stagezero::control::StopEvent &stop = event->stop();
                      Process *proc = subsystem->FindProcess(stop.process_id());
                      if (proc == nullptr) {
                        subsystem->capcom_.Log(
@@ -548,21 +548,21 @@ void Subsystem::Online(uint32_t client_id, co::Coroutine *c) {
                            "Process %s has crashed", stop.process_id().c_str());
                      }
                      int signal_or_status = stop.sig_or_status();
-                     bool exited = stop.reason() != control::StopEvent::SIGNAL;
+                     bool exited = stop.reason() != stagezero::control::StopEvent::SIGNAL;
                      return subsystem->RestartIfPossibleAfterProcessCrash(
                          stop.process_id(), client_id, exited, signal_or_status,
                          c);
                    }
                    return StateTransition::kStay;
                  }
-                 case stagezero::control::Event::kOutput:
+                 case adastra::stagezero::control::Event::kOutput:
                    subsystem->SendOutput(event->output().fd(),
                                          event->output().data(), c);
                    break;
-                 case stagezero::control::Event::kLog:
+                 case adastra::stagezero::control::Event::kLog:
                    subsystem->capcom_.Log(event->log());
                    break;
-                 case stagezero::control::Event::EVENT_NOT_SET:
+                 case adastra::stagezero::control::Event::EVENT_NOT_SET:
                    break;
                  }
                  break;
@@ -640,7 +640,7 @@ void Subsystem::StoppingProcesses(uint32_t client_id, co::Coroutine *c) {
                switch (event_source) {
                case EventSource::kStageZero: {
                  // Event from stagezero.
-                 absl::StatusOr<std::shared_ptr<stagezero::control::Event>> e =
+                 absl::StatusOr<std::shared_ptr<adastra::stagezero::control::Event>> e =
                      stagezero_client->ReadEvent(c);
                  if (!e.ok()) {
                    subsystem->capcom_.Log(subsystem->Name(),
@@ -648,14 +648,14 @@ void Subsystem::StoppingProcesses(uint32_t client_id, co::Coroutine *c) {
                                           "Failed to read event %s",
                                           e.status().ToString().c_str());
                  }
-                 std::shared_ptr<stagezero::control::Event> event = *e;
+                 std::shared_ptr<adastra::stagezero::control::Event> event = *e;
                  switch (event->event_case()) {
-                 case stagezero::control::Event::kStart: {
+                 case adastra::stagezero::control::Event::kStart: {
                    // We aren't going to get these as all processes are
                    // stopping.
                    break;
                  }
-                 case stagezero::control::Event::kStop: {
+                 case adastra::stagezero::control::Event::kStop: {
                    // Process stopped OK.
                    Process *proc =
                        subsystem->FindProcess(event->stop().process_id());
@@ -671,14 +671,14 @@ void Subsystem::StoppingProcesses(uint32_t client_id, co::Coroutine *c) {
                    }
                    break;
                  }
-                 case stagezero::control::Event::kOutput:
+                 case adastra::stagezero::control::Event::kOutput:
                    subsystem->SendOutput(event->output().fd(),
                                          event->output().data(), c);
                    break;
-                 case stagezero::control::Event::kLog:
+                 case adastra::stagezero::control::Event::kLog:
                    subsystem->capcom_.Log(event->log());
                    break;
-                 case stagezero::control::Event::EVENT_NOT_SET:
+                 case adastra::stagezero::control::Event::EVENT_NOT_SET:
                    break;
                  }
                  break;
@@ -756,33 +756,33 @@ void Subsystem::StoppingChildren(uint32_t client_id, co::Coroutine *c) {
             switch (event_source) {
             case EventSource::kStageZero: {
               // Event from stagezero.
-              absl::StatusOr<std::shared_ptr<stagezero::control::Event>> e =
+              absl::StatusOr<std::shared_ptr<adastra::stagezero::control::Event>> e =
                   stagezero_client->ReadEvent(c);
               if (!e.ok()) {
                 subsystem->capcom_.Log(
                     subsystem->Name(), toolbelt::LogLevel::kError,
                     "Failed to read event %s", e.status().ToString().c_str());
               }
-              std::shared_ptr<stagezero::control::Event> event = *e;
+              std::shared_ptr<adastra::stagezero::control::Event> event = *e;
               switch (event->event_case()) {
-              case stagezero::control::Event::kStart: {
+              case adastra::stagezero::control::Event::kStart: {
                 // We shouldn't get this because all our processes are
                 // stopped.
                 break;
               }
-              case stagezero::control::Event::kStop: {
+              case adastra::stagezero::control::Event::kStop: {
                 // We shouldn't get this because all our processes are
                 // stopped.
                 break;
               }
-              case stagezero::control::Event::kOutput:
+              case adastra::stagezero::control::Event::kOutput:
                 subsystem->SendOutput(event->output().fd(),
                                       event->output().data(), c);
                 break;
-              case stagezero::control::Event::kLog:
+              case adastra::stagezero::control::Event::kLog:
                 subsystem->capcom_.Log(event->log());
                 break;
-              case stagezero::control::Event::EVENT_NOT_SET:
+              case adastra::stagezero::control::Event::EVENT_NOT_SET:
                 break;
               }
               break;
@@ -1050,7 +1050,7 @@ void Subsystem::Restarting(uint32_t client_id, co::Coroutine *c) {
                switch (event_source) {
                case EventSource::kStageZero: {
                  // Event from stagezero.
-                 absl::StatusOr<std::shared_ptr<stagezero::control::Event>> e =
+                 absl::StatusOr<std::shared_ptr<adastra::stagezero::control::Event>> e =
                      stagezero_client->ReadEvent(c);
                  if (!e.ok()) {
                    subsystem->capcom_.Log(subsystem->Name(),
@@ -1058,15 +1058,15 @@ void Subsystem::Restarting(uint32_t client_id, co::Coroutine *c) {
                                           "Failed to read event %s",
                                           e.status().ToString().c_str());
                  }
-                 std::shared_ptr<stagezero::control::Event> event = *e;
+                 std::shared_ptr<adastra::stagezero::control::Event> event = *e;
                  switch (event->event_case()) {
-                 case stagezero::control::Event::kStart: {
+                 case adastra::stagezero::control::Event::kStart: {
                    // This might happen if a process crashed while others are
                    // starting up.  Ignore it, as it will be replaced by a
                    // kStop event when the process is killed.
                    break;
                  }
-                 case stagezero::control::Event::kStop: {
+                 case adastra::stagezero::control::Event::kStop: {
                    Process *proc =
                        subsystem->FindProcess(event->stop().process_id());
                    if (proc != nullptr) {
@@ -1075,14 +1075,14 @@ void Subsystem::Restarting(uint32_t client_id, co::Coroutine *c) {
                    }
                    break;
                  }
-                 case stagezero::control::Event::kOutput:
+                 case adastra::stagezero::control::Event::kOutput:
                    subsystem->SendOutput(event->output().fd(),
                                          event->output().data(), c);
                    break;
-                 case stagezero::control::Event::kLog:
+                 case adastra::stagezero::control::Event::kLog:
                    subsystem->capcom_.Log(event->log());
                    break;
-                 case stagezero::control::Event::EVENT_NOT_SET:
+                 case adastra::stagezero::control::Event::EVENT_NOT_SET:
                    break;
                  }
                  break;
@@ -1190,4 +1190,4 @@ void Subsystem::Broken(uint32_t client_id, co::Coroutine *c) {
              });
 }
 
-} // namespace stagezero::capcom
+} // namespace adastra::capcom

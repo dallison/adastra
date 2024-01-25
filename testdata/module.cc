@@ -40,7 +40,7 @@ int Main(const char *enc_syms, int syms_len, int argc, char **argv, char **envp)
 
   std::stringstream symstream;
   symstream.write(enc_syms, syms_len);
-  stagezero::SymbolTable symbols;
+  adastra::stagezero::SymbolTable symbols;
   symbols.Decode(symstream);
 
   std::cerr << "notifying\n";
@@ -48,7 +48,7 @@ int Main(const char *enc_syms, int syms_len, int argc, char **argv, char **envp)
   // Can do this both with the symbol table or getenv.  Let's do both to
   // make sure it works.
   char* notify_env = getenv("STAGEZERO_NOTIFY_FD");
-  stagezero::Symbol* notify = symbols.FindSymbol("STAGEZERO_NOTIFY_FD");
+  adastra::stagezero::Symbol* notify = symbols.FindSymbol("STAGEZERO_NOTIFY_FD");
   if (notify != nullptr) {
     std::cerr << "notify symbol ok\n";
     if (notify_env == nullptr) {

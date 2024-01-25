@@ -6,7 +6,7 @@
 #include <fstream>
 #include <stdlib.h>
 
-namespace fido {
+namespace adastra::fido {
 
 SubspaceStatsWindow::SubspaceStatsWindow(retro::Screen *screen,
                                          const std::string &subspace_socket)
@@ -190,4 +190,4 @@ void SubspaceStatsWindow::PopulateTable() {
   Draw();
 }
 
-} // namespace fido
+} // namespace adastra::fido

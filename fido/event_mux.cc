@@ -1,7 +1,7 @@
 #include "fido/event_mux.h"
 #include "fido/fido.h"
 
-namespace fido {
+namespace adastra::fido {
 
 EventMux::EventMux(retro::Application &app, toolbelt::InetAddress flight_addr)
     : app_(app), flight_addr_(flight_addr) {}
@@ -18,7 +18,7 @@ void EventMux::AddListener(std::function<void(MuxStatus)> listener) {
   listeners_.push_back(std::move(listener));
 }
 
-void EventMux::AddSink(toolbelt::SharedPtrPipe<stagezero::Event> *sink) {
+void EventMux::AddSink(toolbelt::SharedPtrPipe<adastra::Event> *sink) {
   sinks_.push_back(sink);
 }
 
@@ -33,13 +33,13 @@ void EventMux::RunnerCoroutine(co::Coroutine *c) {
   bool connected = false;
   for (;;) {
     if (!connected) {
-      client_ = std::make_unique<stagezero::flight::client::Client>(
-          stagezero::flight::client::ClientMode::kBlocking);
+      client_ = std::make_unique<adastra::flight::client::Client>(
+          adastra::flight::client::ClientMode::kBlocking);
 
       if (absl::Status status = client_->Init(
               flight_addr_, "FDO",
-              stagezero::kSubsystemStatusEvents | stagezero::kLogMessageEvents |
-                  stagezero::kAlarmEvents);
+              adastra::kSubsystemStatusEvents | adastra::kLogMessageEvents |
+                  adastra::kAlarmEvents);
           !status.ok()) {
         client_.reset();
         c->Sleep(2);
@@ -48,7 +48,7 @@ void EventMux::RunnerCoroutine(co::Coroutine *c) {
       NotifyListeners(MuxStatus::kConnected);
       connected = true;
     }
-    absl::StatusOr<std::shared_ptr<stagezero::Event>> event =
+    absl::StatusOr<std::shared_ptr<adastra::Event>> event =
         client_->WaitForEvent(c);
     if (!event.ok()) {
       client_.reset();
@@ -66,4 +66,4 @@ void EventMux::RunnerCoroutine(co::Coroutine *c) {
   }
 }
 
-} // namespace fido
+} // namespace adastra::fido

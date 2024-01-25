@@ -10,7 +10,7 @@
 #include "common/vars.h"
 #include "proto/flight.pb.h"
 
-namespace stagezero::flight {
+namespace adastra::flight {
 
 enum class ProcessType {
   kStatic,
@@ -66,4 +66,4 @@ struct Subsystem {
   bool disabled = false;
 };
 
-}  // namespace stagezero::flight
+}  // namespace adastra::flight

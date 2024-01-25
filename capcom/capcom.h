@@ -21,7 +21,7 @@
 #include <memory>
 #include <string>
 
-namespace stagezero::capcom {
+namespace adastra::capcom {
 
 // Values sent to notification pipe.
 constexpr int64_t kReady = 1;
@@ -61,7 +61,7 @@ private:
     coroutines_.insert(std::move(c));
   }
 
-  void Log(const stagezero::proto::LogMessage &msg);
+  void Log(const adastra::proto::LogMessage &msg);
 
   void CloseHandler(std::shared_ptr<ClientHandler> handler);
   void ListenerCoroutine(toolbelt::TCPSocket &listen_socket, co::Coroutine *c);
@@ -181,9 +181,9 @@ private:
 
   // Pipe for the logger messages.  Carries serialized log message messages.
   toolbelt::Pipe log_pipe_;
-  std::map<uint64_t, std::shared_ptr<stagezero::proto::LogMessage>> log_buffer_;
+  std::map<uint64_t, std::shared_ptr<adastra::proto::LogMessage>> log_buffer_;
   toolbelt::FileDescriptor log_file_;
 
   bool emergency_aborting_ = false;
 };
-} // namespace stagezero::capcom
+} // namespace adastra::capcom

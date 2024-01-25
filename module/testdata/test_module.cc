@@ -1,8 +1,8 @@
 #include "module/protobuf_module.h"
 
-class TestModule : public stagezero::module::ProtobufModule {
+class TestModule : public adastra::module::ProtobufModule {
  public:
-  TestModule(std::unique_ptr<stagezero::SymbolTable> symbols)
+  TestModule(std::unique_ptr<adastra::stagezero::SymbolTable> symbols)
       : ProtobufModule(std::move(symbols)) {}
 
   absl::Status Init(int argc, char** argv) override {

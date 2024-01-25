@@ -10,7 +10,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-namespace fido {
+namespace adastra::fido {
 
 void HelpWindow::WaitForUser(co::Coroutine *c) {
   return InfoDialog::WaitForUser(
@@ -208,4 +208,4 @@ void FDOApplication::Resume() {
   log_->Draw();
 }
 
-} // namespace fido
+} // namespace adastra::fido

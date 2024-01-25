@@ -10,7 +10,7 @@
 #include "proto/stream.pb.h"
 #include <variant>
 
-namespace stagezero {
+namespace adastra {
 
 struct Terminal {
   std::string name;
@@ -18,8 +18,8 @@ struct Terminal {
   int cols = 0;
 
   bool IsPresent() const { return rows != 0 || cols != 0 || !name.empty();}
-  void ToProto(proto::Terminal *dest) const;
-  void FromProto(const proto::Terminal &src);
+  void ToProto(stagezero::proto::Terminal *dest) const;
+  void FromProto(const stagezero::proto::Terminal &src);
 };
 
 struct Stream {
@@ -45,13 +45,13 @@ struct Stream {
   std::variant<std::string, int> data;
   Terminal terminal;
 
-  void ToProto(proto::StreamControl *dest) const;
-  absl::Status FromProto(const proto::StreamControl &src);
+  void ToProto(stagezero::proto::StreamControl *dest) const;
+  absl::Status FromProto(const stagezero::proto::StreamControl &src);
 };
 
 absl::Status ValidateStreams(
-    google::protobuf::RepeatedPtrField<proto::StreamControl> streams);
+    google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl> streams);
 
 void AddStream(std::vector<Stream> &streams, const Stream &stream);
 
-} // namespace stagezero
+} // namespace adastra

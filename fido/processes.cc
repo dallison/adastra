@@ -7,7 +7,7 @@
 #include "retro/screen.h"
 #include "toolbelt/triggerfd.h"
 
-namespace fido {
+namespace adastra::fido {
 
 ProcessesWindow::ProcessesWindow(retro::Screen *screen, EventMux &mux)
     : TableWindow(screen,
@@ -22,7 +22,7 @@ ProcessesWindow::ProcessesWindow(retro::Screen *screen, EventMux &mux)
 void ProcessesWindow::RunnerCoroutine(co::Coroutine *c) {
   bool connected = false;
 
-  auto p = toolbelt::SharedPtrPipe<stagezero::Event>::Create();
+  auto p = toolbelt::SharedPtrPipe<adastra::Event>::Create();
   if (!p.ok()) {
     return;
   }
@@ -53,7 +53,7 @@ void ProcessesWindow::RunnerCoroutine(co::Coroutine *c) {
       interrupt.Clear();
       continue;
     }
-    absl::StatusOr<std::shared_ptr<stagezero::Event>> pevent =
+    absl::StatusOr<std::shared_ptr<adastra::Event>> pevent =
         event_pipe_.Read();
     if (!pevent.ok()) {
       // Print an error.
@@ -61,7 +61,7 @@ void ProcessesWindow::RunnerCoroutine(co::Coroutine *c) {
       continue;
     }
     auto event = std::move(*pevent);
-    if (event->type != stagezero::EventType::kSubsystemStatus) {
+    if (event->type != adastra::EventType::kSubsystemStatus) {
       continue;
     }
     auto subsystem = std::get<0>(event->event);
@@ -83,13 +83,13 @@ void ProcessesWindow::RunnerCoroutine(co::Coroutine *c) {
   }
 }
 
-const char *ProcessType(stagezero::ProcessType t) {
+const char *ProcessType(adastra::ProcessType t) {
   switch (t) {
-  case stagezero::ProcessType::kStatic:
+  case adastra::ProcessType::kStatic:
     return "static";
-  case stagezero::ProcessType::kZygote:
+  case adastra::ProcessType::kZygote:
     return "zygote";
-  case stagezero::ProcessType::kVirtual:
+  case adastra::ProcessType::kVirtual:
     return "virtual";
   }
 }
@@ -120,4 +120,4 @@ void ProcessesWindow::PopulateTable() {
   Draw();
 }
 
-} // namespace fido
+} // namespace adastra::fido

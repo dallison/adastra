@@ -4,7 +4,7 @@
 
 syntax = "proto3";
 
-package stagezero.proto;
+package adastra.proto;
 
 enum AdminState {
   NO_ADMIN_STATE = 0;

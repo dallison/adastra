@@ -27,7 +27,7 @@ ABSL_FLAG(std::string, run, "", "Run this module directly");
 ABSL_FLAG(std::string, main, "ModuleMain", "Name of main function");
 ABSL_FLAG(std::vector<std::string>, vars, {}, "Variables (name=value) pairs");
 
-namespace stagezero {
+namespace adastra::stagezero {
 
 ZygoteCore::ZygoteCore(int argc, char **argv) : logger_("zygote_core") {
   absl::ParseCommandLine(argc, argv);
@@ -417,4 +417,4 @@ void ZygoteCore::InvokeMainAfterSpawn(
             argv.size(), argv.data(), environ));
 }
 
-} // namespace stagezero
+} // namespace adastra::stagezero

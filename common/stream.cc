@@ -4,45 +4,45 @@
 
 #include "common/stream.h"
 
-namespace stagezero {
+namespace adastra {
 
-void Terminal::ToProto(proto::Terminal *dest) const {
+void Terminal::ToProto(stagezero::proto::Terminal *dest) const {
   dest->set_name(name);
   dest->set_rows(rows);
   dest->set_cols(cols);
 }
 
-void Terminal::FromProto(const proto::Terminal &src) {
+void Terminal::FromProto(const stagezero::proto::Terminal &src) {
   rows = src.rows();
   cols = src.cols();
   name = src.name();
 }
 
 absl::Status ValidateStreams(
-    google::protobuf::RepeatedPtrField<proto::StreamControl> streams) {
+    google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl> streams) {
   for (auto &stream : streams) {
 
-    if (stream.disposition() == proto::StreamControl::CLOSE ||
-        stream.disposition() == proto::StreamControl::STAGEZERO) {
+    if (stream.disposition() == stagezero::proto::StreamControl::CLOSE ||
+        stream.disposition() == stagezero::proto::StreamControl::STAGEZERO) {
       return absl::OkStatus();
     }
 
     switch (stream.stream_fd()) {
     case STDIN_FILENO:
-      if (stream.direction() == proto::StreamControl::OUTPUT) {
+      if (stream.direction() == stagezero::proto::StreamControl::OUTPUT) {
         return absl::InternalError("Invalid stream direction for stdin");
       }
       break;
     case STDOUT_FILENO:
     case STDERR_FILENO:
-      if (stream.direction() == proto::StreamControl::INPUT) {
+      if (stream.direction() == stagezero::proto::StreamControl::INPUT) {
         return absl::InternalError(absl::StrFormat(
             "Invalid stream direction for std%s",
             stream.stream_fd() == STDOUT_FILENO ? "out" : "err"));
       }
       break;
     default:
-      if (stream.direction() == proto::StreamControl::DEFAULT) {
+      if (stream.direction() == stagezero::proto::StreamControl::DEFAULT) {
         return absl::InternalError(absl::StrFormat(
             "You need to specify a direction for fd %d", stream.stream_fd()));
       }
@@ -62,7 +62,7 @@ void AddStream(std::vector<Stream> &streams, const Stream &stream) {
   streams.push_back(stream);
 }
 
-absl::Status Stream::FromProto(const proto::StreamControl &src) {
+absl::Status Stream::FromProto(const stagezero::proto::StreamControl &src) {
   stream_fd = src.stream_fd();
   tty = src.tty();
   bool direction_set = false;
@@ -167,4 +167,4 @@ void Stream::ToProto(stagezero::proto::StreamControl *dest) const {
   }
 }
 
-} // namespace stagezero
+} // namespace adastra

@@ -4,7 +4,7 @@
 #include "capcom/client/client.h"
 #include "toolbelt/hexdump.h"
 
-namespace stagezero::capcom::client {
+namespace adastra::capcom::client {
 
 absl::Status Client::Init(toolbelt::InetAddress addr, const std::string &name,
                           int event_mask, co::Coroutine *co) {
@@ -28,7 +28,7 @@ absl::Status Client::Init(toolbelt::InetAddress addr, const std::string &name,
 }
 
 absl::StatusOr<std::shared_ptr<Event>> Client::ReadEvent(co::Coroutine *c) {
-  absl::StatusOr<std::shared_ptr<stagezero::proto::Event>> proto_event =
+  absl::StatusOr<std::shared_ptr<adastra::proto::Event>> proto_event =
       ReadProtoEvent(c);
   if (!proto_event.ok()) {
     return proto_event.status();
@@ -43,7 +43,7 @@ absl::StatusOr<std::shared_ptr<Event>> Client::ReadEvent(co::Coroutine *c) {
 absl::Status Client::AddCompute(const std::string &name,
                                 const toolbelt::InetAddress &addr,
                                 co::Coroutine *c) {
-  stagezero::capcom::proto::Request req;
+  adastra::capcom::proto::Request req;
   auto add = req.mutable_add_compute();
   auto compute = add->mutable_compute();
   compute->set_name(name);
@@ -51,7 +51,7 @@ absl::Status Client::AddCompute(const std::string &name,
   compute->set_ip_addr(&ip_addr, sizeof(ip_addr));
   compute->set_port(addr.Port());
 
-  stagezero::capcom::proto::Response resp;
+  adastra::capcom::proto::Response resp;
   absl::Status status = SendRequestReceiveResponse(req, resp, c);
   if (!status.ok()) {
     return status;
@@ -66,11 +66,11 @@ absl::Status Client::AddCompute(const std::string &name,
 }
 
 absl::Status Client::RemoveCompute(const std::string &name, co::Coroutine *c) {
-  stagezero::capcom::proto::Request req;
+  adastra::capcom::proto::Request req;
   auto r = req.mutable_remove_compute();
   r->set_name(name);
 
-  stagezero::capcom::proto::Response resp;
+  adastra::capcom::proto::Response resp;
   absl::Status status = SendRequestReceiveResponse(req, resp, c);
   if (!status.ok()) {
     return status;
@@ -90,7 +90,7 @@ absl::Status Client::AddSubsystem(const std::string &name,
   if (c == nullptr) {
     c = co_;
   }
-  stagezero::capcom::proto::Request req;
+  adastra::capcom::proto::Request req;
   auto add = req.mutable_add_subsystem();
   add->set_name(name);
 
@@ -225,7 +225,7 @@ absl::Status Client::AddSubsystem(const std::string &name,
   add->set_max_restarts(options.max_restarts);
   add->set_critical(options.critical);
 
-  stagezero::capcom::proto::Response resp;
+  adastra::capcom::proto::Response resp;
   absl::Status status = SendRequestReceiveResponse(req, resp, c);
   if (!status.ok()) {
     return status;
@@ -249,12 +249,12 @@ absl::Status Client::RemoveSubsystem(const std::string &name, bool recursive,
   if (c == nullptr) {
     c = co_;
   }
-  stagezero::capcom::proto::Request req;
+  adastra::capcom::proto::Request req;
   auto r = req.mutable_remove_subsystem();
   r->set_subsystem(name);
   r->set_recursive(recursive);
 
-  stagezero::capcom::proto::Response resp;
+  adastra::capcom::proto::Response resp;
   absl::Status status = SendRequestReceiveResponse(req, resp, c);
   if (!status.ok()) {
     return status;
@@ -274,7 +274,7 @@ absl::Status Client::StartSubsystem(const std::string &name, RunMode mode,
   if (c == nullptr) {
     c = co_;
   }
-  stagezero::capcom::proto::Request req;
+  adastra::capcom::proto::Request req;
   auto s = req.mutable_start_subsystem();
   s->set_subsystem(name);
   s->set_interactive(mode == RunMode::kInteractive);
@@ -282,7 +282,7 @@ absl::Status Client::StartSubsystem(const std::string &name, RunMode mode,
     auto *t = s->mutable_terminal();
     terminal->ToProto(t);
   }
-  stagezero::capcom::proto::Response resp;
+  adastra::capcom::proto::Response resp;
   absl::Status status = SendRequestReceiveResponse(req, resp, c);
   if (!status.ok()) {
     return status;
@@ -305,11 +305,11 @@ absl::Status Client::StopSubsystem(const std::string &name, co::Coroutine *c) {
   if (c == nullptr) {
     c = co_;
   }
-  stagezero::capcom::proto::Request req;
+  adastra::capcom::proto::Request req;
   auto s = req.mutable_stop_subsystem();
   s->set_subsystem(name);
 
-  stagezero::capcom::proto::Response resp;
+  adastra::capcom::proto::Response resp;
   absl::Status status = SendRequestReceiveResponse(req, resp, c);
   if (!status.ok()) {
     return status;
@@ -361,12 +361,12 @@ absl::Status Client::Abort(const std::string &reason, bool emergency,
   if (c == nullptr) {
     c = co_;
   }
-  stagezero::capcom::proto::Request req;
+  adastra::capcom::proto::Request req;
   auto abort = req.mutable_abort();
   abort->set_reason(reason);
   abort->set_emergency(emergency);
 
-  stagezero::capcom::proto::Response resp;
+  adastra::capcom::proto::Response resp;
   if (absl::Status status = SendRequestReceiveResponse(req, resp, c);
       !status.ok()) {
     return status;
@@ -383,13 +383,13 @@ absl::Status Client::AddGlobalVariable(const Variable &var, co::Coroutine *c) {
   if (c == nullptr) {
     c = co_;
   }
-  stagezero::capcom::proto::Request req;
+  adastra::capcom::proto::Request req;
   auto *v = req.mutable_add_global_variable()->mutable_var();
   v->set_name(var.name);
   v->set_value(var.value);
   v->set_exported(var.exported);
 
-  stagezero::capcom::proto::Response resp;
+  adastra::capcom::proto::Response resp;
   if (absl::Status status = SendRequestReceiveResponse(req, resp, c);
       !status.ok()) {
     return status;
@@ -407,10 +407,10 @@ Client::GetSubsystems(co::Coroutine *c) {
   if (c == nullptr) {
     c = co_;
   }
-  stagezero::capcom::proto::Request req;
+  adastra::capcom::proto::Request req;
   (void)req.mutable_get_subsystems();
 
-  stagezero::capcom::proto::Response resp;
+  adastra::capcom::proto::Response resp;
   if (absl::Status status = SendRequestReceiveResponse(req, resp, c);
       !status.ok()) {
     return status;
@@ -436,10 +436,10 @@ absl::StatusOr<std::vector<Alarm>> Client::GetAlarms(co::Coroutine *c) {
   if (c == nullptr) {
     c = co_;
   }
-  stagezero::capcom::proto::Request req;
+  adastra::capcom::proto::Request req;
   (void)req.mutable_get_alarms();
 
-  stagezero::capcom::proto::Response resp;
+  adastra::capcom::proto::Response resp;
   if (absl::Status status = SendRequestReceiveResponse(req, resp, c);
       !status.ok()) {
     return status;
@@ -465,14 +465,14 @@ absl::Status Client::SendInput(const std::string &subsystem,
   if (c == nullptr) {
     c = co_;
   }
-  stagezero::capcom::proto::Request req;
+  adastra::capcom::proto::Request req;
   auto input = req.mutable_input();
   input->set_subsystem(subsystem);
   input->set_process(process);
   input->set_fd(fd);
   input->set_data(data);
 
-  stagezero::capcom::proto::Response resp;
+  adastra::capcom::proto::Response resp;
   if (absl::Status status = SendRequestReceiveResponse(req, resp, c);
       !status.ok()) {
     return status;
@@ -491,13 +491,13 @@ absl::Status Client::CloseFd(const std::string &subsystem,
   if (c == nullptr) {
     c = co_;
   }
-  stagezero::capcom::proto::Request req;
+  adastra::capcom::proto::Request req;
   auto close = req.mutable_close_fd();
   close->set_subsystem(subsystem);
   close->set_process(process);
   close->set_fd(fd);
 
-  stagezero::capcom::proto::Response resp;
+  adastra::capcom::proto::Response resp;
   if (absl::Status status = SendRequestReceiveResponse(req, resp, c);
       !status.ok()) {
     return status;
@@ -509,4 +509,4 @@ absl::Status Client::CloseFd(const std::string &subsystem,
   }
   return absl::OkStatus();
 }
-} // namespace stagezero::capcom::client
+} // namespace adastra::capcom::client

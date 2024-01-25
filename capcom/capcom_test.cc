@@ -20,12 +20,12 @@
 
 ABSL_FLAG(bool, start_capcom, true, "Start capcom");
 
-using AdminState = stagezero::AdminState;
-using OperState = stagezero::OperState;
-using SubsystemStatus = stagezero::SubsystemStatus;
-using Event = stagezero::Event;
-using EventType = stagezero::EventType;
-using ClientMode = stagezero::capcom::client::ClientMode;
+using AdminState = adastra::AdminState;
+using OperState = adastra::OperState;
+using SubsystemStatus = adastra::SubsystemStatus;
+using Event = adastra::Event;
+using EventType = adastra::EventType;
+using ClientMode = adastra::capcom::client::ClientMode;
 
 void SignalHandler(int sig);
 void SignalQuitHandler(int sig);
@@ -49,7 +49,7 @@ public:
     (void)pipe(stagezero_pipe_);
 
     stagezero_addr_ = toolbelt::InetAddress("localhost", port);
-    stagezero_ = std::make_unique<stagezero::StageZero>(
+    stagezero_ = std::make_unique<adastra::stagezero::StageZero>(
         stagezero_scheduler_, stagezero_addr_, true, "/tmp",
         "debug",
         stagezero_pipe_[1]);
@@ -79,7 +79,7 @@ public:
     (void)pipe(capcom_pipe_);
 
     capcom_addr_ = toolbelt::InetAddress("localhost", port);
-    capcom_ = std::make_unique<stagezero::capcom::Capcom>(
+    capcom_ = std::make_unique<adastra::capcom::Capcom>(
         capcom_scheduler_, capcom_addr_, true, stagezero_port, "", "debug", false,
         capcom_pipe_[1]);
 
@@ -136,16 +136,16 @@ public:
   void SetUp() override { signal(SIGPIPE, SIG_IGN); }
   void TearDown() override {}
 
-  void InitClient(stagezero::capcom::client::Client &client,
+  void InitClient(adastra::capcom::client::Client &client,
                   const std::string &name,
-                  int event_mask = stagezero::kSubsystemStatusEvents |
-                                   stagezero::kOutputEvents) {
+                  int event_mask = adastra::kSubsystemStatusEvents |
+                                   adastra::kOutputEvents) {
     absl::Status s = client.Init(CapcomAddr(), name, event_mask);
     std::cout << "Init status: " << s << std::endl;
     ASSERT_TRUE(s.ok());
   }
 
-  Event WaitForState(stagezero::capcom::client::Client &client,
+  Event WaitForState(adastra::capcom::client::Client &client,
                      std::string subsystem, AdminState admin_state,
                      OperState oper_state) {
     std::cout << "waiting for subsystem state change " << subsystem << " "
@@ -175,20 +175,20 @@ public:
     return {};
   }
 
-  std::string WaitForOutput(stagezero::capcom::client::Client &client,
+  std::string WaitForOutput(adastra::capcom::client::Client &client,
                             std::string match) {
     std::cout << "waiting for output " << match << "\n";
     std::stringstream s;
     for (int retry = 0; retry < 10; retry++) {
-      absl::StatusOr<std::shared_ptr<stagezero::Event>> e =
+      absl::StatusOr<std::shared_ptr<adastra::Event>> e =
           client.WaitForEvent();
       std::cout << e.status().ToString() << "\n";
       if (!e.ok()) {
         return s.str();
       }
-      std::shared_ptr<stagezero::Event> event = *e;
+      std::shared_ptr<adastra::Event> event = *e;
       std::cerr << "event: " << (int)event->type << std::endl;
-      if (event->type == stagezero::EventType::kOutput) {
+      if (event->type == adastra::EventType::kOutput) {
         s << std::get<2>(event->event).data;
         std::cout << s.str() << std::endl;
         if (s.str().find(match) != std::string::npos) {
@@ -199,20 +199,20 @@ public:
     abort();
   }
 
-  void WaitForAlarm(stagezero::capcom::client::Client &client,
-                    stagezero::Alarm::Type type,
-                    stagezero::Alarm::Severity severity,
-                    stagezero::Alarm::Reason reason) {
+  void WaitForAlarm(adastra::capcom::client::Client &client,
+                    adastra::Alarm::Type type,
+                    adastra::Alarm::Severity severity,
+                    adastra::Alarm::Reason reason) {
     std::cout << "waiting for alarm\n";
     for (int retry = 0; retry < 10; retry++) {
-      absl::StatusOr<std::shared_ptr<stagezero::Event>> e =
+      absl::StatusOr<std::shared_ptr<adastra::Event>> e =
           client.WaitForEvent();
       ASSERT_TRUE(e.ok());
 
-      std::shared_ptr<stagezero::Event> event = *e;
+      std::shared_ptr<adastra::Event> event = *e;
       std::cerr << "event: " << (int)event->type << std::endl;
-      if (event->type == stagezero::EventType::kAlarm) {
-        stagezero::Alarm alarm = std::get<1>(event->event);
+      if (event->type == adastra::EventType::kAlarm) {
+        adastra::Alarm alarm = std::get<1>(event->event);
         if (alarm.type == type && alarm.severity == severity &&
             alarm.reason == reason) {
           std::cout << "alarm received\n";
@@ -223,7 +223,7 @@ public:
     FAIL();
   }
 
-  void SendInput(stagezero::capcom::client::Client &client,
+  void SendInput(adastra::capcom::client::Client &client,
                  std::string subsystem, std::string process, int fd,
                  std::string s) {
     absl::Status status = client.SendInput(subsystem, process, fd, s);
@@ -237,32 +237,32 @@ public:
     return stagezero_scheduler_;
   }
 
-  static stagezero::capcom::Capcom *Capcom() { return capcom_.get(); }
-  static stagezero::StageZero *StageZero() { return stagezero_.get(); }
+  static adastra::capcom::Capcom *Capcom() { return capcom_.get(); }
+  static adastra::stagezero::StageZero *StageZero() { return stagezero_.get(); }
 
 private:
   static co::CoroutineScheduler capcom_scheduler_;
   static int capcom_pipe_[2];
-  static std::unique_ptr<stagezero::capcom::Capcom> capcom_;
+  static std::unique_ptr<adastra::capcom::Capcom> capcom_;
   static std::thread capcom_thread_;
   static toolbelt::InetAddress capcom_addr_;
 
   static co::CoroutineScheduler stagezero_scheduler_;
   static int stagezero_pipe_[2];
-  static std::unique_ptr<stagezero::StageZero> stagezero_;
+  static std::unique_ptr<adastra::stagezero::StageZero> stagezero_;
   static std::thread stagezero_thread_;
   static toolbelt::InetAddress stagezero_addr_;
 };
 
 co::CoroutineScheduler CapcomTest::capcom_scheduler_;
 int CapcomTest::capcom_pipe_[2];
-std::unique_ptr<stagezero::capcom::Capcom> CapcomTest::capcom_;
+std::unique_ptr<adastra::capcom::Capcom> CapcomTest::capcom_;
 std::thread CapcomTest::capcom_thread_;
 toolbelt::InetAddress CapcomTest::capcom_addr_;
 
 co::CoroutineScheduler CapcomTest::stagezero_scheduler_;
 int CapcomTest::stagezero_pipe_[2];
-std::unique_ptr<stagezero::StageZero> CapcomTest::stagezero_;
+std::unique_ptr<adastra::stagezero::StageZero> CapcomTest::stagezero_;
 std::thread CapcomTest::stagezero_thread_;
 toolbelt::InetAddress CapcomTest::stagezero_addr_;
 
@@ -288,12 +288,12 @@ void SignalQuitHandler(int sig) {
 }
 
 TEST_F(CapcomTest, Init) {
-  stagezero::capcom::client::Client client(ClientMode::kBlocking);
+  adastra::capcom::client::Client client(ClientMode::kBlocking);
   InitClient(client, "foobar1");
 }
 
 TEST_F(CapcomTest, Compute) {
-  stagezero::capcom::client::Client client(ClientMode::kBlocking);
+  adastra::capcom::client::Client client(ClientMode::kBlocking);
   InitClient(client, "foobar1");
 
   // Should work.
@@ -326,7 +326,7 @@ TEST_F(CapcomTest, Compute) {
 }
 
 TEST_F(CapcomTest, SimpleSubsystem) {
-  stagezero::capcom::client::Client client(ClientMode::kBlocking);
+  adastra::capcom::client::Client client(ClientMode::kBlocking);
   InitClient(client, "foobar1");
 
   absl::Status status = client.AddSubsystem(
@@ -342,7 +342,7 @@ TEST_F(CapcomTest, SimpleSubsystem) {
 }
 
 TEST_F(CapcomTest, SimpleSubsystemCompute) {
-  stagezero::capcom::client::Client client(ClientMode::kBlocking);
+  adastra::capcom::client::Client client(ClientMode::kBlocking);
   InitClient(client, "foobar1");
 
   absl::Status status =
@@ -374,7 +374,7 @@ TEST_F(CapcomTest, SimpleSubsystemCompute) {
 }
 
 TEST_F(CapcomTest, SubsystemWithMultipleCompute) {
-  stagezero::capcom::client::Client client(ClientMode::kBlocking);
+  adastra::capcom::client::Client client(ClientMode::kBlocking);
   InitClient(client, "foobar1");
 
   absl::Status status =
@@ -410,7 +410,7 @@ TEST_F(CapcomTest, SubsystemWithMultipleCompute) {
 }
 
 TEST_F(CapcomTest, StartSimpleSubsystem) {
-  stagezero::capcom::client::Client client(ClientMode::kBlocking);
+  adastra::capcom::client::Client client(ClientMode::kBlocking);
   InitClient(client, "foobar1");
 
   absl::Status status = client.AddSubsystem(
@@ -431,7 +431,7 @@ TEST_F(CapcomTest, StartSimpleSubsystem) {
 }
 
 TEST_F(CapcomTest, OneshotOK) {
-  stagezero::capcom::client::Client client(ClientMode::kBlocking);
+  adastra::capcom::client::Client client(ClientMode::kBlocking);
   InitClient(client, "foobar1");
 
   absl::Status status = client.AddSubsystem(
@@ -455,7 +455,7 @@ TEST_F(CapcomTest, OneshotOK) {
 }
 
 TEST_F(CapcomTest, OneshotFail) {
-  stagezero::capcom::client::Client client(ClientMode::kNonBlocking);
+  adastra::capcom::client::Client client(ClientMode::kNonBlocking);
   InitClient(client, "foobar1");
 
   absl::Status status = client.AddSubsystem(
@@ -487,7 +487,7 @@ TEST_F(CapcomTest, OneshotFail) {
 }
 
 TEST_F(CapcomTest, OneshotSignal) {
-  stagezero::capcom::client::Client client(ClientMode::kNonBlocking);
+  adastra::capcom::client::Client client(ClientMode::kNonBlocking);
   InitClient(client, "foobar1");
 
   absl::Status status = client.AddSubsystem(
@@ -520,7 +520,7 @@ TEST_F(CapcomTest, OneshotSignal) {
 }
 
 TEST_F(CapcomTest, OneshotKill) {
-  stagezero::capcom::client::Client client(ClientMode::kNonBlocking);
+  adastra::capcom::client::Client client(ClientMode::kNonBlocking);
   InitClient(client, "foobar1");
 
   absl::Status status = client.AddSubsystem(
@@ -560,7 +560,7 @@ TEST_F(CapcomTest, OneshotKill) {
 }
 
 TEST_F(CapcomTest, StartSimpleSubsystemCompute) {
-  stagezero::capcom::client::Client client(ClientMode::kBlocking);
+  adastra::capcom::client::Client client(ClientMode::kBlocking);
   InitClient(client, "foobar1");
 
   absl::Status status =
@@ -589,7 +589,7 @@ TEST_F(CapcomTest, StartSimpleSubsystemCompute) {
 }
 
 TEST_F(CapcomTest, StartSimpleSubsystemWithMultipleCompute) {
-  stagezero::capcom::client::Client client(ClientMode::kBlocking);
+  adastra::capcom::client::Client client(ClientMode::kBlocking);
   InitClient(client, "foobar1");
 
   absl::Status status =
@@ -633,7 +633,7 @@ TEST_F(CapcomTest, StartSimpleSubsystemWithMultipleCompute) {
 }
 
 TEST_F(CapcomTest, RestartSimpleSubsystem) {
-  stagezero::capcom::client::Client client(ClientMode::kNonBlocking);
+  adastra::capcom::client::Client client(ClientMode::kNonBlocking);
   InitClient(client, "foobar1");
 
   absl::Status status = client.AddSubsystem(
@@ -672,7 +672,7 @@ TEST_F(CapcomTest, RestartSimpleSubsystem) {
 }
 
 TEST_F(CapcomTest, StartSimpleSubsystemTree) {
-  stagezero::capcom::client::Client client(ClientMode::kBlocking);
+  adastra::capcom::client::Client client(ClientMode::kBlocking);
   InitClient(client, "foobar1");
 
   absl::Status status = client.AddSubsystem(
@@ -706,7 +706,7 @@ TEST_F(CapcomTest, StartSimpleSubsystemTree) {
 }
 
 TEST_F(CapcomTest, Abort) {
-  stagezero::capcom::client::Client client(ClientMode::kBlocking);
+  adastra::capcom::client::Client client(ClientMode::kBlocking);
   InitClient(client, "foobar1");
 
   absl::Status status = client.AddSubsystem(
@@ -731,7 +731,7 @@ TEST_F(CapcomTest, Abort) {
 }
 
 TEST_F(CapcomTest, AbortThenGoAgain) {
-  stagezero::capcom::client::Client client(ClientMode::kBlocking);
+  adastra::capcom::client::Client client(ClientMode::kBlocking);
   InitClient(client, "foobar1");
 
   absl::Status status = client.AddSubsystem(
@@ -764,7 +764,7 @@ TEST_F(CapcomTest, AbortThenGoAgain) {
 }
 
 TEST_F(CapcomTest, RestartSimpleSubsystemTree) {
-  stagezero::capcom::client::Client client(ClientMode::kNonBlocking);
+  adastra::capcom::client::Client client(ClientMode::kNonBlocking);
   InitClient(client, "foobar1");
 
   absl::Status status = client.AddSubsystem(
@@ -821,7 +821,7 @@ TEST_F(CapcomTest, RestartSimpleSubsystemTree) {
 }
 
 TEST_F(CapcomTest, Zygote) {
-  stagezero::capcom::client::Client client(ClientMode::kBlocking);
+  adastra::capcom::client::Client client(ClientMode::kBlocking);
   InitClient(client, "foobar1");
 
   absl::Status status = client.AddSubsystem(
@@ -844,7 +844,7 @@ TEST_F(CapcomTest, Zygote) {
 }
 
 TEST_F(CapcomTest, VirtualProcess) {
-  stagezero::capcom::client::Client client(ClientMode::kBlocking);
+  adastra::capcom::client::Client client(ClientMode::kBlocking);
   InitClient(client, "foobar1");
 
   absl::Status status = client.AddSubsystem(
@@ -892,7 +892,7 @@ TEST_F(CapcomTest, VirtualProcess) {
 }
 
 TEST_F(CapcomTest, AbortVirtual) {
-  stagezero::capcom::client::Client client(ClientMode::kNonBlocking);
+  adastra::capcom::client::Client client(ClientMode::kNonBlocking);
   InitClient(client, "foobar1");
 
   absl::Status status = client.AddSubsystem(
@@ -939,7 +939,7 @@ TEST_F(CapcomTest, AbortVirtual) {
 }
 
 TEST_F(CapcomTest, TalkAndListen) {
-  stagezero::capcom::client::Client client(ClientMode::kBlocking);
+  adastra::capcom::client::Client client(ClientMode::kBlocking);
   InitClient(client, "foobar1");
 
   absl::Status status = client.AddGlobalVariable(
@@ -998,7 +998,7 @@ TEST_F(CapcomTest, TalkAndListen) {
 }
 
 TEST_F(CapcomTest, InteractiveEcho) {
-  stagezero::capcom::client::Client client(ClientMode::kNonBlocking);
+  adastra::capcom::client::Client client(ClientMode::kNonBlocking);
   InitClient(client, "foobar1");
 
   absl::Status status = client.AddSubsystem(
@@ -1013,7 +1013,7 @@ TEST_F(CapcomTest, InteractiveEcho) {
   ASSERT_TRUE(status.ok());
 
   status = client.StartSubsystem(
-      "echo", stagezero::capcom::client::RunMode::kInteractive);
+      "echo", adastra::capcom::client::RunMode::kInteractive);
   ASSERT_TRUE(status.ok());
 
   std::string data = WaitForOutput(client, "running");
@@ -1036,7 +1036,7 @@ TEST_F(CapcomTest, InteractiveEcho) {
   // When an interactive process ends it will close the client
   // socket, so we need to make a new one to remove the subsystem.
 
-  stagezero::capcom::client::Client client2(ClientMode::kNonBlocking);
+  adastra::capcom::client::Client client2(ClientMode::kNonBlocking);
   InitClient(client2, "foobar1");
   status = client2.RemoveSubsystem("echo", false);
   std::cerr << "remove " << status << std::endl;
@@ -1044,7 +1044,7 @@ TEST_F(CapcomTest, InteractiveEcho) {
 }
 
 TEST_F(CapcomTest, BadStreams) {
-  stagezero::capcom::client::Client client(ClientMode::kNonBlocking);
+  adastra::capcom::client::Client client(ClientMode::kNonBlocking);
   InitClient(client, "foobar1");
 
   // echo1 has stdin with output direction.
@@ -1058,20 +1058,20 @@ TEST_F(CapcomTest, BadStreams) {
                {{
                     .stream_fd = STDIN_FILENO,
                     .tty = true,
-                    .disposition = stagezero::Stream::Disposition::kClient,
-                    .direction = stagezero::Stream::Direction::kOutput,
+                    .disposition = adastra::Stream::Disposition::kClient,
+                    .direction = adastra::Stream::Direction::kOutput,
                 },
                 {
                     .stream_fd = STDOUT_FILENO,
                     .tty = true,
-                    .disposition = stagezero::Stream::Disposition::kClient,
-                    .direction = stagezero::Stream::Direction::kOutput,
+                    .disposition = adastra::Stream::Disposition::kClient,
+                    .direction = adastra::Stream::Direction::kOutput,
                 },
                 {
                     .stream_fd = STDERR_FILENO,
                     .tty = true,
-                    .disposition = stagezero::Stream::Disposition::kClient,
-                    .direction = stagezero::Stream::Direction::kOutput,
+                    .disposition = adastra::Stream::Disposition::kClient,
+                    .direction = adastra::Stream::Direction::kOutput,
                 }},
        }}});
   ASSERT_FALSE(status.ok());
@@ -1087,20 +1087,20 @@ TEST_F(CapcomTest, BadStreams) {
                {{
                     .stream_fd = STDIN_FILENO,
                     .tty = true,
-                    .disposition = stagezero::Stream::Disposition::kClient,
-                    .direction = stagezero::Stream::Direction::kInput,
+                    .disposition = adastra::Stream::Disposition::kClient,
+                    .direction = adastra::Stream::Direction::kInput,
                 },
                 {
                     .stream_fd = STDOUT_FILENO,
                     .tty = true,
-                    .disposition = stagezero::Stream::Disposition::kClient,
-                    .direction = stagezero::Stream::Direction::kInput,
+                    .disposition = adastra::Stream::Disposition::kClient,
+                    .direction = adastra::Stream::Direction::kInput,
                 },
                 {
                     .stream_fd = STDERR_FILENO,
                     .tty = true,
-                    .disposition = stagezero::Stream::Disposition::kClient,
-                    .direction = stagezero::Stream::Direction::kOutput,
+                    .disposition = adastra::Stream::Disposition::kClient,
+                    .direction = adastra::Stream::Direction::kOutput,
                 }},
        }}});
   ASSERT_FALSE(status.ok());
@@ -1116,18 +1116,18 @@ TEST_F(CapcomTest, BadStreams) {
                {{
                     .stream_fd = STDIN_FILENO,
                     .tty = true,
-                    .disposition = stagezero::Stream::Disposition::kClient,
+                    .disposition = adastra::Stream::Disposition::kClient,
                 },
                 {
                     .stream_fd = STDOUT_FILENO,
                     .tty = true,
-                    .disposition = stagezero::Stream::Disposition::kClient,
+                    .disposition = adastra::Stream::Disposition::kClient,
                 },
                 {
                     .stream_fd = STDERR_FILENO,
                     .tty = true,
-                    .disposition = stagezero::Stream::Disposition::kClient,
-                    .direction = stagezero::Stream::Direction::kOutput,
+                    .disposition = adastra::Stream::Disposition::kClient,
+                    .direction = adastra::Stream::Direction::kOutput,
                 }},
        }}});
   ASSERT_TRUE(status.ok());
@@ -1144,7 +1144,7 @@ TEST_F(CapcomTest, BadStreams) {
                    {
                        .stream_fd = 4,
                        .tty = true,
-                       .disposition = stagezero::Stream::Disposition::kClient,
+                       .disposition = adastra::Stream::Disposition::kClient,
                    },
                },
        }}});

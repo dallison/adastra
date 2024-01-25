@@ -6,7 +6,7 @@
 
 #include <string>
 
-namespace stagezero {
+namespace adastra {
 
 struct Variable {
   std::string name;
@@ -14,4 +14,4 @@ struct Variable {
   bool exported = false;
 };
 
-}  // namespace stagezero
+}  // namespace adastra

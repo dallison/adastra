@@ -10,7 +10,7 @@
 #include "coroutine.h"
 #include "toolbelt/sockets.h"
 
-namespace stagezero {
+namespace adastra {
 
 template <typename Request, typename Response, typename Event>
 class TCPClient {
@@ -156,4 +156,4 @@ absl::Status TCPClient<Request, Response, Event>::SendRequestReceiveResponse(
 
   return absl::OkStatus();
 }
-}  // namespace stagezero
+}  // namespace adastra

@@ -10,7 +10,7 @@
 #include "toolbelt/sockets.h"
 #include <string>
 
-namespace stagezero::flight {
+namespace adastra::flight {
 
 class Command {
 public:
@@ -98,4 +98,4 @@ private:
   std::unique_ptr<flight::client::Client> client_;
 };
 
-} // namespace stagezero::flight
+} // namespace adastra::flight

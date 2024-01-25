@@ -5,7 +5,7 @@
 #include "fido/alarms.h"
 #include "toolbelt/triggerfd.h"
 
-namespace fido {
+namespace adastra::fido {
 
 AlarmsWindow::AlarmsWindow(retro::Screen *screen, EventMux &mux)
     : TableWindow(screen,
@@ -25,7 +25,7 @@ AlarmsWindow::AlarmsWindow(retro::Screen *screen, EventMux &mux)
 
 void AlarmsWindow::RunnerCoroutine(co::Coroutine *c) {
   bool connected = false;
-  auto p = toolbelt::SharedPtrPipe<stagezero::Event>::Create();
+  auto p = toolbelt::SharedPtrPipe<adastra::Event>::Create();
   if (!p.ok()) {
     return;
   }
@@ -55,18 +55,18 @@ void AlarmsWindow::RunnerCoroutine(co::Coroutine *c) {
       interrupt.Clear();
       continue;
     }
-    absl::StatusOr<std::shared_ptr<stagezero::Event>> pevent =
+    absl::StatusOr<std::shared_ptr<adastra::Event>> pevent =
         event_pipe_.Read();
     if (!pevent.ok()) {
       connected = false;
       continue;
     }
     auto event = std::move(*pevent);
-    if (event->type != stagezero::EventType::kAlarm) {
+    if (event->type != adastra::EventType::kAlarm) {
       continue;
     }
     auto alarm = std::get<1>(event->event);
-    if (alarm.status == stagezero::Alarm::Status::kCleared) {
+    if (alarm.status == adastra::Alarm::Status::kCleared) {
       alarms_.erase(alarm.id);
     } else {
       auto &a = alarms_[alarm.id];
@@ -76,54 +76,54 @@ void AlarmsWindow::RunnerCoroutine(co::Coroutine *c) {
   }
 }
 
-static const char *AlarmType(stagezero::Alarm::Type type) {
+static const char *AlarmType(adastra::Alarm::Type type) {
   switch (type) {
-  case stagezero::Alarm::Type::kProcess:
+  case adastra::Alarm::Type::kProcess:
     return "process";
-  case stagezero::Alarm::Type::kSubsystem:
+  case adastra::Alarm::Type::kSubsystem:
     return "subsystem";
-  case stagezero::Alarm::Type::kSystem:
+  case adastra::Alarm::Type::kSystem:
     return "system";
-  case stagezero::Alarm::Type::kUnknown:
+  case adastra::Alarm::Type::kUnknown:
     return "unknown";
   }
 }
 
-static const char *AlarmSeverity(stagezero::Alarm::Severity s) {
+static const char *AlarmSeverity(adastra::Alarm::Severity s) {
   switch (s) {
-  case stagezero::Alarm::Severity::kWarning:
+  case adastra::Alarm::Severity::kWarning:
     return "warning";
-  case stagezero::Alarm::Severity::kError:
+  case adastra::Alarm::Severity::kError:
     return "error";
-  case stagezero::Alarm::Severity::kCritical:
+  case adastra::Alarm::Severity::kCritical:
     return "critical";
-  case stagezero::Alarm::Severity::kUnknown:
+  case adastra::Alarm::Severity::kUnknown:
     return "unknown";
   }
 }
 
-static const char *AlarmReason(stagezero::Alarm::Reason r) {
+static const char *AlarmReason(adastra::Alarm::Reason r) {
   switch (r) {
-  case stagezero::Alarm::Reason::kCrashed:
+  case adastra::Alarm::Reason::kCrashed:
     return "crashed";
-  case stagezero::Alarm::Reason::kBroken:
+  case adastra::Alarm::Reason::kBroken:
     return "broken";
-  case stagezero::Alarm::Reason::kEmergencyAbort:
+  case adastra::Alarm::Reason::kEmergencyAbort:
     return "abort";
-  case stagezero::Alarm::Reason::kUnknown:
+  case adastra::Alarm::Reason::kUnknown:
     return "unknown";
   }
 }
 
-static int ColorForSeverity(stagezero::Alarm::Severity s) {
+static int ColorForSeverity(adastra::Alarm::Severity s) {
   switch (s) {
-  case stagezero::Alarm::Severity::kWarning:
+  case adastra::Alarm::Severity::kWarning:
     return retro::kColorPairCyan;
-  case stagezero::Alarm::Severity::kError:
+  case adastra::Alarm::Severity::kError:
     return retro::kColorPairMagenta;
-  case stagezero::Alarm::Severity::kCritical:
+  case adastra::Alarm::Severity::kCritical:
     return retro::kColorPairRed;
-  case stagezero::Alarm::Severity::kUnknown:
+  case adastra::Alarm::Severity::kUnknown:
     return retro::kColorPairNormal;
   }
 }
@@ -151,4 +151,4 @@ void AlarmsWindow::PopulateTable() {
   Draw();
 }
 
-} // namespace fido
+} // namespace adastra::fido

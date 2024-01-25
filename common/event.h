@@ -12,7 +12,7 @@
 #include "proto/event.pb.h"
 #include "proto/subsystem_status.pb.h"
 
-namespace stagezero {
+namespace adastra {
 
 // Event masks.  These control what type of events the client
 // wants to see.
@@ -60,4 +60,4 @@ struct Event {
   }
 };
 
-} // namespace stagezero
+} // namespace adastra

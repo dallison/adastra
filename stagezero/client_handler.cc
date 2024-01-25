@@ -10,7 +10,7 @@
 
 #include <iostream>
 
-namespace stagezero {
+namespace adastra::stagezero {
 
 ClientHandler::~ClientHandler() { KillAllProcesses(); }
 
@@ -323,4 +323,4 @@ void ClientHandler::HandleAbort(const control::AbortRequest &req,
   GetLogger().Log(toolbelt::LogLevel::kError, "All processes aborted: %s",
                   req.reason().c_str());
 }
-} // namespace stagezero
+} // namespace adastra::stagezero

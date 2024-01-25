@@ -7,7 +7,7 @@
 #include "retro/screen.h"
 #include "toolbelt/triggerfd.h"
 
-namespace fido {
+namespace adastra::fido {
 
 SubsystemsWindow::SubsystemsWindow(retro::Screen *screen, EventMux &mux)
     : TableWindow(screen,
@@ -22,7 +22,7 @@ SubsystemsWindow::SubsystemsWindow(retro::Screen *screen, EventMux &mux)
 void SubsystemsWindow::RunnerCoroutine(co::Coroutine *c) {
   bool connected = false;
 
-  auto p = toolbelt::SharedPtrPipe<stagezero::Event>::Create();
+  auto p = toolbelt::SharedPtrPipe<adastra::Event>::Create();
   if (!p.ok()) {
     return;
   }
@@ -53,14 +53,14 @@ void SubsystemsWindow::RunnerCoroutine(co::Coroutine *c) {
       interrupt.Clear();
       continue;
     }
-    absl::StatusOr<std::shared_ptr<stagezero::Event>> pevent =
+    absl::StatusOr<std::shared_ptr<adastra::Event>> pevent =
         event_pipe_.Read();
     if (!pevent.ok()) {
       connected = false;
       continue;
     }
     auto event = std::move(*pevent);
-    if (event->type != stagezero::EventType::kSubsystemStatus) {
+    if (event->type != adastra::EventType::kSubsystemStatus) {
       continue;
     }
     auto subsystem = std::get<0>(event->event);
@@ -89,29 +89,29 @@ void SubsystemsWindow::PopulateTable() {
     int oper_color;
 
     switch (subsystem.admin_state) {
-    case stagezero::AdminState::kOffline:
+    case adastra::AdminState::kOffline:
       admin_color = retro::kColorPairMagenta;
       break;
-    case stagezero::AdminState::kOnline:
+    case adastra::AdminState::kOnline:
       admin_color = retro::kColorPairGreen;
       break;
     }
 
     switch (subsystem.oper_state) {
-    case stagezero::OperState::kOffline:
+    case adastra::OperState::kOffline:
       oper_color = retro::kColorPairMagenta;
       break;
-    case stagezero::OperState::kBroken:
+    case adastra::OperState::kBroken:
       oper_color = retro::kColorPairRed;
       break;
-    case stagezero::OperState::kOnline:
+    case adastra::OperState::kOnline:
       oper_color = retro::kColorPairGreen;
       break;
-    case stagezero::OperState::kRestarting:
-    case stagezero::OperState::kStartingChildren:
-    case stagezero::OperState::kStartingProcesses:
-    case stagezero::OperState::kStoppingChildren:
-    case stagezero::OperState::kStoppingProcesses:
+    case adastra::OperState::kRestarting:
+    case adastra::OperState::kStartingChildren:
+    case adastra::OperState::kStartingProcesses:
+    case adastra::OperState::kStoppingChildren:
+    case adastra::OperState::kStoppingProcesses:
       oper_color = retro::kColorPairYellow;
       break;
     }
@@ -130,4 +130,4 @@ void SubsystemsWindow::PopulateTable() {
   Draw();
 }
 
-} // namespace fido
+} // namespace adastra::fido

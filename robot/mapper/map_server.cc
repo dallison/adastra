@@ -16,18 +16,18 @@
 // and localization.
 
 template <typename T>
-using Subscriber = stagezero::module::ProtobufSubscriber<T>;
+using Subscriber = adastra::module::ProtobufSubscriber<T>;
 
-template <typename T> using Publisher = stagezero::module::ProtobufPublisher<T>;
+template <typename T> using Publisher = adastra::module::ProtobufPublisher<T>;
 
-template <typename T> using Message = stagezero::module::Message<T>;
+template <typename T> using Message = adastra::module::Message<T>;
 
 static inline constexpr char kMapRequestChannel[] = "/map_request";
 static inline constexpr char kMapResponseChannel[] = "/map_response";
 
-class MapServer : public stagezero::module::ProtobufModule {
+class MapServer : public adastra::module::ProtobufModule {
 public:
-  MapServer(std::unique_ptr<stagezero::SymbolTable> symbols)
+  MapServer(std::unique_ptr<adastra::stagezero::SymbolTable> symbols)
       : ProtobufModule(std::move(symbols)) {}
 
   absl::Status Init(int argc, char **argv) override {
@@ -75,8 +75,8 @@ private:
     std::string response_channel;
     std::list<MapTile> tiles;
     std::string error;
-    std::shared_ptr<stagezero::module::PublisherBase> pub;
-    std::shared_ptr<stagezero::module::SubscriberBase> sub;
+    std::shared_ptr<adastra::module::PublisherBase> pub;
+    std::shared_ptr<adastra::module::SubscriberBase> sub;
   };
 
   void IncomingRequest(Message<const robot::MapRequest> msg, co::Coroutine *c) {

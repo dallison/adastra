@@ -11,7 +11,7 @@
 #include "common/alarm.h"
 #include "absl/container/flat_hash_map.h"
 
-namespace fido {
+namespace adastra::fido {
 
 class AlarmsWindow : public retro::TableWindow {
 public:
@@ -25,8 +25,8 @@ private:
   void PopulateTable();
 
   EventMux& mux_;
-  toolbelt::SharedPtrPipe<stagezero::Event> event_pipe_;
-  absl::flat_hash_map<std::string, stagezero::Alarm> alarms_;
+  toolbelt::SharedPtrPipe<adastra::Event> event_pipe_;
+  absl::flat_hash_map<std::string, adastra::Alarm> alarms_;
 };
 
-} // namespace fido
+} // namespace adastra::fido

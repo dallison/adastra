@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package stagezero.proto;
+package adastra.stagezero.proto;
 
 // Terminal parameters.  This this is omitted, or the fields are
 // omitted (or zero), the same values as the controlling terminal

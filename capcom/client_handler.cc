@@ -11,7 +11,7 @@
 
 #include <iostream>
 
-namespace stagezero::capcom {
+namespace adastra::capcom {
 
 ClientHandler::~ClientHandler() {}
 
@@ -31,7 +31,7 @@ absl::Status ClientHandler::SendSubsystemStatusEvent(Subsystem *subsystem) {
   if ((event_mask_ & kSubsystemStatusEvents) == 0) {
     return absl::OkStatus();
   }
-  auto event = std::make_shared<stagezero::proto::Event>();
+  auto event = std::make_shared<adastra::proto::Event>();
   auto s = event->mutable_subsystem_status();
   subsystem->BuildStatus(s);
   return QueueEvent(std::move(event));
@@ -41,7 +41,7 @@ absl::Status ClientHandler::SendAlarm(const Alarm &alarm) {
   if ((event_mask_ & kAlarmEvents) == 0) {
     return absl::OkStatus();
   }
-  auto event = std::make_shared<stagezero::proto::Event>();
+  auto event = std::make_shared<adastra::proto::Event>();
   auto a = event->mutable_alarm();
   alarm.ToProto(a);
   Log("capcom", toolbelt::LogLevel::kInfo, "Alarm: %s", a->DebugString().c_str());
@@ -49,11 +49,11 @@ absl::Status ClientHandler::SendAlarm(const Alarm &alarm) {
 }
 
 absl::Status
-ClientHandler::SendLogEvent(std::shared_ptr<stagezero::proto::LogMessage> msg) {
+ClientHandler::SendLogEvent(std::shared_ptr<adastra::proto::LogMessage> msg) {
   if ((event_mask_ & kLogMessageEvents) == 0) {
     return absl::OkStatus();
   }
-  auto event = std::make_shared<stagezero::proto::Event>();
+  auto event = std::make_shared<adastra::proto::Event>();
   auto log = event->mutable_log();
   *log = *msg; // This is a copy.
   return QueueEvent(std::move(event));
@@ -133,7 +133,7 @@ void ClientHandler::HandleInit(const proto::InitRequest &req,
 void ClientHandler::HandleAddCompute(const proto::AddComputeRequest &req,
                                      proto::AddComputeResponse *response,
                                      co::Coroutine *c) {
-  const config::Compute &compute = req.compute();
+  const stagezero::config::Compute &compute = req.compute();
   struct sockaddr_in addr = {
 #if defined(__APPLE__)
     .sin_len = sizeof(int),
@@ -420,7 +420,7 @@ absl::Status ClientHandler::SendOutputEvent(const std::string &process, int fd,
   if ((event_mask_ & kOutputEvents) == 0) {
     return absl::OkStatus();
   }
-  auto event = std::make_shared<stagezero::proto::Event>();
+  auto event = std::make_shared<adastra::proto::Event>();
   auto output = event->mutable_output();
   output->set_process_id(process);
   output->set_data(data, len);
@@ -470,4 +470,4 @@ void ClientHandler::HandleCloseFd(const proto::CloseFdRequest &req,
     response->set_error(status.ToString());
   }
 }
-} // namespace stagezero::capcom
+} // namespace adastra::capcom

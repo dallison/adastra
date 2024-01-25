@@ -16,7 +16,7 @@
 
 #include "coroutine.h"
 
-namespace stagezero::common {
+namespace adastra::common {
 
 // This is a generalized client handler that handles clients over
 // TCP connections.  It supports commands and events.
@@ -67,7 +67,7 @@ public:
 
   bool WantsLogEvents() const { return (event_mask_ & kLogMessageEvents) != 0; }
 
-  bool WantsEvent(std::shared_ptr<stagezero::Event> event) const {
+  bool WantsEvent(std::shared_ptr<adastra::Event> event) const {
     return event->IsMaskedIn(event_mask_);
   }
 
@@ -321,4 +321,4 @@ absl::Status TCPClientHandler<Request, Response, Event>::SendLogMessage(
   log.ToProto(event->mutable_log());
   return QueueEvent(std::move(event));
 }
-} // namespace stagezero::common
+} // namespace adastra::common

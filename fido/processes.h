@@ -12,7 +12,7 @@
 #include "absl/container/flat_hash_map.h"
 #include <string>
 
-namespace fido {
+namespace adastra::fido {
 
 class ProcessesWindow : public retro::TableWindow {
 public:
@@ -26,8 +26,8 @@ private:
   void PopulateTable();
 
   EventMux& mux_;
-  toolbelt::SharedPtrPipe<stagezero::Event> event_pipe_;
-  absl::flat_hash_map<std::string, stagezero::ProcessStatus> processes_;
+  toolbelt::SharedPtrPipe<adastra::Event> event_pipe_;
+  absl::flat_hash_map<std::string, adastra::ProcessStatus> processes_;
 };
 
-} // namespace fido
+} // namespace adastra::fido

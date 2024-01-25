@@ -30,7 +30,7 @@
 #include <sys/ioctl.h>
 #include <termios.h>
 
-namespace stagezero {
+namespace adastra::stagezero {
 
 Process::Process(co::CoroutineScheduler &scheduler,
                  std::shared_ptr<ClientHandler> client, std::string name)
@@ -1138,4 +1138,4 @@ int VirtualProcess::WaitForZygoteNotification(co::Coroutine *c) {
   return 127; // Something to say that we have a problem.
 }
 
-} // namespace stagezero
+} // namespace adastra::stagezero

@@ -4,7 +4,7 @@
 
 syntax = "proto3";
 
-package stagezero.control;
+package adastra.stagezero.control;
 
 import "proto/config.proto";
 import "proto/stream.proto";
@@ -139,7 +139,7 @@ message Event {
     StartEvent start = 51;
     StopEvent stop = 52;
     OutputEvent output = 53;
-    stagezero.proto.LogMessage log = 54;
+    adastra.proto.LogMessage log = 54;
   }
 }
 

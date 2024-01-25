@@ -12,7 +12,7 @@
 #include "absl/status/statusor.h"
 #include "proto/subsystem_status.pb.h"
 
-namespace stagezero {
+namespace adastra {
 
 enum class ProcessType {
   kStatic,
@@ -42,4 +42,4 @@ struct SubsystemStatus {
   absl::Status FromProto(const proto::SubsystemStatus &src);
 };
 
-}  // namespace stagezero
+}  // namespace adastra

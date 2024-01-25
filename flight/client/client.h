@@ -21,7 +21,7 @@
 #include "toolbelt/sockets.h"
 #include <variant>
 
-namespace stagezero::flight::client {
+namespace adastra::flight::client {
 
 enum class ClientMode {
   kBlocking,
@@ -34,11 +34,11 @@ enum class RunMode {
 };
 
 class Client : public TCPClient<flight::proto::Request, flight::proto::Response,
-                                stagezero::proto::Event> {
+                                adastra::proto::Event> {
 public:
   Client(ClientMode mode = ClientMode::kBlocking, co::Coroutine *co = nullptr)
       : TCPClient<flight::proto::Request, flight::proto::Response,
-                  stagezero::proto::Event>(co),
+                  adastra::proto::Event>(co),
         mode_(mode) {}
   ~Client() = default;
 
@@ -86,4 +86,4 @@ private:
   ClientMode mode_;
 };
 
-} // namespace stagezero::flight::client
+} // namespace adastra::flight::client

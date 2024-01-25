@@ -3,16 +3,16 @@
 #include "robot/proto/vision.pb.h"
 #include "toolbelt/clock.h"
 
-template <typename T> using Publisher = stagezero::module::ProtobufPublisher<T>;
+template <typename T> using Publisher = adastra::module::ProtobufPublisher<T>;
 
 template <typename T>
-using Subscriber = stagezero::module::ProtobufSubscriber<T>;
+using Subscriber = adastra::module::ProtobufSubscriber<T>;
 
-template <typename T> using Message = stagezero::module::Message<T>;
+template <typename T> using Message = adastra::module::Message<T>;
 
-class Stereo : public stagezero::module::ProtobufModule {
+class Stereo : public adastra::module::ProtobufModule {
 public:
-  Stereo(std::unique_ptr<stagezero::SymbolTable> symbols)
+  Stereo(std::unique_ptr<adastra::stagezero::SymbolTable> symbols)
       : ProtobufModule(std::move(symbols)) {}
 
   // A stereo image consists of 2 camera images and a disparity

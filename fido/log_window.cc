@@ -9,7 +9,7 @@
 #include <stdio.h>
 #include <time.h>
 
-namespace fido {
+namespace adastra::fido {
 
 LogWindow::LogWindow(retro::Screen *screen, EventMux &mux)
     : Panel(screen, {.title = "[5] Log Messages",
@@ -42,7 +42,7 @@ void LogWindow::Run() {
 
 void LogWindow::RunnerCoroutine(co::Coroutine *c) {
   bool connected = false;
-  auto p = toolbelt::SharedPtrPipe<stagezero::Event>::Create();
+  auto p = toolbelt::SharedPtrPipe<adastra::Event>::Create();
   if (!p.ok()) {
     return;
   }
@@ -72,7 +72,7 @@ void LogWindow::RunnerCoroutine(co::Coroutine *c) {
       interrupt.Clear();
       continue;
     }
-    absl::StatusOr<std::shared_ptr<stagezero::Event>> pevent =
+    absl::StatusOr<std::shared_ptr<adastra::Event>> pevent =
         event_pipe_.Read();
     if (!pevent.ok()) {
       // Print an error.
@@ -80,7 +80,7 @@ void LogWindow::RunnerCoroutine(co::Coroutine *c) {
       continue;
     }
     auto event = std::move(*pevent);
-    if (event->type != stagezero::EventType::kLog) {
+    if (event->type != adastra::EventType::kLog) {
       continue;
     }
     auto log = std::get<3>(event->event);
@@ -186,7 +186,7 @@ static int ColorForLogLevel(toolbelt::LogLevel level) {
 }
 
 LogWindow::MessageLines
-LogWindow::RenderMessage(const stagezero::LogMessage &msg) {
+LogWindow::RenderMessage(const adastra::LogMessage &msg) {
   MessageLines lines = {.num_rows = 0};
   int col = 0;
 
@@ -280,4 +280,4 @@ LogWindow::RenderMessage(const stagezero::LogMessage &msg) {
   return lines;
 }
 
-} // namespace fido
+} // namespace adastra::fido

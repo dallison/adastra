@@ -14,7 +14,7 @@
 #include <memory>
 #include <string>
 
-namespace stagezero {
+namespace adastra::stagezero {
 
 constexpr int64_t kReady = 1;
 constexpr int64_t kStopped = 2;
@@ -160,6 +160,6 @@ private:
   toolbelt::Logger logger_;
 
   SymbolTable global_symbols_;
-}; // namespace stagezero
+}; // namespace adastra::stagezero
 
-} // namespace stagezero
+} // namespace adastra::stagezero

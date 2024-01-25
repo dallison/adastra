@@ -19,7 +19,7 @@
 
 #include "coroutine.h"
 
-namespace stagezero {
+namespace adastra::stagezero {
 
 class StageZero;
 
@@ -116,4 +116,4 @@ class ClientHandler
   // Keep track of the processs we spawned here.
   absl::flat_hash_map<std::string, std::shared_ptr<Process>> processes_;
 };
-}  // namespace stagezero
+}  // namespace adastra::stagezero

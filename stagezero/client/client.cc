@@ -6,7 +6,7 @@
 #include "absl/strings/str_format.h"
 #include "toolbelt/hexdump.h"
 
-namespace stagezero {
+namespace adastra::stagezero {
 
 absl::Status Client::Init(toolbelt::InetAddress addr, const std::string &name,
 int event_mask,
@@ -36,7 +36,7 @@ absl::StatusOr<std::pair<std::string, int>> Client::LaunchStaticProcessInternal(
   if (co == nullptr) {
     co = co_;
   }
-  stagezero::control::Request req;
+  adastra::stagezero::control::Request req;
   auto launch = zygote ? req.mutable_launch_zygote()
                        : req.mutable_launch_static_process();
   auto proc = launch->mutable_proc();
@@ -48,7 +48,7 @@ absl::StatusOr<std::pair<std::string, int>> Client::LaunchStaticProcessInternal(
     stream.ToProto(s);
   }
 
-  stagezero::control::Response resp;
+  adastra::stagezero::control::Response resp;
   absl::Status status = SendRequestReceiveResponse(req, resp, co);
   if (!status.ok()) {
     return status;
@@ -68,7 +68,7 @@ absl::StatusOr<std::pair<std::string, int>> Client::LaunchVirtualProcess(
   if (co == nullptr) {
     co = co_;
   }
-  stagezero::control::Request req;
+  adastra::stagezero::control::Request req;
   auto launch = req.mutable_launch_virtual_process();
   auto proc = launch->mutable_proc();
   proc->set_zygote(zygote);
@@ -80,7 +80,7 @@ absl::StatusOr<std::pair<std::string, int>> Client::LaunchVirtualProcess(
     auto *s = launch->add_streams();
     stream.ToProto(s);
   }
-  stagezero::control::Response resp;
+  adastra::stagezero::control::Response resp;
   absl::Status status = SendRequestReceiveResponse(req, resp, co);
   if (!status.ok()) {
     return status;
@@ -95,7 +95,7 @@ absl::StatusOr<std::pair<std::string, int>> Client::LaunchVirtualProcess(
 }
 
 void Client::BuildProcessOptions(const std::string &name,
-                                 stagezero::config::ProcessOptions *options,
+                                 adastra::stagezero::config::ProcessOptions *options,
                                  ProcessOptions opts) const {
   options->set_name(name);
   options->set_description(opts.description);
@@ -127,9 +127,9 @@ absl::Status Client::StopProcess(const std::string &process_id,
   if (co == nullptr) {
     co = co_;
   }
-  stagezero::control::Request req;
+  adastra::stagezero::control::Request req;
   req.mutable_stop()->set_process_id(process_id);
-  stagezero::control::Response resp;
+  adastra::stagezero::control::Response resp;
   return SendRequestReceiveResponse(req, resp, co);
 }
 
@@ -138,13 +138,13 @@ absl::Status Client::SendInput(const std::string &process_id, int fd,
   if (co == nullptr) {
     co = co_;
   }
-  stagezero::control::Request req;
+  adastra::stagezero::control::Request req;
   auto input = req.mutable_input_data();
   input->set_process_id(process_id);
   input->set_fd(fd);
   input->set_data(data);
 
-  stagezero::control::Response resp;
+  adastra::stagezero::control::Response resp;
   if (absl::Status status = SendRequestReceiveResponse(req, resp, co);
       !status.ok()) {
     return status;
@@ -162,12 +162,12 @@ absl::Status Client::CloseProcessFileDescriptor(const std::string &process_id,
   if (co == nullptr) {
     co = co_;
   }
-  stagezero::control::Request req;
+  adastra::stagezero::control::Request req;
   auto close = req.mutable_close_process_file_descriptor();
   close->set_process_id(process_id);
   close->set_fd(fd);
 
-  stagezero::control::Response resp;
+  adastra::stagezero::control::Response resp;
   if (absl::Status status = SendRequestReceiveResponse(req, resp, co);
       !status.ok()) {
     return status;
@@ -186,13 +186,13 @@ absl::Status Client::SetGlobalVariable(std::string name, std::string value,
   if (co == nullptr) {
     co = co_;
   }
-  stagezero::control::Request req;
+  adastra::stagezero::control::Request req;
   auto var = req.mutable_set_global_variable();
   var->set_name(name);
   var->set_value(value);
   var->set_exported(exported);
 
-  stagezero::control::Response resp;
+  adastra::stagezero::control::Response resp;
   if (absl::Status status = SendRequestReceiveResponse(req, resp, co);
       !status.ok()) {
     return status;
@@ -210,11 +210,11 @@ Client::GetGlobalVariable(std::string name, co::Coroutine *co) {
   if (co == nullptr) {
     co = co_;
   }
-  stagezero::control::Request req;
+  adastra::stagezero::control::Request req;
   auto var = req.mutable_get_global_variable();
   var->set_name(name);
 
-  stagezero::control::Response resp;
+  adastra::stagezero::control::Response resp;
   if (absl::Status status = SendRequestReceiveResponse(req, resp, co);
       !status.ok()) {
     return status;
@@ -231,12 +231,12 @@ absl::Status Client::Abort(const std::string &reason, bool emergency, co::Corout
   if (co == nullptr) {
     co = co_;
   }
-  stagezero::control::Request req;
+  adastra::stagezero::control::Request req;
   auto abort = req.mutable_abort();
   abort->set_reason(reason);
   abort->set_emergency(emergency);
 
-  stagezero::control::Response resp;
+  adastra::stagezero::control::Response resp;
   if (absl::Status status = SendRequestReceiveResponse(req, resp, co);
       !status.ok()) {
     return status;
@@ -248,4 +248,4 @@ absl::Status Client::Abort(const std::string &reason, bool emergency, co::Corout
   }
   return absl::OkStatus();
 }
-} // namespace stagezero
+} // namespace adastra::stagezero

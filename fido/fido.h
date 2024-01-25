@@ -20,7 +20,7 @@
 
 #include <memory>
 
-namespace fido {
+namespace adastra::fido {
 
 class HelpWindow : public retro::InfoDialog {
 public:
@@ -64,4 +64,4 @@ private:
   std::unique_ptr<LogWindow> log_;
   std::unique_ptr<retro::YesNoDialog> quit_dialog_;
 };
-} // namespace fido
+} // namespace adastra::fido

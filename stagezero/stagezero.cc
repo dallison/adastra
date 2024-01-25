@@ -16,7 +16,7 @@
 #include <mach-o/dyld.h>
 #endif
 
-namespace stagezero {
+namespace adastra::stagezero {
 
 StageZero::StageZero(co::CoroutineScheduler &scheduler,
                      toolbelt::InetAddress addr, bool log_to_output,
@@ -258,4 +258,4 @@ void StageZero::KillAllProcesses(bool emergency, co::Coroutine *c) {
         }));
   }
 }
-} // namespace stagezero
+} // namespace adastra::stagezero

@@ -10,7 +10,7 @@
 #include <string>
 #include <sstream>
 
-namespace stagezero {
+namespace adastra::stagezero {
 
 class Symbol {
 public:
@@ -77,4 +77,4 @@ private:
   SymbolTable *parent_ = nullptr;
 };
 
-} // namespace stagezero
+} // namespace adastra::stagezero

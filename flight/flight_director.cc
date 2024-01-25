@@ -11,7 +11,7 @@
 #include <google/protobuf/text_format.h>
 #include <iostream>
 
-namespace stagezero::flight {
+namespace adastra::flight {
 
 FlightDirector::FlightDirector(co::CoroutineScheduler &scheduler,
                                toolbelt::InetAddress addr,
@@ -22,10 +22,10 @@ FlightDirector::FlightDirector(co::CoroutineScheduler &scheduler,
     : co_scheduler_(scheduler), addr_(std::move(addr)),
       capcom_addr_(capcom_addr), root_dir_(root_dir),
       log_to_output_(log_to_output), notify_fd_(notify_fd),
-      capcom_client_(stagezero::capcom::client::ClientMode::kNonBlocking),
+      capcom_client_(adastra::capcom::client::ClientMode::kNonBlocking),
       autostart_capcom_client_(
-          std::make_unique<stagezero::capcom::client::Client>(
-              stagezero::capcom::client::ClientMode::kNonBlocking)),
+          std::make_unique<adastra::capcom::client::Client>(
+              adastra::capcom::client::ClientMode::kNonBlocking)),
       logger_("flight") {
   logger_.SetLogLevel(log_level);
 }
@@ -344,7 +344,7 @@ static bool CheckProcessUniqueness(const Subsystem &subsystem,
 }
 
 static void ParseStream(const std::string &process_name,
-                        const stagezero::flight::proto::Stream &stream, int fd,
+                        const adastra::flight::proto::Stream &stream, int fd,
                         std::vector<Stream> *vec) {
   Stream s;
 
@@ -782,13 +782,13 @@ absl::Status FlightDirector::AutostartSubsystem(Subsystem *subsystem,
     return absl::OkStatus();
   }
   return autostart_capcom_client_->StartSubsystem(
-      subsystem->name, stagezero::capcom::client::RunMode::kNoninteractive,
+      subsystem->name, adastra::capcom::client::RunMode::kNoninteractive,
       nullptr, c);
 }
 
 void FlightDirector::EventMonitorCoroutine(co::Coroutine *c) {
   for (;;) {
-    absl::StatusOr<std::shared_ptr<stagezero::Event>> event =
+    absl::StatusOr<std::shared_ptr<adastra::Event>> event =
         capcom_client_.WaitForEvent(c);
     if (!event.ok()) {
       logger_.Log(toolbelt::LogLevel::kDebug, "Failed to read capcom event: %s",
@@ -808,7 +808,7 @@ void FlightDirector::EventMonitorCoroutine(co::Coroutine *c) {
       }
     }
     if (send_event_to_client) {
-      auto proto_event = std::make_shared<stagezero::proto::Event>();
+      auto proto_event = std::make_shared<adastra::proto::Event>();
       (*event)->ToProto(proto_event.get());
       for (auto &handler : client_handlers_) {
         if (absl::Status status = handler->QueueEvent(proto_event);
@@ -852,7 +852,7 @@ void FlightDirector::EventMonitorCoroutine(co::Coroutine *c) {
   }
 }
 
-void FlightDirector::CacheEvent(std::shared_ptr<stagezero::Event> event) {
+void FlightDirector::CacheEvent(std::shared_ptr<adastra::Event> event) {
   if (num_cached_events_ == kMaxEvents) {
     event_cache_.pop_front();
     --num_cached_events_;
@@ -876,4 +876,4 @@ Process *FlightDirector::FindInteractiveProcess(Subsystem *subsystem) const {
   return nullptr;
 }
 
-} // namespace stagezero::flight
+} // namespace adastra::flight

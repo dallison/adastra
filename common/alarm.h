@@ -7,7 +7,7 @@
 #include "proto/event.pb.h"
 #include <string>
 
-namespace stagezero {
+namespace adastra {
 
 struct Alarm {
   enum class Type {
@@ -105,4 +105,4 @@ inline std::ostream &operator<<(std::ostream &os, const Alarm &alarm) {
   return os;
 }
 
-} // namespace stagezero
+} // namespace adastra

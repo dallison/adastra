@@ -5,7 +5,7 @@
 #include "common/alarm.h"
 #include "proto/event.pb.h"
 
-namespace stagezero {
+namespace adastra {
 
 void Alarm::ToProto(proto::Alarm *dest) const {
   dest->set_id(id);
@@ -130,4 +130,4 @@ void Alarm::FromProto(const proto::Alarm &src) {
     break;
   }
 }
-} // namespace stagezero
+} // namespace adastra

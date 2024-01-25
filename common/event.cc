@@ -8,7 +8,7 @@
 #include "proto/event.pb.h"
 #include "proto/subsystem_status.pb.h"
 
-namespace stagezero {
+namespace adastra {
 
 void Event::ToProto(proto::Event *dest) const {
   switch (type) {
@@ -41,7 +41,7 @@ void Event::ToProto(proto::Event *dest) const {
 
 absl::Status Event::FromProto(const proto::Event &src) {
   switch (src.event_case()) {
-  case stagezero::proto::Event::kSubsystemStatus: {
+  case adastra::proto::Event::kSubsystemStatus: {
     const auto &s = src.subsystem_status();
     this->type = EventType::kSubsystemStatus;
     SubsystemStatus status;
@@ -52,7 +52,7 @@ absl::Status Event::FromProto(const proto::Event &src) {
     break;
   }
 
-  case stagezero::proto::Event::kAlarm: {
+  case adastra::proto::Event::kAlarm: {
     Alarm alarm;
     alarm.FromProto(src.alarm());
     this->event = alarm;
@@ -61,7 +61,7 @@ absl::Status Event::FromProto(const proto::Event &src) {
     break;
   }
 
-  case stagezero::proto::Event::kOutput: {
+  case adastra::proto::Event::kOutput: {
     Output output = {
         .process_id = src.output().process_id(), .data = src.output().data(), .fd = src.output().fd()};
     this->event = output;
@@ -69,7 +69,7 @@ absl::Status Event::FromProto(const proto::Event &src) {
     break;
   }
 
-  case stagezero::proto::Event::kLog: {
+  case adastra::proto::Event::kLog: {
     LogMessage log;
     log.FromProto(src.log());
     this->event = log;
@@ -84,4 +84,4 @@ absl::Status Event::FromProto(const proto::Event &src) {
   return absl::OkStatus();
 }
 
-} // namespace stagezero
+} // namespace adastra

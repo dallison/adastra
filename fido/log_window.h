@@ -11,7 +11,7 @@
 
 #include <list>
 
-namespace fido {
+namespace adastra::fido {
 
 class LogWindow : public retro::Panel {
 public:
@@ -43,11 +43,11 @@ private:
 
   void RunnerCoroutine(co::Coroutine *c);
   void Render();
-  MessageLines RenderMessage(const stagezero::LogMessage& msg);
+  MessageLines RenderMessage(const adastra::LogMessage& msg);
 
   EventMux& mux_;
-  toolbelt::SharedPtrPipe<stagezero::Event> event_pipe_;
-  std::list<stagezero::LogMessage> logs_;
+  toolbelt::SharedPtrPipe<adastra::Event> event_pipe_;
+  std::list<adastra::LogMessage> logs_;
 
   static constexpr int kNumColumns = 4;
   size_t column_widths_[kNumColumns];

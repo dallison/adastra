@@ -36,7 +36,7 @@
 // that work with any serialization mechanisms and also support zero-copy
 // usage.
 //
-// To define a module, derive a type from stagezero::module::Module.  Modules
+// To define a module, derive a type from adastra::module::Module.  Modules
 // register publishers and subscribers during their initialization or any
 // time after.  Publishers publish message and subscribers received messages
 // published to subspace channels.
@@ -73,7 +73,7 @@
 //
 // By default the coroutines are created with a 32K stack.  If you need more
 // stack space than this, you can used
-namespace stagezero::module {
+namespace adastra::module {
 
 class Module;
 
@@ -90,7 +90,7 @@ constexpr long double operator"" _mhz(uint64_t f) { return f * 1000000.0; }
 
 class Module {
 public:
-  Module(std::unique_ptr<stagezero::SymbolTable> symbols);
+  Module(std::unique_ptr<adastra::stagezero::SymbolTable> symbols);
   virtual ~Module() = default;
 
   absl::Status ModuleInit();
@@ -391,7 +391,7 @@ protected:
     publishers_.push_back(pub);
   }
 
-  std::unique_ptr<stagezero::SymbolTable> symbols_;
+  std::unique_ptr<adastra::stagezero::SymbolTable> symbols_;
   subspace::Client subspace_client_;
   char *argv0_;
 
@@ -402,7 +402,7 @@ protected:
   std::list<std::shared_ptr<PublisherBase>> publishers_;
 
   co::CoroutineScheduler scheduler_;
-}; // namespace stagezero::module
+}; // namespace adastra::module
 
 template <typename MessageType, typename Deserialize>
 inline void SerializingSubscriber<MessageType, Deserialize>::Run() {
@@ -764,7 +764,7 @@ Module::RegisterZeroCopyPublisher(
     absl::InstallFailureSignalHandler({                                        \
         .use_alternate_stack = false,                                          \
     });                                                                        \
-    auto symbols = std::make_unique<stagezero::SymbolTable>();                 \
+    auto symbols = std::make_unique<adastra::stagezero::SymbolTable>();                 \
     std::stringstream symstream;                                               \
     symstream.write(enc_syms, syms_len);                                       \
     symbols->Decode(symstream);                                                \
@@ -797,4 +797,4 @@ Module::RegisterZeroCopyPublisher(
 #define DEFINE_EMBEDDED_MODULE(_type, _main_func)                              \
   _DEFINE_MODULE(_type, _main_func)
 
-} // namespace stagezero::module
+} // namespace adastra::module

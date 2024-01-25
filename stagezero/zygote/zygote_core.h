@@ -16,7 +16,7 @@
 
 #include <memory>
 
-namespace stagezero {
+namespace adastra::stagezero {
 
 class ZygoteCore {
  public:
@@ -59,4 +59,4 @@ class ZygoteCore {
   } after_fork_;
 };
 
-}  // namespace stagezero
+}  // namespace adastra::stagezero

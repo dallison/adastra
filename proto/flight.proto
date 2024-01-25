@@ -4,7 +4,7 @@
 
 syntax = "proto3";
 
-package stagezero.flight.proto;
+package adastra.flight.proto;
 
 import "proto/config.proto";
 import "proto/event.proto";
@@ -26,7 +26,7 @@ message Stream {
 message ModuleOptions {
   string description = 1;
 
-  repeated config.Variable vars = 2; // Local variables and environment.
+  repeated adastra.stagezero.config.Variable vars = 2; // Local variables and environment.
   repeated string args = 3;          // Use $var in expressions.
 
   // Timeouts for shutdown.  The sigint timeout is the number of
@@ -47,7 +47,7 @@ message ModuleOptions {
 message ProcessOptions {
   string description = 1;
 
-  repeated config.Variable vars = 2; // Local variables and environment.
+  repeated adastra.stagezero.config.Variable vars = 2; // Local variables and environment.
   repeated string args = 3;          // Use $var in expressions.
 
   // Timeouts for shutdown.  The sigint timeout is the number of
@@ -101,7 +101,7 @@ message Subsystem {
   repeated StaticProcess zygote = 4;
 
   // Variables common to this subsystem.
-  repeated config.Variable var = 5;
+  repeated adastra.stagezero.config.Variable var = 5;
 
   // Args to pass to all processes in this subsystem.
   repeated string arg = 6;
@@ -125,8 +125,8 @@ message SubsystemGraph {
   repeated Subsystem subsystem = 1;
   repeated string interface = 2;
   repeated string autostart = 3;
-  repeated config.Compute compute = 4;
-  repeated config.Variable var = 5; // Global variables.
+  repeated adastra.stagezero.config.Compute compute = 4;
+  repeated adastra.stagezero.config.Variable var = 5; // Global variables.
 }
 
 message InitRequest {
@@ -155,14 +155,14 @@ message GetSubsystemsRequest {}
 
 message GetSubsystemsResponse {
   string error = 1;
-  repeated stagezero.proto.SubsystemStatus subsystems = 2;
+  repeated adastra.proto.SubsystemStatus subsystems = 2;
 }
 
 message GetAlarmsRequest {}
 
 message GetAlarmsResponse {
   string error = 1;
-  repeated stagezero.proto.Alarm alarms = 2;
+  repeated adastra.proto.Alarm alarms = 2;
 }
 
 message AbortRequest {
@@ -172,7 +172,7 @@ message AbortRequest {
 
 message AbortResponse { string error = 1; }
 
-message AddGlobalVariableRequest { config.Variable var = 1; }
+message AddGlobalVariableRequest { adastra.stagezero.config.Variable var = 1; }
 
 message AddGlobalVariableResponse { string error = 1; }
 

@@ -7,7 +7,7 @@
 #include <vector>
 #include "module/subscriber.h"
 
-namespace stagezero::module {
+namespace adastra::module {
 
 class Module;
 

@@ -5,7 +5,7 @@
 #include "retro/table_window.h"
 #include "proto/subspace.pb.h"
 
-namespace fido {
+namespace adastra::fido {
 
 class SubspaceStatsWindow : public retro::TableWindow {
 public:
@@ -38,4 +38,4 @@ private:
   absl::flat_hash_map<std::string, Stats> channels_;
 };
 
-} // namespace fido
+} // namespace adastra::fido

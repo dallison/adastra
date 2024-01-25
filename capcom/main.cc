@@ -10,7 +10,7 @@
 #include <iostream>
 #include <signal.h>
 
-stagezero::capcom::Capcom *g_capcom;
+adastra::capcom::Capcom *g_capcom;
 co::CoroutineScheduler *g_scheduler;
 
 static void Signal(int sig) {
@@ -56,7 +56,7 @@ int main(int argc, char **argv) {
       listen_addr.empty() ? toolbelt::InetAddress::AnyAddress(listen_port)
                           : toolbelt::InetAddress(listen_addr, listen_port));
 
-  stagezero::capcom::Capcom capcom(
+  adastra::capcom::Capcom capcom(
       scheduler, capcom_addr, !absl::GetFlag(FLAGS_silent),
       absl::GetFlag(FLAGS_local_stagezero_port), absl::GetFlag(FLAGS_log_file),
       absl::GetFlag(FLAGS_log_level), absl::GetFlag(FLAGS_test_mode),

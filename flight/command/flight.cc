@@ -25,7 +25,7 @@ ABSL_FLAG(std::string, hostname, "localhost",
 ABSL_FLAG(int, port, 6524, "Flight Director listening port");
 ABSL_FLAG(std::string, log_level, "debug", "Log level (verbose, debug, info, warning, error)");
 
-namespace stagezero::flight {
+namespace adastra::flight {
 
 FlightCommand::FlightCommand(toolbelt::InetAddress flight_addr)
     : flight_addr_(flight_addr) {
@@ -237,7 +237,7 @@ absl::Status LogCommand::Execute(flight::client::Client *client, int argc,
       if (in.eof()) {
         break;
       }
-      stagezero::proto::LogMessage log_proto;
+      adastra::proto::LogMessage log_proto;
       if (!log_proto.ParseFromArray(buffer.data(), static_cast<int>(length))) {
         break;
       }
@@ -354,14 +354,14 @@ absl::Status RunCommand::Execute(flight::client::Client *client, int argc,
   return absl::OkStatus();
 }
 
-} // namespace stagezero::flight
+} // namespace adastra::flight
 
 int main(int argc, char **argv) {
   absl::ParseCommandLine(argc, argv);
 
   toolbelt::InetAddress flight_addr(absl::GetFlag(FLAGS_hostname),
                                     absl::GetFlag(FLAGS_port));
-  stagezero::flight::FlightCommand flight(flight_addr);
+  adastra::flight::FlightCommand flight(flight_addr);
 
   flight.Run(argc, argv);
 }

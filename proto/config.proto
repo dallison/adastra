@@ -4,7 +4,7 @@
 
 syntax = "proto3";
 
-package stagezero.config;
+package adastra.stagezero.config;
 
 import "proto/stream.proto";
 
@@ -51,7 +51,7 @@ message ProcessOptions {
   bool interactive = 11;
 
   // Interactive terminal parameters.
-  stagezero.proto.Terminal interactive_terminal = 12;
+  adastra.stagezero.proto.Terminal interactive_terminal = 12;
 
   // A critical process is one that is needed for the system to work
   // at all.  They are not subject to restart or abort processing.  If

@@ -18,6 +18,6 @@ int main(int argc, char **argv) {
   toolbelt::InetAddress flight_addr(absl::GetFlag(FLAGS_hostname),
                                     absl::GetFlag(FLAGS_port));
 
-  fido::FDOApplication app(flight_addr, absl::GetFlag(FLAGS_subspace_socket));
+  adastra::fido::FDOApplication app(flight_addr, absl::GetFlag(FLAGS_subspace_socket));
   app.Run();
 }

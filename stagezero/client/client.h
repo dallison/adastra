@@ -17,7 +17,7 @@
 
 #include <variant>
 
-namespace stagezero {
+namespace adastra::stagezero {
 
 constexpr int32_t kDefaultStartupTimeout = 2;
 constexpr int32_t kDefaultSigIntShutdownTimeout = 2;
@@ -25,29 +25,29 @@ constexpr int32_t kDefaultSigTermShutdownTimeout = 4;
 
 struct ProcessOptions {
   std::string description;
-  std::vector<Variable> vars;
+  std::vector<adastra::Variable> vars;
   std::vector<std::string> args;
-  std::vector<Stream> streams;
+  std::vector<adastra::Stream> streams;
   int32_t startup_timeout_secs = kDefaultStartupTimeout;
   int32_t sigint_shutdown_timeout_secs = kDefaultSigIntShutdownTimeout;
   int32_t sigterm_shutdown_timeout_secs = kDefaultSigTermShutdownTimeout;
   bool notify = false;
   bool interactive = false;
-  Terminal interactive_terminal;
+  adastra::Terminal interactive_terminal;
   std::string user;
   std::string group;
   bool critical;
 };
 
 class Client
-    : public TCPClient<control::Request, control::Response, control::Event> {
+    : public adastra::TCPClient<control::Request, control::Response, control::Event> {
 public:
   Client(co::Coroutine *co = nullptr)
       : TCPClient<control::Request, control::Response, control::Event>(co) {}
   ~Client() = default;
 
   absl::Status Init(toolbelt::InetAddress addr, const std::string &name,
-                    int event_mask = kAllEvents,
+                    int event_mask = adastra::kAllEvents,
                     const std::string &compute = "localhost",
                     co::Coroutine *co = nullptr);
 
@@ -118,7 +118,7 @@ private:
       ProcessOptions opts, bool zygote, co::Coroutine *co);
 
   void BuildProcessOptions(const std::string &name,
-                           stagezero::config::ProcessOptions *options,
+                           adastra::stagezero::config::ProcessOptions *options,
                            ProcessOptions opts) const;
 };
-} // namespace stagezero
+} // namespace adastra::stagezero

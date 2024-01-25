@@ -5,7 +5,7 @@
 #include "capcom/capcom.h"
 #include "toolbelt/clock.h"
 
-namespace stagezero::capcom {
+namespace adastra::capcom {
 
 Capcom::Capcom(co::CoroutineScheduler &scheduler, toolbelt::InetAddress addr,
                bool log_to_output, int local_stagezero_port,
@@ -117,7 +117,7 @@ void Capcom::ListenerCoroutine(toolbelt::TCPSocket &listen_socket,
   }
 }
 
-void Capcom::Log(const stagezero::proto::LogMessage &msg) {
+void Capcom::Log(const adastra::proto::LogMessage &msg) {
   uint64_t size = msg.ByteSizeLong();
   // Write length prefix.
   ssize_t n = ::write(log_pipe_.WriteFd().Fd(), &size, sizeof(size));
@@ -142,7 +142,7 @@ void Capcom::LoggerCoroutine(co::Coroutine *c) {
                 << std::endl;
       return;
     }
-    auto msg = std::make_shared<stagezero::proto::LogMessage>();
+    auto msg = std::make_shared<adastra::proto::LogMessage>();
     std::vector<char> buffer(size);
     n = ::read(log_pipe_.ReadFd().Fd(), buffer.data(), buffer.size());
     if (n <= 0) {
@@ -177,19 +177,19 @@ void Capcom::LoggerFlushCoroutine(co::Coroutine *c) {
     for (auto & [ timestamp, msg ] : log_buffer_) {
       toolbelt::LogLevel level;
       switch (msg->level()) {
-      case stagezero::proto::LogMessage::LOG_VERBOSE:
+      case adastra::proto::LogMessage::LOG_VERBOSE:
         level = toolbelt::LogLevel::kVerboseDebug;
         break;
-      case stagezero::proto::LogMessage::LOG_DBG:
+      case adastra::proto::LogMessage::LOG_DBG:
         level = toolbelt::LogLevel::kDebug;
         break;
-      case stagezero::proto::LogMessage::LOG_INFO:
+      case adastra::proto::LogMessage::LOG_INFO:
         level = toolbelt::LogLevel::kInfo;
         break;
-      case stagezero::proto::LogMessage::LOG_WARNING:
+      case adastra::proto::LogMessage::LOG_WARNING:
         level = toolbelt::LogLevel::kWarning;
         break;
-      case stagezero::proto::LogMessage::LOG_ERR:
+      case adastra::proto::LogMessage::LOG_ERR:
         level = toolbelt::LogLevel::kError;
         break;
       default:
@@ -457,9 +457,9 @@ void Capcom::Log(const std::string &source, toolbelt::LogLevel level,
   uint64_t now_ns = now_ts.tv_sec * 1000000000LL + now_ts.tv_nsec;
   log.timestamp = now_ns;
 
-  stagezero::proto::LogMessage proto_msg;
+  adastra::proto::LogMessage proto_msg;
   log.ToProto(&proto_msg);
   Log(proto_msg);
 }
 
-} // namespace stagezero::capcom
+} // namespace adastra::capcom

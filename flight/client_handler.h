@@ -19,13 +19,13 @@
 
 #include "coroutine.h"
 
-namespace stagezero::flight {
+namespace adastra::flight {
 
 class FlightDirector;
 
 class ClientHandler : public common::TCPClientHandler<flight::proto::Request,
                                                       flight::proto::Response,
-                                                      stagezero::proto::Event> {
+                                                      adastra::proto::Event> {
 public:
   ClientHandler(FlightDirector &flight, toolbelt::TCPSocket socket)
       : TCPClientHandler(std::move(socket)), flight_(flight) {}
@@ -40,13 +40,13 @@ public:
 
   void AddCoroutine(std::unique_ptr<co::Coroutine> c) override;
 
-  absl::Status SendEvent(std::shared_ptr<stagezero::Event> event);
+  absl::Status SendEvent(std::shared_ptr<adastra::Event> event);
 
 private:
   std::shared_ptr<ClientHandler> shared_from_this() {
     return std::static_pointer_cast<ClientHandler>(
         TCPClientHandler<flight::proto::Request, flight::proto::Response,
-                         stagezero::proto::Event>::shared_from_this());
+                         adastra::proto::Event>::shared_from_this());
   }
 
   absl::Status HandleMessage(const flight::proto::Request &req,
@@ -87,4 +87,4 @@ private:
 
   FlightDirector &flight_;
 };
-} // namespace stagezero::flight
+} // namespace adastra::flight

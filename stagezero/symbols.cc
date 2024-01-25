@@ -4,7 +4,7 @@
 
 #include "stagezero/symbols.h"
 
-namespace stagezero {
+namespace adastra::stagezero {
 
 static void WriteInt(uint32_t length, std::stringstream &str) {
   str.put(length & 0xff);
@@ -139,4 +139,4 @@ void SymbolTable::Decode(std::stringstream &str) {
     num_syms--;
   }
 }
-} // namespace stagezero
+} // namespace adastra::stagezero

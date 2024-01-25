@@ -10,11 +10,11 @@
 #include "toolbelt/clock.h"
 
 template <typename T>
-using Subscriber = stagezero::module::ProtobufSubscriber<T>;
+using Subscriber = adastra::module::ProtobufSubscriber<T>;
 
-template <typename T> using Publisher = stagezero::module::ProtobufPublisher<T>;
+template <typename T> using Publisher = adastra::module::ProtobufPublisher<T>;
 
-template <typename T> using Message = stagezero::module::Message<T>;
+template <typename T> using Message = adastra::module::Message<T>;
 
 static inline constexpr char kMapRequestChannel[] = "/map_request";
 static inline constexpr char kMapResponseChannel[] = "/map_response";
@@ -25,9 +25,9 @@ static inline constexpr char kGps[] = "/gps";
 static constexpr uint64_t kMaxMessageSize = 32;
 static constexpr int32_t kNumSlots = 16;
 
-class Localizer : public stagezero::module::ProtobufModule {
+class Localizer : public adastra::module::ProtobufModule {
 public:
-  Localizer(std::unique_ptr<stagezero::SymbolTable> symbols)
+  Localizer(std::unique_ptr<adastra::stagezero::SymbolTable> symbols)
       : ProtobufModule(std::move(symbols)) {}
 
   absl::Status Init(int argc, char **argv) override {
@@ -148,8 +148,8 @@ private:
   }
 
   void
-  IncomingMapTile(std::shared_ptr<stagezero::module::PublisherBase> load_req,
-                  std::shared_ptr<stagezero::module::SubscriberBase> load_resp,
+  IncomingMapTile(std::shared_ptr<adastra::module::PublisherBase> load_req,
+                  std::shared_ptr<adastra::module::SubscriberBase> load_resp,
                   Message<const robot::MapResponse> resp) {
     auto &load = resp->load();
     if (!load.error().empty()) {

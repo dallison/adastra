@@ -4,7 +4,7 @@
 
 syntax = "proto3";
 
-package stagezero.proto;
+package adastra.proto;
 
 import "proto/subsystem_status.proto";
 import "proto/log.proto";

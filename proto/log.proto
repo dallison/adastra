@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package stagezero.proto;
+package adastra.proto;
 
 message LogMessage {
   enum LogLevel {

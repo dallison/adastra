@@ -9,7 +9,7 @@
 #include <iostream>
 #include <signal.h>
 
-stagezero::flight::FlightDirector *g_flight;
+adastra::flight::FlightDirector *g_flight;
 co::CoroutineScheduler *g_scheduler;
 
 static void Signal(int sig) {
@@ -68,7 +68,7 @@ int main(int argc, char **argv) {
     std::cerr << "--config_root_dir directory not found\n";
     exit(1);
   }
-  stagezero::flight::FlightDirector flight(
+  adastra::flight::FlightDirector flight(
       scheduler, flight_addr, capcom, root_dir, absl::GetFlag(FLAGS_log_level),
       !absl::GetFlag(FLAGS_silent), absl::GetFlag(FLAGS_notify_fd));
   g_flight = &flight;

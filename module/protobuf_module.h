@@ -10,7 +10,7 @@
 // The Publishers and Subscribers will serialize and deserialize their messages
 // in the Subspace buffers and expose the messages to the program.
 
-namespace stagezero::module {
+namespace adastra::module {
 
 // Template function to calulate the serialized length of a protobuf message.
 template <typename MessageType> struct ProtobufSerializedLength {
@@ -48,7 +48,7 @@ using ProtobufPublisher =
 // type wrapper around the Module's template functions.
 class ProtobufModule : public Module {
 public:
-  ProtobufModule(std::unique_ptr<stagezero::SymbolTable> symbols)
+  ProtobufModule(std::unique_ptr<adastra::stagezero::SymbolTable> symbols)
       : Module(std::move(symbols)) {}
 
   template <typename MessageType>
@@ -118,4 +118,4 @@ public:
         channel, slot_size, num_slots);
   }
 };
-} // namespace stagezero::module
+} // namespace adastra::module

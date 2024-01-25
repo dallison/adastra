@@ -18,7 +18,7 @@
 #include "toolbelt/sockets.h"
 #include <variant>
 
-namespace stagezero::capcom::client {
+namespace adastra::capcom::client {
 
 enum class ClientMode {
   kBlocking,
@@ -104,11 +104,11 @@ enum class RunMode {
 
 
 class Client : public TCPClient<capcom::proto::Request, capcom::proto::Response,
-                                stagezero::proto::Event> {
+                                adastra::proto::Event> {
 public:
   Client(ClientMode mode = ClientMode::kBlocking, co::Coroutine *co = nullptr)
       : TCPClient<capcom::proto::Request, capcom::proto::Response,
-                  stagezero::proto::Event>(co),
+                  adastra::proto::Event>(co),
         mode_(mode) {}
   ~Client() = default;
 
@@ -169,4 +169,4 @@ private:
   ClientMode mode_;
 };
 
-} // namespace stagezero::capcom::client
+} // namespace adastra::capcom::client
