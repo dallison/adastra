@@ -2,7 +2,7 @@
 
 export RUNFILES_DIR=bazel-bin//flight/flight.runfiles
 
-SILENT=true
+SILENT=false
 TEST_MODE=false
 
 echo Running stagezero

@@ -43,6 +43,9 @@ absl::StatusOr<std::shared_ptr<Event>> Client::ReadEvent(co::Coroutine *c) {
 absl::Status Client::AddCompute(const std::string &name,
                                 const toolbelt::InetAddress &addr,
                                 co::Coroutine *c) {
+  if (!addr.Valid()) {
+    return absl::InternalError("Invalid address");
+  }
   adastra::capcom::proto::Request req;
   auto add = req.mutable_add_compute();
   auto compute = add->mutable_compute();

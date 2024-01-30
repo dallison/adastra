@@ -83,9 +83,9 @@ namespace frequency_literals {
 constexpr long double operator"" _hz(long double f) { return f; }
 constexpr long double operator"" _khz(long double f) { return f * 1000; }
 constexpr long double operator"" _mhz(long double f) { return f * 1000000; }
-constexpr long double operator"" _hz(uint64_t f) { return f; }
-constexpr long double operator"" _khz(uint64_t f) { return f * 1000.0; }
-constexpr long double operator"" _mhz(uint64_t f) { return f * 1000000.0; }
+constexpr long double operator"" _hz(unsigned long long f) { return f; }
+constexpr long double operator"" _khz(unsigned long long f) { return f * 1000.0; }
+constexpr long double operator"" _mhz(unsigned long long f) { return f * 1000000.0; }
 } // namespace frequency_literals
 
 class Module {

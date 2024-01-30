@@ -14,8 +14,8 @@ ProcessesWindow::ProcessesWindow(retro::Screen *screen, EventMux &mux)
                   {.title = "[2] Running Processes",
                    .nlines = 16,
                    .ncols = screen->Width() / 2,
-                   .x = screen->Width() / 2,
-                   .y = 1},
+                   .y = 1,
+                   .x = screen->Width() / 2},
                   {"name", "type", "subsystem", "compute", "pid", "alarms"}),
       mux_(mux) {}
 

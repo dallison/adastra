@@ -54,6 +54,7 @@ public:
     std::cout << "server running\n";
 
     signal(SIGINT, SignalHandler);
+    signal(SIGQUIT, SignalHandler);
   }
 
   static void TearDownTestSuite() {
@@ -289,7 +290,7 @@ TEST_F(ClientTest, LaunchAndStopRepeated) {
         client.LaunchStaticProcess(
             "loop", "${runfiles_dir}/__main__/testdata/loop",
             {
-                .notify = true, .startup_timeout_secs = 1,
+                .startup_timeout_secs = 1, .notify = true,
             });
     ASSERT_TRUE(status.ok());
     std::string process_id = status->first;

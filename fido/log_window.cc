@@ -15,8 +15,8 @@ LogWindow::LogWindow(retro::Screen *screen, EventMux &mux)
     : Panel(screen, {.title = "[5] Log Messages",
                      .nlines = screen->Height() - 33,
                      .ncols = screen->Width(),
-                     .x = 0,
-                     .y = 33}),
+                     .y = 33,
+                     .x = 0}),
       mux_(mux) {
   // Divide the window into columns.
   column_widths_[0] = 30; // Timestamp.

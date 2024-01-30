@@ -21,7 +21,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-extern "C" const char **environ;
+extern "C" char **environ;
 
 ABSL_FLAG(std::string, run, "", "Run this module directly");
 ABSL_FLAG(std::string, main, "ModuleMain", "Name of main function");
@@ -399,7 +399,7 @@ void ZygoteCore::InvokeMainAfterSpawn(
 
   // Convert to a function pointer and call main.
   // This is calling a C ABI function.
-  using Ptr = int (*)(const char *, int, int, const char **, const char **);
+  using Ptr = int (*)(const char *, int, int, const char **, char **);
   Ptr main = reinterpret_cast<Ptr>(main_func);
 
   // It seems like passing a SymbolTable object to a loaded shared object

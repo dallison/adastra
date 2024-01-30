@@ -129,7 +129,7 @@ absl::Status Subsystem::SendMessage(const Message &message) {
 
 void Subsystem::NotifyParents() {
   Message message = {
-      .code = Message::kReportOper, .sender = this, .state.oper = oper_state_};
+      .code = Message::kReportOper, .sender = this, .state = {.oper = oper_state_}};
   for (auto &parent : parents_) {
     if (absl::Status status = parent->SendMessage(message); !status.ok()) {
       capcom_.Log(Name(), toolbelt::LogLevel::kError,
@@ -162,8 +162,8 @@ absl::Status Subsystem::CloseFd(const std::string &process, int fd,
 void Subsystem::SendToChildren(AdminState state, uint32_t client_id) {
   Message message = {.code = Message::kChangeAdmin,
                      .sender = this,
-                     .state.admin = state,
-                     .client_id = client_id};
+                     .client_id = client_id,
+                     .state = {.admin = state}};
   for (auto &child : children_) {
     if (absl::Status status = child->SendMessage(message); !status.ok()) {
       capcom_.Log(Name(), toolbelt::LogLevel::kError,

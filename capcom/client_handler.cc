@@ -312,8 +312,8 @@ void ClientHandler::HandleStartSubsystem(
   }
 
   Message message = {.code = Message::kChangeAdmin,
-                     .state.admin = AdminState::kOnline,
                      .client_id = id_,
+                     .state = {.admin = AdminState::kOnline},
                      .interactive = req.interactive()};
 
   if (message.interactive) {
@@ -378,8 +378,8 @@ void ClientHandler::HandleStopSubsystem(const proto::StopSubsystemRequest &req,
     return;
   }
   Message message = {.code = Message::kChangeAdmin,
-                     .state.admin = AdminState::kOffline,
-                     .client_id = id_};
+					 .client_id = id_,
+                     .state = {.admin = AdminState::kOffline}};
   if (absl::Status status = subsystem->SendMessage(message); !status.ok()) {
     response->set_error(absl::StrFormat("Failed to stop subsystem %s: %s",
                                         req.subsystem(), status.ToString()));
