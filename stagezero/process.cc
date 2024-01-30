@@ -17,6 +17,7 @@
 #include <csignal>
 #include <iostream>
 #include <limits.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <vector>
 #if defined(__linux__)
@@ -169,7 +170,8 @@ StaticProcess::StartInternal(const std::vector<std::string> extra_env_vars,
         // now but ignore it if it's already gone.
         client->TryRemoveProcess(proc);
 
-        if (absl::Status status = proc->RemoveFromCgroup(proc->GetPid()); !status.ok()) {
+        if (absl::Status status = proc->RemoveFromCgroup(proc->GetPid());
+            !status.ok()) {
           client->Log(proc->Name(), toolbelt::LogLevel::kError, "%s\n",
                       status.ToString().c_str());
           return;
@@ -475,6 +477,26 @@ absl::Status Process::BuildStreams(
 
 absl::Status
 StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
+  // It is better to detect things like missing files earlier so that we
+  // can give a nice error.  If we wait until after the fork, there is
+  // no way to return an error to the client and it will be reported as events.
+
+  struct stat st;
+  std::string exe = local_symbols_.ReplaceSymbols(req_.proc().executable());
+
+  int e = ::stat(exe.c_str(), &st);
+  if (e == -1) {
+    // Can't find the executable
+    return absl::InternalError(
+        absl::StrFormat("Can't find executable %s", exe));
+  }
+  // Executable found, make sure it's executable.
+  if (!S_ISREG(st.st_mode) ||
+      (st.st_mode & (S_IXUSR | S_IXGRP | S_IXOTH)) == 0) {
+    return absl::InternalError(
+        absl::StrFormat("%s is not a file or is not executable", exe));
+  }
+
   // Set up streams.
   if (absl::Status status = BuildStreams(req_.streams(), req_.opts().notify());
       !status.ok()) {
@@ -1096,7 +1118,8 @@ absl::Status VirtualProcess::Start(co::Coroutine *c) {
         int status = vproc->WaitForZygoteNotification(c2);
         zygote->RemoveVirtualProcess(vproc);
 
-        if (absl::Status status = proc->RemoveFromCgroup(proc->GetPid()); !status.ok()) {
+        if (absl::Status status = proc->RemoveFromCgroup(proc->GetPid());
+            !status.ok()) {
           client->Log(proc->Name(), toolbelt::LogLevel::kError,
                       "Failed to remove process %s from cgroup: %s",
                       proc->Name().c_str(), status.ToString().c_str());

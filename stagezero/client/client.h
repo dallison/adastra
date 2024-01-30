@@ -68,6 +68,8 @@ public:
     return *event;
   }
 
+  // Returns a pair containing a unique string process-id and the PID of
+  // the running process.
   absl::StatusOr<std::pair<std::string, int>>
   LaunchStaticProcess(const std::string &name, const std::string &executable,
                       ProcessOptions opts = {}, co::Coroutine *co = nullptr) {
