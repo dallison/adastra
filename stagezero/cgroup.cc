@@ -6,7 +6,8 @@ namespace adastra::stagezero {
 
 absl::Status CreateCgroup(const Cgroup &cgroup) {
 #if defined(__linux__)
-// TODO
+  // TODO
+  return absl::OkStatus();
 #else
   std::cout << "Cgroups are not supported on this OS; creation of cgroup '"
             << cgroup.name << "' ignored" << std::endl;
@@ -16,7 +17,8 @@ absl::Status CreateCgroup(const Cgroup &cgroup) {
 
 absl::Status RemoveCgroup(const std::string &cgroup) {
 #if defined(__linux__)
-// TODO
+  // TODO
+  return absl::OkStatus();
 #else
   std::cout << "Cgroups are not supported on this OS; removal of cgroup '"
             << cgroup << "' ignored" << std::endl;
@@ -27,7 +29,8 @@ absl::Status RemoveCgroup(const std::string &cgroup) {
 absl::Status AddToCgroup(const std::string &proc, const std::string &cgroup,
                          int pid) {
 #if defined(__linux__)
-// TODO
+  // TODO
+  return absl::OkStatus();
 #else
   std::cout << "Cgroups are not supported on this OS; addition of process "
             << proc << " with pid " << pid << " to cgroup '" << cgroup
@@ -39,7 +42,8 @@ absl::Status AddToCgroup(const std::string &proc, const std::string &cgroup,
 absl::Status RemoveFromCgroup(const std::string &proc,
                               const std::string &cgroup, int pid) {
 #if defined(__linux__)
-// TODO
+  // TODO
+  return absl::OkStatus();
 #else
   std::cout << "Cgroups are not supported on this OS; removal of process "
             << proc << " with pid " << pid << " from cgroup '" << cgroup
