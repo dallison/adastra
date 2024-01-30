@@ -462,4 +462,15 @@ void Capcom::Log(const std::string &source, toolbelt::LogLevel level,
   Log(proto_msg);
 }
 
+absl::Status Capcom::RegisterComputeCgroups(stagezero::Client &client,
+                                            const Compute &compute,
+                                            co::Coroutine *c) {
+  for (auto &cgroup : compute.cgroups) {
+    if (absl::Status status = client.RegisterCgroup(cgroup, c); !status.ok()) {
+      return status;
+    }
+  }
+  return absl::OkStatus();
+}
+
 } // namespace adastra::capcom

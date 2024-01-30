@@ -128,8 +128,9 @@ absl::Status Subsystem::SendMessage(const Message &message) {
 }
 
 void Subsystem::NotifyParents() {
-  Message message = {
-      .code = Message::kReportOper, .sender = this, .state = {.oper = oper_state_}};
+  Message message = {.code = Message::kReportOper,
+                     .sender = this,
+                     .state = {.oper = oper_state_}};
   for (auto &parent : parents_) {
     if (absl::Status status = parent->SendMessage(message); !status.ok()) {
       capcom_.Log(Name(), toolbelt::LogLevel::kError,
@@ -254,8 +255,9 @@ absl::Status Subsystem::AddStaticProcess(
     return client.status();
   }
 
-  auto p = std::make_unique<StaticProcess>(
-      capcom_, options.name(), compute->name, proc.executable(), options, streams, *client);
+  auto p = std::make_unique<StaticProcess>(capcom_, options.name(),
+                                           compute->name, proc.executable(),
+                                           options, streams, *client);
   AddProcess(std::move(p));
 
   return absl::OkStatus();
@@ -284,8 +286,9 @@ absl::Status Subsystem::AddZygote(
         absl::StrFormat("Zygote %s already exists", options.name()));
   }
 
-  auto p = std::make_unique<Zygote>(capcom_, options.name(), compute->name, proc.executable(),
-                                    options, streams, *client);
+  auto p =
+      std::make_unique<Zygote>(capcom_, options.name(), compute->name,
+                               proc.executable(), options, streams, *client);
   capcom_.AddZygote(options.name(), p.get());
 
   AddProcess(std::move(p));
@@ -324,8 +327,8 @@ absl::Status Subsystem::AddVirtualProcess(
   }
 
   auto p = std::make_unique<VirtualProcess>(
-      capcom_, options.name(), compute->name, proc.zygote(), proc.dso(), proc.main_func(),
-      options, streams, *client);
+      capcom_, options.name(), compute->name, proc.zygote(), proc.dso(),
+      proc.main_func(), options, streams, *client);
   AddProcess(std::move(p));
 
   return absl::OkStatus();
@@ -433,6 +436,7 @@ void Process::ParseOptions(const stagezero::config::ProcessOptions &options) {
   group_ = options.group();
   critical_ = options.critical();
   oneshot_ = options.oneshot();
+  cgroup_ = options.cgroup();
 }
 
 void Process::ParseStreams(
@@ -496,6 +500,7 @@ absl::Status StaticProcess::Launch(Subsystem *subsystem, co::Coroutine *c) {
       .user = user_,
       .group = group_,
       .critical = critical_,
+      .cgroup = cgroup_,
   };
   // Subsystem vars.
   for (auto &var : subsystem->Vars()) {
@@ -532,6 +537,7 @@ absl::Status Zygote::Launch(Subsystem *subsystem, co::Coroutine *c) {
       .user = user_,
       .group = group_,
       .critical = critical_,
+      .cgroup = cgroup_,
   };
   // Subsystem vars.
   for (auto &var : subsystem->Vars()) {
@@ -578,8 +584,11 @@ absl::Status VirtualProcess::Launch(Subsystem *subsystem, co::Coroutine *c) {
       .sigint_shutdown_timeout_secs = sigint_shutdown_timeout_secs_,
       .sigterm_shutdown_timeout_secs = sigterm_shutdown_timeout_secs_,
       .notify = notify_,
+      .user = user_,
+      .group = group_,
       .interactive = interactive_,
       .interactive_terminal = subsystem->InteractiveTerminal(),
+      .cgroup = cgroup_,
   };
 
   // Subsystem vars.

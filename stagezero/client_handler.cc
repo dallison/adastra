@@ -91,6 +91,14 @@ absl::Status ClientHandler::HandleMessage(const control::Request &req,
     HandleAbort(req.abort(), resp.mutable_abort(), c);
     break;
 
+  case control::Request::kAddCgroup:
+    HandleAddCgroup(req.add_cgroup(), resp.mutable_add_cgroup(), c);
+    break;
+
+  case control::Request::kRemoveCgroup:
+    HandleRemoveCgroup(req.remove_cgroup(), resp.mutable_remove_cgroup(), c);
+    break;
+
   case control::Request::REQUEST_NOT_SET:
     return absl::InternalError("Protocol error: unknown request");
   }
@@ -322,5 +330,40 @@ void ClientHandler::HandleAbort(const control::AbortRequest &req,
   stagezero_.KillAllProcesses(req.emergency(), c);
   GetLogger().Log(toolbelt::LogLevel::kError, "All processes aborted: %s",
                   req.reason().c_str());
+}
+
+void ClientHandler::HandleAddCgroup(const control::AddCgroupRequest &req,
+                                    control::AddCgroupResponse *response,
+                                    co::Coroutine *c) {
+  Cgroup cgroup = {.name = req.cgroup().name(),
+                   .cpuset = req.cgroup().cpuset(),
+                   .cpushare = req.cgroup().cpushare(),
+                   .memory = req.cgroup().memory()};
+
+  if (!stagezero_.AddCgroup(req.cgroup().name(), cgroup)) {
+    response->set_error(absl::StrFormat(
+        "Failed to add cgroup %s as it already exists", req.cgroup().name()));
+    return;
+  }
+  if (absl::Status status = stagezero_.RegisterCgroup(cgroup); !status.ok()) {
+    response->set_error(absl::StrFormat("Failed to register cgroup %s: %s",
+                                        req.cgroup().name(), status.ToString()));
+  }
+}
+
+void ClientHandler::HandleRemoveCgroup(const control::RemoveCgroupRequest &req,
+                                       control::RemoveCgroupResponse *response,
+                                       co::Coroutine *c) {
+  if (absl::Status status = stagezero_.RemoveCgroup(req.cgroup());
+      !status.ok()) {
+    response->set_error(absl::StrFormat("Failed to remove cgroup %s: %s",
+                                        req.cgroup(), status.ToString()));
+    return;
+  }
+  if (absl::Status status = stagezero_.UnregisterCgroup(req.cgroup());
+      !status.ok()) {
+    response->set_error(absl::StrFormat("Failed to unregister cgroup %s: %s",
+                                        req.cgroup(), status.ToString()));
+  }
 }
 } // namespace adastra::stagezero

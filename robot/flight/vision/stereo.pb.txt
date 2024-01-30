@@ -9,7 +9,8 @@ subsystem {
     options {
       sigint_shutdown_timeout_secs: 2
       sigterm_shutdown_timeout_secs: 10
-    }
+      cgroup: "high"
+   }
     stdout {
       where: LOGGER
     }

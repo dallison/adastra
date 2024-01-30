@@ -3,6 +3,7 @@
 // See LICENSE file for licensing information.
 
 #include "stagezero/zygote/zygote_core.h"
+#include "stagezero/cgroup.h"
 
 #include "absl/container/flat_hash_set.h"
 #include "absl/strings/numbers.h"
@@ -329,6 +330,12 @@ absl::Status ZygoteCore::HandleSpawn(
     after_fork_.local_symbols = std::move(local_symbols);
     forked_ = true;
 
+    if (!req.cgroup().empty()) {
+      if (absl::Status status = stagezero::AddToCgroup(req.name(), req.cgroup(), getpid());
+          !status.ok()) {
+        return status;
+      }
+    }
     // Stop the coroutine scheduler in the child process.  This will cause
     // a return from its Run() function in ZygoteCore::Run, where we will
     // invoke the main function on the program stack.

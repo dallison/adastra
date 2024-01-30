@@ -10,6 +10,7 @@
 #include "stagezero/symbols.h"
 #include "toolbelt/logging.h"
 #include "toolbelt/sockets.h"
+#include "common/cgroup.h"
 
 #include <memory>
 #include <string>
@@ -140,8 +141,34 @@ private:
     return it->second;
   }
 
+  bool AddCgroup(std::string name, Cgroup cgroup) {
+    auto[it, inserted] =
+        cgroups_.emplace(std::make_pair(std::move(name), std::move(cgroup)));
+    return inserted;
+  }
+
+  absl::Status RemoveCgroup(const std::string& cgroup) {
+    auto it = cgroups_.find(cgroup);
+    if (it == cgroups_.end()) {
+      return absl::InternalError(absl::StrFormat("No such cgroup %s", cgroup));
+    }
+    cgroups_.erase(it);
+    return absl::OkStatus();
+  }
+
+  Cgroup* FindCgroup(const std::string &name) {
+    auto it = cgroups_.find(name);
+    if (it == cgroups_.end()) {
+      return nullptr;
+    }
+    return &it->second;
+  }
+
   void KillAllProcesses();
   void KillAllProcesses(bool emergency, co::Coroutine *c);
+
+  absl::Status RegisterCgroup(const Cgroup& cgroup);
+  absl::Status UnregisterCgroup(const std::string& cgroup);
 
   co::CoroutineScheduler &co_scheduler_;
   toolbelt::InetAddress addr_;
@@ -158,6 +185,8 @@ private:
   absl::flat_hash_map<std::string, std::shared_ptr<Zygote>> zygotes_;
   absl::flat_hash_map<int, std::shared_ptr<Process>> virtual_processes_;
   toolbelt::Logger logger_;
+
+  absl::flat_hash_map<std::string, Cgroup> cgroups_;
 
   SymbolTable global_symbols_;
 }; // namespace adastra::stagezero

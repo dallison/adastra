@@ -6,6 +6,7 @@
 #include "absl/strings/str_format.h"
 #include "stagezero/client_handler.h"
 #include "toolbelt/sockets.h"
+#include "stagezero/cgroup.h"
 #include <fcntl.h>
 #include <sys/poll.h>
 #include <sys/stat.h>
@@ -20,7 +21,8 @@ namespace adastra::stagezero {
 
 StageZero::StageZero(co::CoroutineScheduler &scheduler,
                      toolbelt::InetAddress addr, bool log_to_output,
-                     const std::string &logdir, const std::string& log_level, int notify_fd)
+                     const std::string &logdir, const std::string &log_level,
+                     int notify_fd)
     : co_scheduler_(scheduler), addr_(addr), notify_fd_(notify_fd),
       logger_("stagezero", log_to_output) {
   logger_.SetLogLevel(log_level);
@@ -250,12 +252,20 @@ void StageZero::KillAllProcesses(bool emergency, co::Coroutine *c) {
   }
 
   if (emergency) {
-    AddCoroutine(
-        std::make_unique<co::Coroutine>(co_scheduler_, [this](co::Coroutine *c2) {
+    AddCoroutine(std::make_unique<co::Coroutine>(
+        co_scheduler_, [this](co::Coroutine *c2) {
           // An emergency abort also stops StageZero.
           c2->Sleep(1);
           logger_.Log(toolbelt::LogLevel::kFatal, "Emergency abort");
         }));
   }
+}
+
+absl::Status StageZero::RegisterCgroup(const Cgroup &cgroup) {
+  return CreateCgroup(cgroup);
+}
+
+absl::Status StageZero::UnregisterCgroup(const std::string &cgroup) {
+  return RemoveCgroup(cgroup);
 }
 } // namespace adastra::stagezero

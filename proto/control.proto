@@ -87,6 +87,22 @@ message AbortRequest {
 
 message AbortResponse { string error = 1; }
 
+message AddCgroupRequest {
+  config.Cgroup cgroup = 1;
+}
+
+message AddCgroupResponse {
+  string error = 1;
+}
+
+message RemoveCgroupRequest {
+  string cgroup = 1;
+}
+
+message RemoveCgroupResponse {
+  string error = 1;
+}
+
 message Request {
   oneof request {
     InitRequest init = 1;
@@ -99,6 +115,8 @@ message Request {
     SetGlobalVariableRequest set_global_variable = 8;
     GetGlobalVariableRequest get_global_variable = 9;
     AbortRequest abort = 10;
+    AddCgroupRequest add_cgroup = 11;
+    RemoveCgroupRequest remove_cgroup = 12;
   }
 }
 
@@ -112,6 +130,8 @@ message Response {
     SetGlobalVariableResponse set_global_variable = 6;
     GetGlobalVariableResponse get_global_variable = 7;
     AbortResponse abort = 8;
+    AddCgroupResponse add_cgroup = 9;
+    RemoveCgroupResponse remove_cgroup = 10;
   }
 }
 
@@ -158,18 +178,21 @@ message SpawnRequest {
     optional string filename = 4; // For file streams.
     optional stagezero.proto.StreamControl.Direction direction = 5;
   }
-  string dso = 1; // Load this DSO (empty means already linked)
+  string name = 1;    // Process name
+  string dso = 2; // Load this DSO (empty means already linked)
 
-  string main_func = 2; // Function to call in child.
+  string main_func = 3; // Function to call in child.
 
-  repeated Stream streams = 3;
-  repeated config.Variable global_vars = 4; // Global variables and environment.
-  repeated config.Variable vars = 5;        // Local variables and environment.
-  repeated string args = 6;                 // Use $var in expressions.
-  string user = 7;
-  string group = 8;
+  repeated Stream streams = 4;
+  repeated config.Variable global_vars = 5; // Global variables and environment.
+  repeated config.Variable vars = 6;        // Local variables and environment.
+  repeated string args = 7;                 // Use $var in expressions.
+  string user = 8;
+  string group = 9;
 
-  optional int32 notify_fd_index = 9;        // Index of notify fd (into fds)
+  optional int32 notify_fd_index = 10;        // Index of notify fd (into fds)
+
+  string cgroup = 11;     // Cgroup for process (if supported by OS)
 }
 
 message SpawnResponse {

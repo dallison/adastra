@@ -33,7 +33,8 @@ struct Process {
   std::string group;
   bool interactive = false;
   bool oneshot = false;
-
+  std::string cgroup;
+  
   virtual ~Process() = default;
   virtual ProcessType Type() const = 0;
 };

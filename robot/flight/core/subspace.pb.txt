@@ -10,6 +10,7 @@ subsystem {
     args: "--local=${subspace_local}"
     args: "--notify_fd=${notify_fd}"
     notify: true
+    cgroup: "ipc"
   }
   stdin {
     where: CLOSE

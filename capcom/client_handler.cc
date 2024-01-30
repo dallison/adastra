@@ -44,7 +44,8 @@ absl::Status ClientHandler::SendAlarm(const Alarm &alarm) {
   auto event = std::make_shared<adastra::proto::Event>();
   auto a = event->mutable_alarm();
   alarm.ToProto(a);
-  Log("capcom", toolbelt::LogLevel::kInfo, "Alarm: %s", a->DebugString().c_str());
+  Log("capcom", toolbelt::LogLevel::kInfo, "Alarm: %s",
+      a->DebugString().c_str());
   return QueueEvent(std::move(event));
 }
 
@@ -149,7 +150,7 @@ void ClientHandler::HandleAddCompute(const proto::AddComputeRequest &req,
   toolbelt::InetAddress stagezero_addr(addr);
 
   // Probe a connection to the stagezero instance to make sure it's
-  // there.
+  // there and to register cgroups.
   stagezero::Client sclient;
   if (absl::Status status = sclient.Init(stagezero_addr, "<capcom probe>",
                                          kNoEvents, compute.name(), c);
@@ -160,11 +161,26 @@ void ClientHandler::HandleAddCompute(const proto::AddComputeRequest &req,
     return;
   }
 
-  Compute c2 = {compute.name(), toolbelt::InetAddress(addr)};
+  std::vector<Cgroup> cgroups;
+  for (auto &cg : compute.cgroups()) {
+    Cgroup cgroup;
+    cgroup.FromProto(cg);
+    cgroups.push_back(std::move(cgroup));
+  }
+  Compute c2 = {compute.name(), toolbelt::InetAddress(addr),
+                std::move(cgroups)};
   bool ok = capcom_.AddCompute(compute.name(), c2);
   if (!ok) {
     response->set_error(
         absl::StrFormat("Failed to add compute %s", compute.name()));
+    return;
+  }
+
+  if (absl::Status add_status = capcom_.RegisterComputeCgroups(sclient, c2, c);
+      !add_status.ok()) {
+    response->set_error(
+        absl::StrFormat("Failed to add cgroup to compute %s: %s",
+                        compute.name(), add_status.ToString()));
   }
 }
 
@@ -378,7 +394,7 @@ void ClientHandler::HandleStopSubsystem(const proto::StopSubsystemRequest &req,
     return;
   }
   Message message = {.code = Message::kChangeAdmin,
-					 .client_id = id_,
+                     .client_id = id_,
                      .state = {.admin = AdminState::kOffline}};
   if (absl::Status status = subsystem->SendMessage(message); !status.ok()) {
     response->set_error(absl::StrFormat("Failed to stop subsystem %s: %s",
@@ -410,7 +426,8 @@ void ClientHandler::HandleGetAlarms(const proto::GetAlarmsRequest &req,
 void ClientHandler::HandleAbort(const proto::AbortRequest &req,
                                 proto::AbortResponse *response,
                                 co::Coroutine *c) {
-  if (absl::Status status = capcom_.Abort(req.reason(), req.emergency(), c); !status.ok()) {
+  if (absl::Status status = capcom_.Abort(req.reason(), req.emergency(), c);
+      !status.ok()) {
     response->set_error(status.ToString());
   }
 }

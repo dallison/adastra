@@ -9,8 +9,8 @@
 namespace adastra::stagezero {
 
 absl::Status Client::Init(toolbelt::InetAddress addr, const std::string &name,
-int event_mask,
-                          const std::string &compute, co::Coroutine *co) {
+                          int event_mask, const std::string &compute,
+                          co::Coroutine *co) {
   auto fill_init = [name, compute, event_mask](control::Request &req) {
     auto init = req.mutable_init();
     init->set_client_name(name);
@@ -94,9 +94,10 @@ absl::StatusOr<std::pair<std::string, int>> Client::LaunchVirtualProcess(
   return std::make_pair(launch_resp.process_id(), launch_resp.pid());
 }
 
-void Client::BuildProcessOptions(const std::string &name,
-                                 adastra::stagezero::config::ProcessOptions *options,
-                                 ProcessOptions opts) const {
+void Client::BuildProcessOptions(
+    const std::string &name,
+    adastra::stagezero::config::ProcessOptions *options,
+    ProcessOptions opts) const {
   options->set_name(name);
   options->set_description(opts.description);
   for (auto &var : opts.vars) {
@@ -120,6 +121,7 @@ void Client::BuildProcessOptions(const std::string &name,
   options->set_group(opts.group);
   options->set_user(opts.user);
   options->set_critical(opts.critical);
+  options->set_cgroup(opts.cgroup);
 }
 
 absl::Status Client::StopProcess(const std::string &process_id,
@@ -227,7 +229,8 @@ Client::GetGlobalVariable(std::string name, co::Coroutine *co) {
   return std::make_pair(var_resp.value(), var_resp.exported());
 }
 
-absl::Status Client::Abort(const std::string &reason, bool emergency, co::Coroutine *co) {
+absl::Status Client::Abort(const std::string &reason, bool emergency,
+                           co::Coroutine *co) {
   if (co == nullptr) {
     co = co_;
   }
@@ -248,4 +251,26 @@ absl::Status Client::Abort(const std::string &reason, bool emergency, co::Corout
   }
   return absl::OkStatus();
 }
+
+absl::Status Client::RegisterCgroup(const Cgroup &cgroup, co::Coroutine *co) {
+  if (co == nullptr) {
+    co = co_;
+  }
+  adastra::stagezero::control::Request req;
+  auto add = req.mutable_add_cgroup();
+  cgroup.ToProto(add->mutable_cgroup());
+
+  adastra::stagezero::control::Response resp;
+  if (absl::Status status = SendRequestReceiveResponse(req, resp, co);
+      !status.ok()) {
+    return status;
+  }
+  auto &add_resp = resp.add_cgroup();
+  if (!add_resp.error().empty()) {
+    return absl::InternalError(
+        absl::StrFormat("Failed to add cgroup: %s", add_resp.error()));
+  }
+  return absl::OkStatus();
+}
+
 } // namespace adastra::stagezero

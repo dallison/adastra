@@ -8,6 +8,7 @@
 #include "absl/container/flat_hash_set.h"
 #include "capcom/client/client.h"
 #include "common/vars.h"
+#include "common/cgroup.h"
 #include "flight/client_handler.h"
 #include "flight/subsystem.h"
 #include "toolbelt/logging.h"
@@ -31,6 +32,7 @@ class ClientHandler;
 struct Compute {
   std::string name;
   toolbelt::InetAddress addr;
+  std::vector<Cgroup> cgroups;
 };
 
 class FlightDirector {

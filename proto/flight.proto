@@ -42,6 +42,7 @@ message ModuleOptions {
   optional int32 startup_timeout_secs = 6;
   string user = 7;
   string group = 8;
+  string cgroup = 9;
 }
 
 message ProcessOptions {
@@ -66,6 +67,7 @@ message ProcessOptions {
 
   string user = 8;
   string group = 9;
+  string cgroup = 10;
 }
 
 message Module {

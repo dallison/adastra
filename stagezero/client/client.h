@@ -7,6 +7,7 @@
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "common/event.h"
+#include "common/cgroup.h"
 #include "common/stream.h"
 #include "common/tcp_client.h"
 #include "common/vars.h"
@@ -37,6 +38,7 @@ struct ProcessOptions {
   std::string user;
   std::string group;
   bool critical;
+  std::string cgroup;
 };
 
 class Client
@@ -111,6 +113,8 @@ public:
   GetGlobalVariable(std::string name, co::Coroutine *co = nullptr);
 
   absl::Status Abort(const std::string &reason, bool emergency, co::Coroutine *co = nullptr);
+
+  absl::Status RegisterCgroup(const Cgroup& cgroup, co::Coroutine *co = nullptr);
 
 private:
   absl::StatusOr<std::pair<std::string, int>> LaunchStaticProcessInternal(

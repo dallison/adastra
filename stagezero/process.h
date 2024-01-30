@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include "absl/container/flat_hash_set.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "common/stream.h"
@@ -14,12 +15,11 @@
 #include "toolbelt/fd.h"
 #include "toolbelt/pipe.h"
 #include "toolbelt/sockets.h"
-#include <memory>
-#include <string>
 #include <chrono>
+#include <memory>
 #include <optional>
 #include <signal.h>
-#include "absl/container/flat_hash_set.h"
+#include <string>
 
 namespace adastra::stagezero {
 
@@ -32,7 +32,7 @@ struct StreamInfo {
   int fd; // Process fd to map to.
   std::string term_name;
   bool tty;
-  std::string filename;     // Filename for read/write.
+  std::string filename; // Filename for read/write.
 };
 
 class VirtualProcess;
@@ -95,6 +95,11 @@ public:
     group_ = group;
   }
 
+  void SetCgroup(const std::string &cgroup) { cgroup_ = cgroup; }
+
+  absl::Status AddToCgroup(int pid);
+  absl::Status RemoveFromCgroup(int pid);
+
 protected:
   virtual int Wait() = 0;
   absl::Status BuildStreams(
@@ -107,6 +112,7 @@ protected:
     }
     return -1;
   }
+
   co::CoroutineScheduler &scheduler_;
   std::shared_ptr<ClientHandler> client_;
   std::string name_;
@@ -125,6 +131,7 @@ protected:
   Terminal interactive_terminal_;
   toolbelt::FileDescriptor interactive_this_end_;
   toolbelt::FileDescriptor interactive_proc_end_;
+  std::string cgroup_;
 };
 
 class StaticProcess : public Process {
@@ -174,13 +181,13 @@ public:
     virtual_processes_.insert(p);
   }
 
-
   void RemoveVirtualProcess(std::shared_ptr<VirtualProcess> p) {
     virtual_processes_.erase(p);
   }
 
-  void ForeachVirtualProcess(std::function<void(std::shared_ptr<VirtualProcess>)> fn) {
-    for (auto& v : virtual_processes_) {
+  void ForeachVirtualProcess(
+      std::function<void(std::shared_ptr<VirtualProcess>)> fn) {
+    for (auto &v : virtual_processes_) {
       fn(v);
     }
   }
@@ -204,9 +211,7 @@ public:
     return req_.opts().startup_timeout_secs();
   }
 
-  void CloseNotifyPipe() {
-    notify_pipe_.WriteFd().Reset();
-  }
+  void CloseNotifyPipe() { notify_pipe_.WriteFd().Reset(); }
 
   void Notify(int64_t status) override {
     (void)write(notify_pipe_.WriteFd().Fd(), &status, 8);
@@ -216,7 +221,7 @@ public:
 
 private:
   int Wait() override;
-  int WaitForZygoteNotification(co::Coroutine* c);
+  int WaitForZygoteNotification(co::Coroutine *c);
 
   stagezero::control::LaunchVirtualProcessRequest req_;
   toolbelt::Pipe notify_pipe_;

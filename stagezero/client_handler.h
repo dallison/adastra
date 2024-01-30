@@ -105,6 +105,12 @@ class ClientHandler
   void HandleAbort(const control::AbortRequest &req,
                    control::AbortResponse *response, co::Coroutine *c);
 
+void HandleAddCgroup(const control::AddCgroupRequest &req,
+                   control::AddCgroupResponse *response, co::Coroutine *c);
+
+  void HandleRemoveCgroup(const control::RemoveCgroupRequest &req,
+                   control::RemoveCgroupResponse *response, co::Coroutine *c);   
+                                 
   void AddProcess(const std::string &id, std::shared_ptr<Process> proc) {
     processes_.emplace(std::make_pair(id, std::move(proc)));
   }

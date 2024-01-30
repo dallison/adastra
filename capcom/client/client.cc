@@ -42,6 +42,7 @@ absl::StatusOr<std::shared_ptr<Event>> Client::ReadEvent(co::Coroutine *c) {
 
 absl::Status Client::AddCompute(const std::string &name,
                                 const toolbelt::InetAddress &addr,
+                                const std::vector<Cgroup> &cgroups,
                                 co::Coroutine *c) {
   if (!addr.Valid()) {
     return absl::InternalError("Invalid address");
@@ -54,6 +55,11 @@ absl::Status Client::AddCompute(const std::string &name,
   compute->set_ip_addr(&ip_addr, sizeof(ip_addr));
   compute->set_port(addr.Port());
 
+  for (auto &cgroup : cgroups) {
+    auto *cg = compute->add_cgroups();
+    cgroup.ToProto(cg);
+  }
+  
   adastra::capcom::proto::Response resp;
   absl::Status status = SendRequestReceiveResponse(req, resp, c);
   if (!status.ok()) {
@@ -112,6 +118,7 @@ absl::Status Client::AddSubsystem(const std::string &name,
     opts->set_interactive(sproc.interactive);
     opts->set_critical(options.critical);
     opts->set_oneshot(sproc.oneshot);
+    opts->set_cgroup(sproc.cgroup);
 
     auto *s = proc->mutable_static_process();
     s->set_executable(sproc.executable);
@@ -144,6 +151,7 @@ absl::Status Client::AddSubsystem(const std::string &name,
     opts->set_user(z.user);
     opts->set_group(z.group);
     opts->set_critical(options.critical);
+    opts->set_cgroup(z.cgroup);
 
     auto *s = proc->mutable_zygote();
     s->set_executable(z.executable);
@@ -177,6 +185,7 @@ absl::Status Client::AddSubsystem(const std::string &name,
     opts->set_user(vproc.user);
     opts->set_group(vproc.group);
     opts->set_critical(options.critical);
+    opts->set_cgroup(vproc.cgroup);
 
     auto *s = proc->mutable_virtual_process();
     s->set_zygote(vproc.zygote);

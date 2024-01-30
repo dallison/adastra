@@ -9,6 +9,7 @@
 #include "capcom/bitset.h"
 #include "capcom/client_handler.h"
 #include "capcom/subsystem.h"
+#include "common/cgroup.h"
 #include "common/event.h"
 #include "common/vars.h"
 #include "proto/log.pb.h"
@@ -32,16 +33,15 @@ class ClientHandler;
 struct Compute {
   std::string name;
   toolbelt::InetAddress addr;
+  std::vector<Cgroup> cgroups;
 };
 
 class Capcom {
 public:
   Capcom(co::CoroutineScheduler &scheduler, toolbelt::InetAddress addr,
          bool log_to_output, int local_stagezero_port,
-        std::string log_file_name = "",
-        std::string log_level = "",
-         bool test_mode = false,
-         int notify_fd = -1);
+         std::string log_file_name = "", std::string log_level = "",
+         bool test_mode = false, int notify_fd = -1);
   ~Capcom();
 
   absl::Status Run();
@@ -147,15 +147,19 @@ private:
   std::vector<Subsystem *> GetSubsystems() const;
   std::vector<Alarm> GetAlarms() const;
 
-  absl::Status Abort(const std::string &reason, bool emergency, co::Coroutine *c);
+  absl::Status Abort(const std::string &reason, bool emergency,
+                     co::Coroutine *c);
   absl::Status AddGlobalVariable(const Variable &var, co::Coroutine *c);
+
+  absl::Status RegisterComputeCgroups(stagezero::Client &client,
+                                      const Compute &compute, co::Coroutine *c);
 
   void Log(const std::string &source, toolbelt::LogLevel level, const char *fmt,
            ...);
 
   bool IsEmergencyAborting() { return emergency_aborting_; }
   bool TestMode() const { return test_mode_; }
-  
+
 private:
   co::CoroutineScheduler &co_scheduler_;
   toolbelt::InetAddress addr_;

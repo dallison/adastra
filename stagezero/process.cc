@@ -7,6 +7,7 @@
 
 #include "absl/strings/str_format.h"
 #include "common/stream.h"
+#include "stagezero/cgroup.h"
 #include "stagezero/client_handler.h"
 #include "toolbelt/hexdump.h"
 
@@ -97,6 +98,7 @@ StaticProcess::StaticProcess(
   SetSignalTimeouts(req.opts().sigint_shutdown_timeout_secs(),
                     req.opts().sigterm_shutdown_timeout_secs());
   SetUserAndGroup(req.opts().user(), req.opts().group());
+  SetCgroup(req.opts().cgroup());
   interactive_ = req.opts().interactive();
   if (req.opts().has_interactive_terminal()) {
     interactive_terminal_.FromProto(req.opts().interactive_terminal());
@@ -166,6 +168,12 @@ StaticProcess::StartInternal(const std::vector<std::string> extra_env_vars,
         // kill it, we won't have removed it from the maps.  We try to do this
         // now but ignore it if it's already gone.
         client->TryRemoveProcess(proc);
+
+        if (absl::Status status = proc->RemoveFromCgroup(proc->GetPid()); !status.ok()) {
+          client->Log(proc->Name(), toolbelt::LogLevel::kError, "%s\n",
+                      status.ToString().c_str());
+          return;
+        }
 
         bool signaled = WIFSIGNALED(status);
         bool exited = WIFEXITED(status);
@@ -656,6 +664,13 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
       setegid(gid);
     }
 
+    // Add the process to the cgroup if it is set.
+    if (absl::Status status = AddToCgroup(getpid()); !status.ok()) {
+      std::cerr << "Failed to add process to cgroup " << cgroup_ << status
+                << std::endl;
+      exit(1);
+    }
+
     execve(exe.c_str(),
            reinterpret_cast<char *const *>(const_cast<char **>(argv.data())),
            reinterpret_cast<char *const *>(const_cast<char **>(env.data())));
@@ -875,6 +890,7 @@ absl::StatusOr<int>
 Zygote::Spawn(const stagezero::control::LaunchVirtualProcessRequest &req,
               const std::vector<std::shared_ptr<StreamInfo>> &streams) {
   control::SpawnRequest spawn;
+  spawn.set_name(req.opts().name());
   spawn.set_dso(req.proc().dso());
   spawn.set_main_func(req.proc().main_func());
 
@@ -943,8 +959,9 @@ Zygote::Spawn(const stagezero::control::LaunchVirtualProcessRequest &req,
     *a = arg;
   }
 
-  spawn.set_user(user_);
-  spawn.set_group(group_);
+  spawn.set_user(req.opts().user());
+  spawn.set_group(req.opts().group());
+  spawn.set_cgroup(req.opts().cgroup());
 
   std::vector<char> buffer(spawn.ByteSizeLong() + sizeof(int32_t));
   char *buf = buffer.data() + sizeof(int32_t);
@@ -993,6 +1010,7 @@ VirtualProcess::VirtualProcess(
   SetSignalTimeouts(req.opts().sigint_shutdown_timeout_secs(),
                     req.opts().sigterm_shutdown_timeout_secs());
   SetUserAndGroup(req.opts().user(), req.opts().group());
+  SetCgroup(req.opts().cgroup());
   critical_ = req.opts().critical();
 
   // Create the notification pipe for zygote notifications.
@@ -1032,7 +1050,7 @@ absl::Status VirtualProcess::Start(co::Coroutine *c) {
 
   zygote_->AddVirtualProcess(vproc);
   if (!client_->GetStageZero().AddVirtualProcess(*pid, vproc)) {
-      return absl::InternalError(
+    return absl::InternalError(
         absl::StrFormat("Failed to add virtual process %s", Name()));
   }
 
@@ -1077,6 +1095,12 @@ absl::Status VirtualProcess::Start(co::Coroutine *c) {
 
         int status = vproc->WaitForZygoteNotification(c2);
         zygote->RemoveVirtualProcess(vproc);
+
+        if (absl::Status status = proc->RemoveFromCgroup(proc->GetPid()); !status.ok()) {
+          client->Log(proc->Name(), toolbelt::LogLevel::kError,
+                      "Failed to remove process %s from cgroup: %s",
+                      proc->Name().c_str(), status.ToString().c_str());
+        }
 
         bool signaled = WIFSIGNALED(status);
         bool exited = WIFEXITED(status);
@@ -1136,6 +1160,20 @@ int VirtualProcess::WaitForZygoteNotification(co::Coroutine *c) {
     return static_cast<int>(status);
   }
   return 127; // Something to say that we have a problem.
+}
+
+absl::Status Process::AddToCgroup(int pid) {
+  if (cgroup_.empty()) {
+    return absl::OkStatus();
+  }
+  return stagezero::AddToCgroup(Name(), cgroup_, pid);
+}
+
+absl::Status Process::RemoveFromCgroup(int pid) {
+  if (cgroup_.empty()) {
+    return absl::OkStatus();
+  }
+  return stagezero::RemoveFromCgroup(Name(), cgroup_, pid);
 }
 
 } // namespace adastra::stagezero

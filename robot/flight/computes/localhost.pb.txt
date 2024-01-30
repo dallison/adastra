@@ -2,4 +2,21 @@ compute {
   name: "localhost"
   ip_addr: "127.0.0.1"
   port: 6522
+
+  cgroups {
+    name: "high"
+    cpuset: "0-4"
+    cpushare: 1024
+    memory: 100000
+  }
+  cgroups {
+    name: "zygote"
+    cpuset: "0-2"
+    cpushare: 600
+  }
+  cgroups {
+    name: "ipc"
+    cpuset: "0-2"
+    cpushare: 800
+  }
 }

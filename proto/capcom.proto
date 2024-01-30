@@ -105,8 +105,8 @@ message GetAlarmsResponse {
 }
 
 message AbortRequest {
-  string reason = 1; // Why we are aborting.
-  bool emergency = 2;   // Emergency abort - shutdown.
+  string reason = 1;  // Why we are aborting.
+  bool emergency = 2; // Emergency abort - shutdown.
 }
 
 message AbortResponse { string error = 1; }

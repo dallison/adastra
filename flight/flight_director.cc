@@ -304,6 +304,7 @@ static void ParseProcessOptions(Process *process,
   process->notify = options.has_notify() ? options.notify() : true;
   process->user = options.user();
   process->group = options.group();
+  process->cgroup = options.cgroup();
 }
 
 static void ParseModuleOptions(Process *process,
@@ -331,6 +332,7 @@ static void ParseModuleOptions(Process *process,
                                       : kDefaultStartupTimeout;
   process->user = options.user();
   process->group = options.group();
+  process->cgroup = options.cgroup();
 }
 
 static bool CheckProcessUniqueness(const Subsystem &subsystem,
@@ -395,7 +397,14 @@ absl::Status FlightDirector::LoadSubsystemGraph(
       return absl::InternalError(
           absl::StrFormat("Duplicate compute %s", c.name()));
     }
-    Compute compute = {c.name(), toolbelt::InetAddress(c.ip_addr(), c.port())};
+    std::vector<Cgroup> cgroups;
+    for (auto &cg : c.cgroups()) {
+      Cgroup cgroup;
+      cgroup.FromProto(cg);
+      cgroups.push_back(std::move(cgroup));
+    }
+    Compute compute = {c.name(), toolbelt::InetAddress(c.ip_addr(), c.port()),
+                       std::move(cgroups)};
 
     AddCompute(c.name(), std::move(compute));
   }
@@ -674,7 +683,8 @@ void FlightDirector::FlattenSubsystemGraph(
 
 absl::Status FlightDirector::RegisterCompute(const Compute &compute,
                                              co::Coroutine *c) {
-  return capcom_client_.AddCompute(compute.name, compute.addr, c);
+  return capcom_client_.AddCompute(compute.name, compute.addr, compute.cgroups,
+                                   c);
 }
 
 absl::Status FlightDirector::RegisterGlobalVariable(const Variable &var,
@@ -708,6 +718,7 @@ absl::Status FlightDirector::RegisterSubsystem(Subsystem *subsystem,
           .group = src->group,
           .interactive = src->interactive,
           .oneshot = src->oneshot,
+          .cgroup = src->cgroup,
       });
       break;
     }
@@ -726,6 +737,7 @@ absl::Status FlightDirector::RegisterSubsystem(Subsystem *subsystem,
           .streams = src->streams,
           .user = src->user,
           .group = src->group,
+          .cgroup = src->cgroup,
       });
       break;
     }
@@ -745,7 +757,8 @@ absl::Status FlightDirector::RegisterSubsystem(Subsystem *subsystem,
           .streams = src->streams,
           .user = src->user,
           .group = src->group,
-      });
+          .cgroup = src->cgroup,
+     });
       break;
     }
     }

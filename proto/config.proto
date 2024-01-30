@@ -8,11 +8,20 @@ package adastra.stagezero.config;
 
 import "proto/stream.proto";
 
+// Cgroups are supported only on Linux.
+message Cgroup {
+  string name = 1;
+  string cpuset = 2;
+  uint32 cpushare = 3;
+  uint64 memory = 4;
+}
+
 message Compute {
   string name = 1;
   bytes ip_addr = 2;  // Host byte order.
   int32 port = 3;       // Host byte order.
   bool disabled = 4; 
+  repeated Cgroup cgroups = 5;
 }
 
 message Variable {
@@ -62,6 +71,9 @@ message ProcessOptions {
   // non-zero status or receives a signal it is considered to be a process
   // failure.
   bool oneshot = 14;
+
+  // Cgroup name (if supported by OS).  Must be present on the compute instance.
+  string cgroup = 15;
 }
 
 message StaticProcess {

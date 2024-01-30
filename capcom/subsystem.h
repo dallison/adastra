@@ -136,6 +136,7 @@ protected:
   std::string group_;
   bool critical_ = false;
   bool oneshot_ = false;
+  std::string cgroup_;
 };
 
 class StaticProcess : public Process {

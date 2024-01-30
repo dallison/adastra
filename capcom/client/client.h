@@ -7,6 +7,7 @@
 #include "absl/status/statusor.h"
 #include "common/alarm.h"
 #include "common/event.h"
+#include "common/cgroup.h"
 #include "common/states.h"
 #include "common/stream.h"
 #include "common/subsystem_status.h"
@@ -47,6 +48,7 @@ struct StaticProcess {
   std::string group;
   bool interactive = false;
   bool oneshot = false;
+  std::string cgroup = "";
 };
 
 struct Zygote {
@@ -62,6 +64,7 @@ struct Zygote {
   std::vector<Stream> streams;
   std::string user;
   std::string group;
+  std::string cgroup = "";
 };
 
 struct VirtualProcess {
@@ -80,6 +83,7 @@ struct VirtualProcess {
   std::vector<Stream> streams;
   std::string user;
   std::string group;
+  std::string cgroup = "";
 };
 
 struct SubsystemOptions {
@@ -118,6 +122,7 @@ public:
 
   absl::Status AddCompute(const std::string &name,
                           const toolbelt::InetAddress &addr,
+                          const std::vector<Cgroup>& cgroups = {},
                           co::Coroutine *c = nullptr);
 
   absl::Status RemoveCompute(const std::string &name,

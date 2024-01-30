@@ -5,6 +5,7 @@ subsystem {
     executable: "${runfiles_dir}/__main__/stagezero/zygote/${name}"
     options {
       notify: true
+      cgroup: "zygote"
     }
     stdin {
       where: STAGEZERO
