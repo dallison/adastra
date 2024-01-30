@@ -585,9 +585,9 @@ absl::Status VirtualProcess::Launch(Subsystem *subsystem, co::Coroutine *c) {
       .sigterm_shutdown_timeout_secs = sigterm_shutdown_timeout_secs_,
       .notify = notify_,
       .interactive = interactive_,
+      .interactive_terminal = subsystem->InteractiveTerminal(),
       .user = user_,
       .group = group_,
-      .interactive_terminal = subsystem->InteractiveTerminal(),
       .cgroup = cgroup_,
   };
 
