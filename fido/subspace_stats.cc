@@ -53,6 +53,7 @@ void SubspaceStatsWindow::AgerCoroutine(co::Coroutine *c) {
         it++;
       }
     }
+    Draw();
   }
 }
 
