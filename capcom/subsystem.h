@@ -407,9 +407,9 @@ private:
   std::vector<Variable> vars_;
   std::vector<Stream> streams_;
   bool running_ = false;
-  AdminState admin_state_;
-  OperState oper_state_;
-  OperState prev_oper_state_;
+  AdminState admin_state_ = AdminState::kOffline;
+  OperState oper_state_ = OperState::kOffline;
+  OperState prev_oper_state_ = OperState::kOffline;
 
   toolbelt::TriggerFd interrupt_;
 

@@ -18,8 +18,8 @@
 #include <limits.h>
 #include <sys/wait.h>
 #include <vector>
-#if defined(_linux__)
-#include <pty.h
+#if defined(__linux__)
+#include <pty.h>
 #elif defined(__APPLE__)
 #include <util.h>
 #else

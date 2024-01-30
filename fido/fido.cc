@@ -45,8 +45,8 @@ absl::Status FDOApplication::Init() {
       retro::WindowOptions{.title = "Quit",
                            .nlines = 7,
                            .ncols = 30,
-                           .x = screen_.Width() / 2 - 15,
-                           .y = screen_.Height() / 2 - 3},
+                           .y = screen_.Height() / 2 - 3,
+                           .x = screen_.Width() / 2 - 15},
       "Yes", "No");
 
   
@@ -160,8 +160,8 @@ std::string FDOApplication::GetFilter(const std::string &prompt,
                                {.title = "Enter Filter",
                                 .nlines = 7,
                                 .ncols = 40,
-                                .x = screen_.Width() / 2 - 20,
-                                .y = screen_.Height() / 2 - 3},
+                                .y = screen_.Height() / 2 - 3,
+                                .x = screen_.Width() / 2 - 20},
                                "OK");
   std::string filter = input.GetUserInput(prompt, c);
   Resume();
@@ -175,8 +175,8 @@ int FDOApplication::GetLogLevel(co::Coroutine *c) {
                                    {.title = "Enter Log level",
                                     .nlines = 12,
                                     .ncols = 40,
-                                    .x = screen_.Width() / 2 - 20,
-                                    .y = screen_.Height() / 2 - 6},
+                                    .y = screen_.Height() / 2 - 6,
+                                    .x = screen_.Width() / 2 - 20},
                                    "OK", "Cancel");
 
   int level = selection.GetSelection(

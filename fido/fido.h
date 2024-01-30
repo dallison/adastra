@@ -29,8 +29,8 @@ public:
                    retro::WindowOptions{.title = "Help",
                                  .nlines = 12,
                                  .ncols = 40,
-                                 .x = screen->Width() / 2 - 20,
-                                 .y = screen->Height() / 2 - 6},
+                                 .y = screen->Height() / 2 - 6,
+                                 .x = screen->Width() / 2 - 20},
                    ok) {}
 
   void WaitForUser(co::Coroutine *c);
@@ -65,3 +65,4 @@ private:
   std::unique_ptr<retro::YesNoDialog> quit_dialog_;
 };
 } // namespace adastra::fido
+

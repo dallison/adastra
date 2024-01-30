@@ -12,8 +12,8 @@ AlarmsWindow::AlarmsWindow(retro::Screen *screen, EventMux &mux)
                   {.title = "[4] Current Alarms",
                    .nlines = 16,
                    .ncols = screen->Width() * 7 / 16,
-                   .x = screen->Width() * 9 / 16,
-                   .y = 17},
+                   .y = 17,
+                   .x = screen->Width() * 9 / 16},
                   {"name", "type", "severity", "reason", "details"}),
       mux_(mux) {
   // What is a good width for the details column?  Use the expected max widths

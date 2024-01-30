@@ -14,8 +14,8 @@ SubsystemsWindow::SubsystemsWindow(retro::Screen *screen, EventMux &mux)
                   {.title = "[1] Subsystems",
                    .nlines = 16,
                    .ncols = screen->Width() / 2 - 1,
-                   .x = 0,
-                   .y = 1},
+                   .y = 1,
+                   .x = 0},
                   {"name", "admin", "oper", "processes", "alarms", "restarts"}),
       mux_(mux) {}
 
