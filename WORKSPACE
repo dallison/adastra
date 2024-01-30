@@ -66,31 +66,31 @@ http_archive(
   strip_prefix = "googletest-5ab508a01f9eb089207ee87fd547d290da39d015",
 )
 
-# http_archive(
-#   name = "toolbelt",
-#   urls = ["https://github.com/dallison/cpp_toolbelt/archive/refs/tags/1.1.5.tar.gz"],
-#   strip_prefix = "cpp_toolbelt-1.1.5",
-#   sha256 = "27429e66e47812da8c8bc18a823a27462277499029e9091be206f3844a7b05cc"
-# )
+http_archive(
+  name = "toolbelt",
+  urls = ["https://github.com/dallison/cpp_toolbelt/archive/refs/tags/1.1.6.tar.gz"],
+  strip_prefix = "cpp_toolbelt-1.1.6",
+  #sha256 = "27429e66e47812da8c8bc18a823a27462277499029e9091be206f3844a7b05cc"
+)
 
 # For local debugging of toolbelt coroutine library.
-local_repository(
-    name = "toolbelt",
-    path = "../cpp_toolbelt",
-)
-
-# http_archive(
-#   name = "coroutines",
-#   urls = ["https://github.com/dallison/co/archive/refs/tags/1.3.5.tar.gz"],
-#   strip_prefix = "co-1.3.5",
-#   sha256 = "132ec0f47008a10f43dbc3dea6c31db954ea6f808245127e99af80ffebb58768"
+# local_repository(
+#     name = "toolbelt",
+#     path = "../cpp_toolbelt",
 # )
 
-# For local debugging of co coroutine library.
-local_repository(
-    name = "coroutines",
-    path = "../co",
+http_archive(
+  name = "coroutines",
+  urls = ["https://github.com/dallison/co/archive/refs/tags/1.3.6.tar.gz"],
+  strip_prefix = "co-1.3.6",
+  # sha256 = "132ec0f47008a10f43dbc3dea6c31db954ea6f808245127e99af80ffebb58768"
 )
+
+# For local debugging of co coroutine library.
+# local_repository(
+#     name = "coroutines",
+#     path = "../co",
+# )
 
 # Bazel python rules.
 http_archive(
