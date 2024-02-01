@@ -29,7 +29,7 @@ class ClientHandler
  public:
   ClientHandler(StageZero &stagezero, toolbelt::TCPSocket socket)
       : TCPClientHandler(std::move(socket)), stagezero_(stagezero) {}
-  ~ClientHandler();
+  ~ClientHandler() = default;
 
   absl::Status SendProcessStartEvent(const std::string &process_id);
   absl::Status SendProcessStopEvent(const std::string &process_id, bool exited,
@@ -58,6 +58,8 @@ class ClientHandler
 
   StageZero& GetStageZero() const { return stagezero_; }
   
+  void KillAllProcesses();
+
  private:
   std::shared_ptr<ClientHandler> shared_from_this() {
     return std::static_pointer_cast<ClientHandler>(
@@ -110,12 +112,10 @@ void HandleAddCgroup(const control::AddCgroupRequest &req,
 
   void HandleRemoveCgroup(const control::RemoveCgroupRequest &req,
                    control::RemoveCgroupResponse *response, co::Coroutine *c);   
-                                 
+
   void AddProcess(const std::string &id, std::shared_ptr<Process> proc) {
     processes_.emplace(std::make_pair(id, std::move(proc)));
   }
-
-  void KillAllProcesses();
 
   StageZero &stagezero_;
 

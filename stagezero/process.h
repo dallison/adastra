@@ -24,6 +24,7 @@
 namespace adastra::stagezero {
 
 class ClientHandler;
+class StageZero;
 
 struct StreamInfo {
   proto::StreamControl::Direction direction;
@@ -46,6 +47,7 @@ class VirtualProcess;
 class Process : public std::enable_shared_from_this<Process> {
 public:
   Process(co::CoroutineScheduler &scheduler,
+          StageZero& stagezero,
           std::shared_ptr<ClientHandler> client, std::string name);
   virtual ~Process() {}
 
@@ -73,6 +75,7 @@ public:
   virtual bool WillNotify() const = 0;
   virtual int StartupTimeoutSecs() const = 0;
   bool IsCritical() const { return critical_; }
+  void SetDetached(bool detached) { detached_ = detached; }
 
   virtual void Notify(int64_t status) {}
 
@@ -100,6 +103,10 @@ public:
   absl::Status AddToCgroup(int pid);
   absl::Status RemoveFromCgroup(int pid);
 
+  bool IsDetached() const { return detached_; }
+
+  StageZero& GetStageZero() { return stagezero_; }
+
 protected:
   virtual int Wait() = 0;
   absl::Status BuildStreams(
@@ -114,6 +121,7 @@ protected:
   }
 
   co::CoroutineScheduler &scheduler_;
+  StageZero& stagezero_;
   std::shared_ptr<ClientHandler> client_;
   std::string name_;
   int pid_ = 0;
@@ -132,11 +140,12 @@ protected:
   toolbelt::FileDescriptor interactive_this_end_;
   toolbelt::FileDescriptor interactive_proc_end_;
   std::string cgroup_;
+  bool detached_ = false;      // Process is detached from a client.
 };
 
 class StaticProcess : public Process {
 public:
-  StaticProcess(co::CoroutineScheduler &scheduler,
+  StaticProcess(co::CoroutineScheduler &scheduler, StageZero &stagezero,
                 std::shared_ptr<ClientHandler> client,
                 const stagezero::control::LaunchStaticProcessRequest &&req);
 
@@ -156,10 +165,10 @@ protected:
 
 class Zygote : public StaticProcess {
 public:
-  Zygote(co::CoroutineScheduler &scheduler,
+  Zygote(co::CoroutineScheduler &scheduler, StageZero &stagezero,
          std::shared_ptr<ClientHandler> client,
          const stagezero::control::LaunchStaticProcessRequest &&req)
-      : StaticProcess(scheduler, client, std::move(req)) {}
+      : StaticProcess(scheduler, stagezero, client, std::move(req)) {}
 
   absl::Status Start(co::Coroutine *c) override;
 
@@ -201,7 +210,7 @@ private:
 
 class VirtualProcess : public Process {
 public:
-  VirtualProcess(co::CoroutineScheduler &scheduler,
+  VirtualProcess(co::CoroutineScheduler &scheduler, StageZero &stagezero,
                  std::shared_ptr<ClientHandler> client,
                  const stagezero::control::LaunchVirtualProcessRequest &&req);
 

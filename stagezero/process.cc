@@ -34,10 +34,10 @@
 
 namespace adastra::stagezero {
 
-Process::Process(co::CoroutineScheduler &scheduler,
+Process::Process(co::CoroutineScheduler &scheduler, StageZero &stagezero,
                  std::shared_ptr<ClientHandler> client, std::string name)
-    : scheduler_(scheduler), client_(std::move(client)), name_(std::move(name)),
-      local_symbols_(client_->GetGlobalSymbols()) {
+    : scheduler_(scheduler), stagezero_(stagezero), client_(std::move(client)),
+      name_(std::move(name)), local_symbols_(client_->GetGlobalSymbols()) {
   // Add a locall symbol "name" for the process name.
   local_symbols_.AddSymbol("name", name_, false);
 }
@@ -48,7 +48,7 @@ void Process::SetProcessId() {
 }
 
 void Process::KillNow() {
-  client_->Log(Name(), toolbelt::LogLevel::kDebug,
+  client_->Log(Name(), toolbelt::LogLevel::kInfo,
                "Killing process %s with pid %d", Name().c_str(), pid_);
   if (pid_ <= 0) {
     return;
@@ -89,9 +89,10 @@ const std::shared_ptr<StreamInfo> Process::FindNotifyStream() const {
 }
 
 StaticProcess::StaticProcess(
-    co::CoroutineScheduler &scheduler, std::shared_ptr<ClientHandler> client,
+    co::CoroutineScheduler &scheduler, StageZero &stagezero,
+    std::shared_ptr<ClientHandler> client,
     const stagezero::control::LaunchStaticProcessRequest &&req)
-    : Process(scheduler, std::move(client), req.opts().name()),
+    : Process(scheduler, stagezero, std::move(client), req.opts().name()),
       req_(std::move(req)) {
   for (auto &var : req.opts().vars()) {
     local_symbols_.AddSymbol(var.name(), var.value(), var.exported());
@@ -100,6 +101,8 @@ StaticProcess::StaticProcess(
                     req.opts().sigterm_shutdown_timeout_secs());
   SetUserAndGroup(req.opts().user(), req.opts().group());
   SetCgroup(req.opts().cgroup());
+  SetDetached(req.opts().detached());
+
   interactive_ = req.opts().interactive();
   if (req.opts().has_interactive_terminal()) {
     interactive_terminal_.FromProto(req.opts().interactive_terminal());
@@ -116,6 +119,10 @@ StaticProcess::StartInternal(const std::vector<std::string> extra_env_vars,
                              bool send_start_event) {
   if (absl::Status status = ValidateStreams(req_.streams()); !status.ok()) {
     return status;
+  }
+  if (interactive_ && detached_) {
+    return absl::InternalError(
+        "Cannot start an interactive process in detached mode");
   }
   if (absl::Status status = ForkAndExec(extra_env_vars); !status.ok()) {
     return status;
@@ -156,8 +163,13 @@ StaticProcess::StartInternal(const std::vector<std::string> extra_env_vars,
         }
         // Send start event to client.
         if (send_start_event) {
-          absl::Status eventStatus =
-              client->SendProcessStartEvent(proc->GetId());
+          absl::Status eventStatus;
+          if (proc->IsDetached()) {
+            eventStatus =
+                proc->GetStageZero().SendProcessStartEvent(proc->GetId());
+          } else {
+            eventStatus = client->SendProcessStartEvent(proc->GetId());
+          }
           if (!eventStatus.ok()) {
             client->Log(proc->Name(), toolbelt::LogLevel::kError, "%s\n",
                         eventStatus.ToString().c_str());
@@ -196,9 +208,15 @@ StaticProcess::StartInternal(const std::vector<std::string> extra_env_vars,
                       "Static process %s received signal %d \"%s\"",
                       proc->Name().c_str(), term_sig, strsignal(term_sig));
         }
-        if (absl::Status eventStatus = client->SendProcessStopEvent(
-                proc->GetId(), !signaled, exit_status, term_sig);
-            !eventStatus.ok()) {
+        absl::Status eventStatus;
+        if (proc->IsDetached()) {
+          eventStatus = proc->GetStageZero().SendProcessStopEvent(
+              proc->GetId(), !signaled, exit_status, term_sig);
+        } else {
+          eventStatus = client->SendProcessStopEvent(proc->GetId(), !signaled,
+                                                     exit_status, term_sig);
+        }
+        if (!eventStatus.ok()) {
           client->Log(proc->Name(), toolbelt::LogLevel::kError, "%s\n",
                       eventStatus.ToString().c_str());
           return;
@@ -1022,9 +1040,10 @@ Zygote::Spawn(const stagezero::control::LaunchVirtualProcessRequest &req,
 }
 
 VirtualProcess::VirtualProcess(
-    co::CoroutineScheduler &scheduler, std::shared_ptr<ClientHandler> client,
+    co::CoroutineScheduler &scheduler, StageZero &stagezero,
+    std::shared_ptr<ClientHandler> client,
     const stagezero::control::LaunchVirtualProcessRequest &&req)
-    : Process(scheduler, std::move(client), req.opts().name()),
+    : Process(scheduler, stagezero, std::move(client), req.opts().name()),
       req_(std::move(req)) {
   for (auto &var : req.opts().vars()) {
     local_symbols_.AddSymbol(var.name(), var.value(), var.exported());
@@ -1033,6 +1052,7 @@ VirtualProcess::VirtualProcess(
                     req.opts().sigterm_shutdown_timeout_secs());
   SetUserAndGroup(req.opts().user(), req.opts().group());
   SetCgroup(req.opts().cgroup());
+  SetDetached(req.opts().detached());
   critical_ = req.opts().critical();
 
   // Create the notification pipe for zygote notifications.
@@ -1104,54 +1124,64 @@ absl::Status VirtualProcess::Start(co::Coroutine *c) {
     }
   }
 
-  client_->AddCoroutine(std::make_unique<co::Coroutine>(
-      scheduler_,
-      [ proc, vproc, zygote = zygote_, client = client_ ](co::Coroutine * c2) {
-        // Send start event to client.
-        absl::Status eventStatus = client->SendProcessStartEvent(proc->GetId());
-        if (!eventStatus.ok()) {
-          client->Log(proc->Name(), toolbelt::LogLevel::kError, "%s",
-                      eventStatus.ToString().c_str());
-          return;
-        }
+  client_->AddCoroutine(std::make_unique<co::Coroutine>(scheduler_, [
+    proc, vproc, zygote = zygote_, client = client_
+  ](co::Coroutine * c2) {
+    // Send start event to client.
+    absl::Status eventStatus;
+    if (proc->IsDetached()) {
+      eventStatus = proc->GetStageZero().SendProcessStartEvent(proc->GetId());
+    } else {
+      eventStatus = client->SendProcessStartEvent(proc->GetId());
+    }
+    if (!eventStatus.ok()) {
+      client->Log(proc->Name(), toolbelt::LogLevel::kError, "%s",
+                  eventStatus.ToString().c_str());
+      return;
+    }
 
-        int status = vproc->WaitForZygoteNotification(c2);
-        zygote->RemoveVirtualProcess(vproc);
+    int status = vproc->WaitForZygoteNotification(c2);
+    zygote->RemoveVirtualProcess(vproc);
 
-        if (absl::Status status = proc->RemoveFromCgroup(proc->GetPid());
-            !status.ok()) {
-          client->Log(proc->Name(), toolbelt::LogLevel::kError,
-                      "Failed to remove process %s from cgroup: %s",
-                      proc->Name().c_str(), status.ToString().c_str());
-        }
+    if (absl::Status status = proc->RemoveFromCgroup(proc->GetPid());
+        !status.ok()) {
+      client->Log(proc->Name(), toolbelt::LogLevel::kError,
+                  "Failed to remove process %s from cgroup: %s",
+                  proc->Name().c_str(), status.ToString().c_str());
+    }
 
-        bool signaled = WIFSIGNALED(status);
-        bool exited = WIFEXITED(status);
-        int term_sig = WTERMSIG(status);
-        int exit_status = WEXITSTATUS(status);
-        // Can't be both exit and signal, but can be neither in the case
-        // of a stop.  We don't expect anything to be stopped and don't
-        // support it.
-        if (!signaled && !exited) {
-          signaled = true;
-        }
-        if (exited) {
-          client->Log(proc->Name(), toolbelt::LogLevel::kDebug,
-                      "Virtual process %s exited with status %d",
-                      proc->Name().c_str(), exit_status);
-        } else {
-          client->Log(proc->Name(), toolbelt::LogLevel::kDebug,
-                      "Virtual process %s received signal %d \"%s\"",
-                      proc->Name().c_str(), term_sig, strsignal(term_sig));
-        }
-        if (absl::Status eventStatus = client->SendProcessStopEvent(
-                proc->GetId(), !signaled, exit_status, term_sig);
-            !eventStatus.ok()) {
-          client->Log(proc->Name(), toolbelt::LogLevel::kError, "%s\n",
-                      eventStatus.ToString().c_str());
-          return;
-        }
-      }));
+    bool signaled = WIFSIGNALED(status);
+    bool exited = WIFEXITED(status);
+    int term_sig = WTERMSIG(status);
+    int exit_status = WEXITSTATUS(status);
+    // Can't be both exit and signal, but can be neither in the case
+    // of a stop.  We don't expect anything to be stopped and don't
+    // support it.
+    if (!signaled && !exited) {
+      signaled = true;
+    }
+    if (exited) {
+      client->Log(proc->Name(), toolbelt::LogLevel::kDebug,
+                  "Virtual process %s exited with status %d",
+                  proc->Name().c_str(), exit_status);
+    } else {
+      client->Log(proc->Name(), toolbelt::LogLevel::kDebug,
+                  "Virtual process %s received signal %d \"%s\"",
+                  proc->Name().c_str(), term_sig, strsignal(term_sig));
+    }
+    if (proc->IsDetached()) {
+      eventStatus = proc->GetStageZero().SendProcessStopEvent(
+          proc->GetId(), !signaled, exit_status, term_sig);
+    } else {
+      eventStatus = client->SendProcessStopEvent(proc->GetId(), !signaled,
+                                                 exit_status, term_sig);
+    }
+    if (!eventStatus.ok()) {
+      client->Log(proc->Name(), toolbelt::LogLevel::kError, "%s\n",
+                  eventStatus.ToString().c_str());
+      return;
+    }
+  }));
 
   return absl::OkStatus();
 }

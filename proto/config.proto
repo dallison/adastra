@@ -74,6 +74,8 @@ message ProcessOptions {
 
   // Cgroup name (if supported by OS).  Must be present on the compute instance.
   string cgroup = 15;
+
+  bool detached = 16;        // Process is detached from client.
 }
 
 message StaticProcess {

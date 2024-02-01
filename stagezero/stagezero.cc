@@ -4,9 +4,9 @@
 
 #include "stagezero/stagezero.h"
 #include "absl/strings/str_format.h"
+#include "stagezero/cgroup.h"
 #include "stagezero/client_handler.h"
 #include "toolbelt/sockets.h"
-#include "stagezero/cgroup.h"
 #include <fcntl.h>
 #include <sys/poll.h>
 #include <sys/stat.h>
@@ -66,6 +66,7 @@ StageZero::HandleIncomingConnection(toolbelt::TCPSocket &listen_socket,
       co_scheduler_, [ this, handler = std::move(handler) ](co::Coroutine * c) {
 
         handler->Run(c);
+        handler->KillAllProcesses();
         CloseHandler(handler);
       },
       "Client handler"));
@@ -267,5 +268,21 @@ absl::Status StageZero::RegisterCgroup(const Cgroup &cgroup) {
 
 absl::Status StageZero::UnregisterCgroup(const std::string &cgroup) {
   return RemoveCgroup(cgroup);
+}
+
+absl::Status StageZero::SendProcessStartEvent(const std::string &process_id) {
+  for (auto &client : client_handlers_) {
+    (void)client->SendProcessStartEvent(process_id);
+  }
+  return absl::OkStatus();
+}
+
+absl::Status StageZero::SendProcessStopEvent(const std::string &process_id,
+                                             bool exited, int exit_status,
+                                             int term_signal) {
+  for (auto &client : client_handlers_) {
+    (void)client->SendProcessStopEvent(process_id, exited, exit_status, term_signal);
+  }
+  return absl::OkStatus();
 }
 } // namespace adastra::stagezero

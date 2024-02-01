@@ -70,7 +70,7 @@ absl::Status LaunchStaticCommand::Execute(Client *client, int argc,
   std::string name;
   std::string executable;
   std::vector<std::string> args;
-  ProcessOptions opts = {.sigint_shutdown_timeout_secs = 0};
+  ProcessOptions opts = {.sigint_shutdown_timeout_secs = 0, .detached = true};
 
   bool process_flags = true;
   for (int i = 2; i < argc; i++) {
@@ -142,6 +142,19 @@ absl::Status StopCommand::Execute(Client *client, int argc, char **argv) const {
   std::cout << "stopping process " << process_id << std::endl;
   if (absl::Status status = client->StopProcess(process_id); !status.ok()) {
     return status;
+  }
+  std::shared_ptr<adastra::stagezero::control::Event> event =
+      StageZeroCommand::WaitForEvent(client);
+
+  switch (event->event_case()) {
+  case adastra::stagezero::control::Event::kStart:
+    break;
+  case adastra::stagezero::control::Event::kStop:
+    std::cout << "Process stopped OK\n";
+    // Show reason.
+    break;
+  default:
+    break;
   }
   return absl::OkStatus();
 }
