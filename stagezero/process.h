@@ -68,6 +68,9 @@ public:
   bool IsStopping() const { return stopping_; }
   bool IsRunning() const { return running_; }
   int GetPid() const { return pid_; }
+#ifdef __linux__
+  toolbelt::FileDescriptor& GetPidFd() { return pid_fd_; }
+#endif
   void SetPid(int pid) { pid_ = pid; }
   void SetProcessId();
   virtual bool WillNotify() const = 0;
@@ -117,6 +120,9 @@ protected:
   std::shared_ptr<ClientHandler> client_;
   std::string name_;
   int pid_ = 0;
+#ifdef __linux__
+  toolbelt::FileDescriptor pid_fd_;
+#endif
   bool running_ = true;
   bool stopping_ = false;
   bool critical_ = false;

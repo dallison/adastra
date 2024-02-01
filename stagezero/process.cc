@@ -22,6 +22,7 @@
 #include <vector>
 #if defined(__linux__)
 #include <pty.h>
+#include <linux/wait.h>		// For P_PIDFD
 #elif defined(__APPLE__)
 #include <util.h>
 #else
@@ -31,6 +32,18 @@
 #include <pwd.h>
 #include <sys/ioctl.h>
 #include <termios.h>
+
+#ifdef __linux__
+#include <syscall.h>
+static int pidfd_open(pid_t pid, unsigned int flags) {
+  return syscall(__NR_pidfd_open, pid, flags);
+}
+
+static int pidfd_send_signal(int pidfd, int sig, siginfo_t *info, unsigned int flags) {
+  return syscall(__NR_pidfd_send_signal, pidfd, sig, info, flags);
+}
+
+#endif
 
 namespace adastra::stagezero {
 
@@ -59,6 +72,17 @@ void Process::KillNow() {
 
 int Process::WaitLoop(co::Coroutine *c,
                       std::optional<std::chrono::seconds> timeout) {
+#ifdef __linux__
+  c->Wait(pid_fd_.Fd());		// Timeout ignored on linux.
+  // We can't really get here unless the process has exited.
+  siginfo_t siginfo;
+  int e = waitid(idtype_t(P_PIDFD), pid_fd_.Fd(), &siginfo, WEXITED | WNOHANG);
+  if (e == 0 && siginfo.si_pid != 0) {
+    return siginfo.si_status;
+  }
+  return 127;
+
+#else
   constexpr int kWaitTimeMs = 100;
   int num_iterations =
       timeout.has_value() ? timeout->count() * 1000 / kWaitTimeMs : 0;
@@ -77,6 +101,7 @@ int Process::WaitLoop(co::Coroutine *c,
     }
   }
   return status;
+#endif
 }
 
 const std::shared_ptr<StreamInfo> Process::FindNotifyStream() const {
@@ -700,6 +725,13 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
               << std::endl;
     exit(1);
   }
+#ifdef __linux__
+  int pidfd = pidfd_open(pid_, 0);
+  if (pidfd == -1) {
+	return absl::InternalError(absl::StrFormat("Failed to open pidfd for pid %d: %s", pid_, strerror(errno)));
+  }
+  pid_fd_.SetFd(pidfd);
+#endif
 
   // Close redirected stream fds in parent.
   if (interactive_) {
@@ -749,19 +781,32 @@ absl::Status Process::Stop(co::Coroutine *c) {
           client->Log(proc->Name(), toolbelt::LogLevel::kDebug,
                       "Killing process %s with SIGINT (timeout %d seconds)",
                       proc->Name().c_str(), timeout);
+#ifdef __linux__
+          pidfd_send_signal(proc->GetPidFd().Fd(), SIGINT, nullptr, 0);
+		  c2->Wait(proc->GetPidFd().Fd(), POLLIN, std::chrono::nanoseconds(timeout).count());
+#else
           SafeKill(proc->GetPid(), SIGINT);
           (void)proc->WaitLoop(c2, std::chrono::seconds(timeout));
+#endif
           if (!proc->IsRunning()) {
             return;
           }
         }
         timeout = proc->SigTermTimeoutSecs();
         if (timeout > 0) {
+#ifdef __linux__
+          pidfd_send_signal(proc->GetPidFd().Fd(), SIGTERM, nullptr, 0);
+#else
           SafeKill(proc->GetPid(), SIGTERM);
+#endif
           client->Log(proc->Name(), toolbelt::LogLevel::kDebug,
                       "Killing process %s with SIGTERM (timeout %d seconds)",
                       proc->Name().c_str(), timeout);
+#ifdef __linux__
+		  c2->Wait(proc->GetPidFd().Fd(), POLLIN, std::chrono::nanoseconds(timeout).count());
+#else
           (void)proc->WaitLoop(c2, std::chrono::seconds(timeout));
+#endif
         }
 
         // Always send SIGKILL if it's still running.  It can't ignore this.
@@ -769,7 +814,11 @@ absl::Status Process::Stop(co::Coroutine *c) {
           client->Log(proc->Name(), toolbelt::LogLevel::kDebug,
                       "Killing process %s with SIGKILL", proc->Name().c_str());
 
+#ifdef __linux__
+          pidfd_send_signal(proc->GetPidFd().Fd(), SIGKILL, nullptr, 0);
+#else
           SafeKill(proc->GetPid(), SIGKILL);
+#endif
         }
       }));
   return client_->RemoveProcess(this);
