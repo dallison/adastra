@@ -290,7 +290,7 @@ TCPClientHandler<Request, Response, Event>::VLog(const std::string &source,
                                                  toolbelt::LogLevel level,
                                                  const char *fmt, va_list ap) {
   // Send as log message if the user has asked for it.
-  if ((event_mask_ & kLogMessageEvents) != 0) {
+  if (event_socket_.Connected() && (event_mask_ & kLogMessageEvents) != 0) {
     constexpr size_t kMaxMessageSize = 256;
     char buffer[kMaxMessageSize];
     vsnprintf(buffer, sizeof(buffer), fmt, ap);

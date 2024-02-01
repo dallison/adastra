@@ -39,6 +39,7 @@ struct ProcessOptions {
   std::string group;
   bool critical;
   std::string cgroup;
+  bool detached;
 };
 
 class Client

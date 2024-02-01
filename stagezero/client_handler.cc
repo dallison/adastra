@@ -12,8 +12,6 @@
 
 namespace adastra::stagezero {
 
-ClientHandler::~ClientHandler() { KillAllProcesses(); }
-
 SymbolTable *ClientHandler::GetGlobalSymbols() const {
   return &stagezero_.global_symbols_;
 }
@@ -123,7 +121,7 @@ void ClientHandler::HandleLaunchStaticProcess(
     const control::LaunchStaticProcessRequest &&req,
     control::LaunchResponse *response, co::Coroutine *c) {
   auto proc = std::make_shared<StaticProcess>(
-      GetScheduler(), this->shared_from_this(), std::move(req));
+      GetScheduler(), stagezero_, this->shared_from_this(), std::move(req));
   absl::Status status = proc->Start(c);
   if (!status.ok()) {
     response->set_error(status.ToString());
@@ -144,7 +142,7 @@ void ClientHandler::HandleLaunchStaticProcess(
 void ClientHandler::HandleLaunchZygote(
     const control::LaunchStaticProcessRequest &&req,
     control::LaunchResponse *response, co::Coroutine *c) {
-  auto zygote = std::make_shared<Zygote>(GetScheduler(), shared_from_this(),
+  auto zygote = std::make_shared<Zygote>(GetScheduler(), stagezero_, shared_from_this(),
                                          std::move(req));
   absl::Status status = zygote->Start(c);
   if (!status.ok()) {
@@ -166,7 +164,7 @@ void ClientHandler::HandleLaunchVirtualProcess(
     const control::LaunchVirtualProcessRequest &&req,
     control::LaunchResponse *response, co::Coroutine *c) {
   auto proc = std::make_shared<VirtualProcess>(
-      GetScheduler(), shared_from_this(), std::move(req));
+      GetScheduler(), stagezero_, shared_from_this(), std::move(req));
   absl::Status status = proc->Start(c);
   if (!status.ok()) {
     response->set_error(status.ToString());
@@ -275,7 +273,9 @@ void ClientHandler::KillAllProcesses() {
   std::vector<std::shared_ptr<Process>> procs;
 
   for (auto & [ id, proc ] : processes_) {
-    procs.push_back(proc);
+    if (!proc->IsDetached()) {
+      procs.push_back(proc);
+    }
   }
   for (auto &proc : procs) {
     proc->KillNow();
@@ -347,7 +347,8 @@ void ClientHandler::HandleAddCgroup(const control::AddCgroupRequest &req,
   }
   if (absl::Status status = stagezero_.RegisterCgroup(cgroup); !status.ok()) {
     response->set_error(absl::StrFormat("Failed to register cgroup %s: %s",
-                                        req.cgroup().name(), status.ToString()));
+                                        req.cgroup().name(),
+                                        status.ToString()));
   }
 }
 

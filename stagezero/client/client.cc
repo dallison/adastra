@@ -122,6 +122,7 @@ void Client::BuildProcessOptions(
   options->set_user(opts.user);
   options->set_critical(opts.critical);
   options->set_cgroup(opts.cgroup);
+  options->set_detached(opts.detached);
 }
 
 absl::Status Client::StopProcess(const std::string &process_id,

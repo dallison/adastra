@@ -37,6 +37,10 @@ private:
   friend class ClientHandler;
   friend class Zygote;
   friend class VirtualProcess;
+  friend class Process;
+  friend class StaticProcess;
+  friend class Zygote;
+  
   absl::Status HandleIncomingConnection(toolbelt::TCPSocket &listen_socket,
                                         co::Coroutine *c);
 
@@ -170,6 +174,9 @@ private:
   absl::Status RegisterCgroup(const Cgroup& cgroup);
   absl::Status UnregisterCgroup(const std::string& cgroup);
 
+  absl::Status SendProcessStartEvent(const std::string &process_id);
+  absl::Status SendProcessStopEvent(const std::string &process_id, bool exited,
+                                    int exit_status, int term_signal);
   co::CoroutineScheduler &co_scheduler_;
   toolbelt::InetAddress addr_;
   toolbelt::FileDescriptor notify_fd_;
