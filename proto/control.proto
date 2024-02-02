@@ -198,4 +198,5 @@ message SpawnRequest {
 message SpawnResponse {
   string error = 1;
   int32 pid = 2; // PID of child.
+  int32 pidfd_index = 3;		// On Linux the index into the fds array for the process's pidfd.
 }

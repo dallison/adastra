@@ -22,6 +22,14 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#ifdef __linux__
+#include <syscall.h>
+static int pidfd_open(pid_t pid, unsigned int flags) {
+  return syscall(__NR_pidfd_open, pid, flags);
+}
+
+#endif
+
 extern "C" char **environ;
 
 ABSL_FLAG(std::string, run, "", "Run this module directly");
@@ -143,7 +151,7 @@ void ZygoteCore::WaitForSpawn(co::Coroutine *c) {
     stagezero::control::SpawnResponse response;
 
     if (absl::Status status =
-            HandleSpawn(request, &response, std::move(fds), c);
+            HandleSpawn(request, &response, fds, c);
         !status.ok()) {
       response.set_error(status.ToString());
     }
@@ -161,6 +169,14 @@ void ZygoteCore::WaitForSpawn(co::Coroutine *c) {
       control_socket_->Close();
       return;
     }
+    if (absl::Status s = control_socket_->SendFds(fds, c); !s.ok()) {
+      logger_.Log(toolbelt::LogLevel::kError,
+                  "Failed to send spawn fds response: %s",
+                  s.ToString().c_str());
+      control_socket_->Close();
+      return;
+    }
+
   } else {
     logger_.Log(toolbelt::LogLevel::kError,
                 "Failed to parse message SpawnRequest");
@@ -192,7 +208,7 @@ void ZygoteCore::Run(const std::string &dso, const std::string &main,
 
 absl::Status ZygoteCore::HandleSpawn(
     const control::SpawnRequest &req, control::SpawnResponse *resp,
-    std::vector<toolbelt::FileDescriptor> &&fds, co::Coroutine *c) {
+    std::vector<toolbelt::FileDescriptor> &fds, co::Coroutine *c) {
   // Update all global symbols.
   for (auto &var : req.global_vars()) {
     auto sym = global_symbols_.FindSymbol(var.name());
@@ -356,6 +372,12 @@ absl::Status ZygoteCore::HandleSpawn(
   }
 
   resp->set_pid(pid);
+#ifdef __linux__
+  int pidfd = pidfd_open(pid, 0);
+  fds.clear();
+  fds.push_back(toolbelt::FileDescriptor(pidfd));
+  resp->set_pidfd_index(0);
+#endif
   return absl::OkStatus();
 }
 

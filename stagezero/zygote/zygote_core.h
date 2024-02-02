@@ -31,7 +31,7 @@ class ZygoteCore {
 
   absl::Status HandleSpawn(const control::SpawnRequest& req,
                            control::SpawnResponse* resp,
-                           std::vector<toolbelt::FileDescriptor>&& fds,
+                           std::vector<toolbelt::FileDescriptor>& fds,
                            co::Coroutine* c);
 
   [[noreturn]] static void InvokeMainAfterSpawn(std::string exe, const control::SpawnRequest&& req,

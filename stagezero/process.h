@@ -72,6 +72,7 @@ public:
   int GetPid() const { return pid_; }
 #ifdef __linux__
   toolbelt::FileDescriptor& GetPidFd() { return pid_fd_; }
+  void SetPidFd(toolbelt::FileDescriptor pidfd) { pid_fd_ = std::move(pidfd); }
 #endif
   void SetPid(int pid) { pid_ = pid; }
   void SetProcessId();
@@ -182,7 +183,8 @@ public:
   // a coroutine.  It is called from other coroutines but since it talks
   // to a process through a socket, we can't interleave the messages
   // if multiple spawns happen at the same time.
-  absl::StatusOr<int>
+  // Returns a pair of pid and pidfd (on linux only, all others will be 0);
+  absl::StatusOr<std::pair<int,toolbelt::FileDescriptor>>
   Spawn(const stagezero::control::LaunchVirtualProcessRequest &req,
         const std::vector<std::shared_ptr<StreamInfo>> &streams);
 

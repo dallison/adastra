@@ -66,7 +66,12 @@ void Process::KillNow() {
   if (pid_ <= 0) {
     return;
   }
-  SafeKill(pid_, SIGKILL);
+  int e = SafeKill(pid_, SIGKILL);
+  if (e != 0) {
+    client_->Log(Name(), toolbelt::LogLevel::kError,
+                "Failed to send SIGKILL to %s: pid: %d: %s",
+                Name().c_str(), GetPid(), strerror(errno));
+  }
   (void)client_->RemoveProcess(this);
 }
 
@@ -800,10 +805,20 @@ absl::Status Process::Stop(co::Coroutine *c) {
                       "Killing process %s with SIGINT (timeout %d seconds)",
                       proc->Name().c_str(), timeout);
 #ifdef __linux__
-          pidfd_send_signal(proc->GetPidFd().Fd(), SIGINT, nullptr, 0);
+          int e = pidfd_send_signal(proc->GetPidFd().Fd(), SIGINT, nullptr, 0);
+          if (e != 0) {
+            client->Log(proc->Name(), toolbelt::LogLevel::kError,
+                      "Failed to send SIGINT to %s: pidfd: %d: %s",
+                      proc->Name().c_str(), proc->GetPidFd().Fd(), strerror(errno));
+          }
 		  c2->Wait(proc->GetPidFd().Fd(), POLLIN, std::chrono::nanoseconds(timeout).count());
 #else
-          SafeKill(proc->GetPid(), SIGINT);
+          int e = SafeKill(proc->GetPid(), SIGINT);
+          if (e != 0) {
+            client->Log(proc->Name(), toolbelt::LogLevel::kError,
+                      "Failed to send SIGINT to %s: pid: %d: %s",
+                      proc->Name().c_str(), proc->GetPid(), strerror(errno));
+          }
           (void)proc->WaitLoop(c2, std::chrono::seconds(timeout));
 #endif
           if (!proc->IsRunning()) {
@@ -813,9 +828,19 @@ absl::Status Process::Stop(co::Coroutine *c) {
         timeout = proc->SigTermTimeoutSecs();
         if (timeout > 0) {
 #ifdef __linux__
-          pidfd_send_signal(proc->GetPidFd().Fd(), SIGTERM, nullptr, 0);
+          int e = pidfd_send_signal(proc->GetPidFd().Fd(), SIGTERM, nullptr, 0);
+          if (e != 0) {
+            client->Log(proc->Name(), toolbelt::LogLevel::kError,
+                      "Failed to send SIGTERM to %s: pidfd: %d: %s",
+                      proc->Name().c_str(), proc->GetPidFd().Fd(), strerror(errno));
+          }
 #else
-          SafeKill(proc->GetPid(), SIGTERM);
+          int e = SafeKill(proc->GetPid(), SIGTERM);
+          if (e != 0) {
+            client->Log(proc->Name(), toolbelt::LogLevel::kError,
+                      "Failed to send SIGTERM to %s: pid: %d: %s",
+                      proc->Name().c_str(), proc->GetPid(), strerror(errno));
+          }
 #endif
           client->Log(proc->Name(), toolbelt::LogLevel::kDebug,
                       "Killing process %s with SIGTERM (timeout %d seconds)",
@@ -833,9 +858,19 @@ absl::Status Process::Stop(co::Coroutine *c) {
                       "Killing process %s with SIGKILL", proc->Name().c_str());
 
 #ifdef __linux__
-          pidfd_send_signal(proc->GetPidFd().Fd(), SIGKILL, nullptr, 0);
+          int e = pidfd_send_signal(proc->GetPidFd().Fd(), SIGKILL, nullptr, 0);
+          if (e != 0) {
+            client->Log(proc->Name(), toolbelt::LogLevel::kError,
+                        "Failed to send SIGKILL to %s: pidfd: %d: %s",
+                        proc->Name().c_str(), proc->GetPidFd().Fd(), strerror(errno));
+          }
 #else
-          SafeKill(proc->GetPid(), SIGKILL);
+          int e = SafeKill(proc->GetPid(), SIGKILL);
+          if (e != 0) {
+            client->Log(proc->Name(), toolbelt::LogLevel::kError,
+                      "Failed to send SIGKILL to %s: pid: %d: %s",
+                      proc->Name().c_str(), proc->GetPid(), strerror(errno));
+          }
 #endif
         }
       }));
@@ -975,7 +1010,7 @@ std::pair<std::string, int> Zygote::BuildZygoteSocketName() {
   return std::make_pair(socket_file, tmpfd);
 }
 
-absl::StatusOr<int>
+absl::StatusOr<std::pair<int, toolbelt::FileDescriptor>>
 Zygote::Spawn(const stagezero::control::LaunchVirtualProcessRequest &req,
               const std::vector<std::shared_ptr<StreamInfo>> &streams) {
   control::SpawnRequest spawn;
@@ -1077,6 +1112,12 @@ Zygote::Spawn(const stagezero::control::LaunchVirtualProcessRequest &req,
     return n.status();
   }
 
+  fds.clear();
+  if (absl::Status s = control_socket_.ReceiveFds(fds); !s.ok()) {
+    control_socket_.Close();
+    return s;
+  }
+
   control::SpawnResponse response;
   if (!response.ParseFromArray(buffer.data(), *n)) {
     control_socket_.Close();
@@ -1085,7 +1126,12 @@ Zygote::Spawn(const stagezero::control::LaunchVirtualProcessRequest &req,
   if (!response.error().empty()) {
     return absl::InternalError(response.error());
   }
-  return response.pid();
+#ifdef __linux__
+  toolbelt::FileDescriptor pidfd(std::move(fds[response.pidfd_index()]));
+  return std::make_pair(response.pid(), std::move(pidfd));
+#else
+  return std::make_pair(response.pid(), toolbelt::FileDescriptor());
+#endif
 }
 
 VirtualProcess::VirtualProcess(
@@ -1130,17 +1176,20 @@ absl::Status VirtualProcess::Start(co::Coroutine *c) {
     return status;
   }
 
-  absl::StatusOr<int> pid = zygote_->Spawn(req_, GetStreams());
-  if (!pid.ok()) {
+  absl::StatusOr<std::pair<int, toolbelt::FileDescriptor>> pids = zygote_->Spawn(req_, GetStreams());
+  if (!pids.ok()) {
     return absl::InternalError(
         absl::StrFormat("Failed to spawn virtual process %s: %s", Name(),
-                        pid.status().ToString()));
+                        pids.status().ToString()));
   }
-  SetPid(*pid);
+  SetPid(pids->first);
   SetProcessId();
+#ifdef __linux__
+  SetPidFd(std::move(pids->second));
+#endif
 
   zygote_->AddVirtualProcess(vproc);
-  if (!client_->GetStageZero().AddVirtualProcess(*pid, vproc)) {
+  if (!client_->GetStageZero().AddVirtualProcess(pids->first, vproc)) {
     return absl::InternalError(
         absl::StrFormat("Failed to add virtual process %s", Name()));
   }
