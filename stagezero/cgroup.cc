@@ -204,14 +204,23 @@ static absl::Status SetIOController(std::filesystem::path cgroup,
   return absl::OkStatus();
 }
 
-absl::Status CreateCgroup(const Cgroup &cgroup) {
+absl::Status CreateCgroup(const Cgroup &cgroup, toolbelt::Logger &logger) {
   bool cgroups_supported = true;
 #if !defined(__linux__)
   cgroups_supported = false;
 #endif
   if (!cgroups_supported) {
-    std::cout << "Cgroups are not supported on this OS; creation of cgroup '"
-              << cgroup.name << "' ignored" << std::endl;
+    logger.Log(
+        toolbelt::LogLevel::kInfo,
+        "Cgroups are not supported on this OS; creation of cgroup '%s' ignored",
+        cgroup.name.c_str());
+    return absl::OkStatus();
+  }
+  if (geteuid() != 0) {
+    // Not root.
+    logger.Log(toolbelt::LogLevel::kInfo,
+               "Not running as root; creation of cgroup '%s' ignored",
+               cgroup.name.c_str());
     return absl::OkStatus();
   }
   std::filesystem::path cgroup_path(
@@ -251,46 +260,74 @@ absl::Status CreateCgroup(const Cgroup &cgroup) {
   return absl::OkStatus();
 }
 
-absl::Status RemoveCgroup(const std::string &cgroup) {
+absl::Status RemoveCgroup(const std::string &cgroup, toolbelt::Logger &logger) {
   bool cgroups_supported = true;
 #if !defined(__linux__)
   cgroups_supported = false;
 #endif
   if (!cgroups_supported) {
-    std::cout << "Cgroups are not supported on this OS; removal of cgroup '"
-              << cgroup << "' ignored" << std::endl;
+    logger.Log(
+        toolbelt::LogLevel::kInfo,
+        "Cgroups are not supported on this OS; removal of cgroup '%s' ignored",
+        cgroup.c_str());
     return absl::OkStatus();
   }
-
+  if (geteuid() != 0) {
+    // Not root.
+    logger.Log(toolbelt::LogLevel::kInfo,
+               "Not running as root; removal of cgroup '%s' ignored",
+               cgroup.c_str());
+    return absl::OkStatus();
+  }
   return absl::OkStatus();
 }
 
 absl::Status AddToCgroup(const std::string &proc, const std::string &cgroup,
-                         int pid) {
+                         int pid, toolbelt::Logger &logger) {
   bool cgroups_supported = true;
 #if !defined(__linux__)
   cgroups_supported = false;
 #endif
   if (!cgroups_supported) {
-    std::cout << "Cgroups are not supported on this OS; addition of process "
-              << proc << " with pid " << pid << " to cgroup '" << cgroup
-              << "' ignored" << std::endl;
+    logger.Log(toolbelt::LogLevel::kInfo,
+               "Cgroups are not supported on this OS; addition of process %s "
+               "with pid %d to cgroup '%s' ignored",
+               proc.c_str(), pid, cgroup.c_str());
+
+    return absl::OkStatus();
+  }
+  if (geteuid() != 0) {
+    // Not root.
+    logger.Log(toolbelt::LogLevel::kInfo,
+               "Not running as root; addition of process %s with pid %d to "
+               "cgroup '%s' ignored",
+               proc.c_str(), pid, cgroup.c_str());
+
     return absl::OkStatus();
   }
   return absl::OkStatus();
 }
 
 absl::Status RemoveFromCgroup(const std::string &proc,
-                              const std::string &cgroup, int pid) {
+                              const std::string &cgroup, int pid,
+                              toolbelt::Logger &logger) {
   bool cgroups_supported = true;
 #if !defined(__linux__)
   cgroups_supported = false;
 #endif
   if (!cgroups_supported) {
-    std::cout << "Cgroups are not supported on this OS; removal of process "
-              << proc << " with pid " << pid << " from cgroup '" << cgroup
-              << "' ignored" << std::endl;
+    logger.Log(toolbelt::LogLevel::kInfo,
+               "Cgroups are not supported on this OS; removal of process %s "
+               "with pid %d from cgroup '%s' ignored",
+               proc.c_str(), pid, cgroup.c_str());
     return absl::OkStatus();
+  }
+  if (geteuid() != 0) {
+    // Not root.
+    logger.Log(toolbelt::LogLevel::kInfo,
+               "Not running as root;; removal of process %s "
+               "with pid %d from cgroup '%s' ignored",
+               proc.c_str(), pid, cgroup.c_str());
   }
   return absl::OkStatus();
 }

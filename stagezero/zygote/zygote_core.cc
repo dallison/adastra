@@ -98,7 +98,8 @@ absl::Status ZygoteCore::Run() {
             // pipe.  Set the top bit to distinguish this from any other
             // notification.
             logger_.Log(toolbelt::LogLevel::kDebug, "Process %d died", pid);
-            uint64_t val = (1LL << 63LL) | (static_cast<uint64_t>(pid) << 32LL) |
+            uint64_t val = (1LL << 63LL) |
+                           (static_cast<uint64_t>(pid) << 32LL) |
                            static_cast<uint64_t>(status);
             (void)write(notification_pipe_.Fd(), &val, 8);
           }
@@ -150,8 +151,7 @@ void ZygoteCore::WaitForSpawn(co::Coroutine *c) {
   if (request.ParseFromArray(buffer_, *n)) {
     stagezero::control::SpawnResponse response;
 
-    if (absl::Status status =
-            HandleSpawn(request, &response, fds, c);
+    if (absl::Status status = HandleSpawn(request, &response, fds, c);
         !status.ok()) {
       response.set_error(status.ToString());
     }
@@ -206,9 +206,10 @@ void ZygoteCore::Run(const std::string &dso, const std::string &main,
                        std::move(symbols));
 }
 
-absl::Status ZygoteCore::HandleSpawn(
-    const control::SpawnRequest &req, control::SpawnResponse *resp,
-    std::vector<toolbelt::FileDescriptor> &fds, co::Coroutine *c) {
+absl::Status ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
+                                     control::SpawnResponse *resp,
+                                     std::vector<toolbelt::FileDescriptor> &fds,
+                                     co::Coroutine *c) {
   // Update all global symbols.
   for (auto &var : req.global_vars()) {
     auto sym = global_symbols_.FindSymbol(var.name());
@@ -347,7 +348,8 @@ absl::Status ZygoteCore::HandleSpawn(
     forked_ = true;
 
     if (!req.cgroup().empty()) {
-      if (absl::Status status = stagezero::AddToCgroup(req.name(), req.cgroup(), getpid());
+      if (absl::Status status = stagezero::AddToCgroup(req.name(), req.cgroup(),
+                                                       getpid(), logger_);
           !status.ok()) {
         return status;
       }

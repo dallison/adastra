@@ -21,6 +21,9 @@
 #include <signal.h>
 #include <string>
 
+// Change this to 0 if pidfd (on Linux only) is not available
+#define HAVE_PIDFD 1
+
 namespace adastra::stagezero {
 
 class ClientHandler;

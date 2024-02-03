@@ -33,7 +33,7 @@
 #include <sys/ioctl.h>
 #include <termios.h>
 
-#ifdef __linux__
+#if defined(__linux__) && HAVE_PIDFD
 #include <syscall.h>
 static int pidfd_open(pid_t pid, unsigned int flags) {
   return syscall(__NR_pidfd_open, pid, flags);
@@ -77,7 +77,7 @@ void Process::KillNow() {
 
 int Process::WaitLoop(co::Coroutine *c,
                       std::optional<std::chrono::seconds> timeout) {
-#ifdef __linux__
+#if defined(__linux__)  && HAVE_PIDFD
   c->Wait(pid_fd_.Fd());		// Timeout ignored on linux.
   // We can't really get here unless the process has exited.
   siginfo_t siginfo;
@@ -748,7 +748,7 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
               << std::endl;
     exit(1);
   }
-#ifdef __linux__
+#if defined(__linux__) && HAVE_PIDFD
   int pidfd = pidfd_open(pid_, 0);
   if (pidfd == -1) {
 	return absl::InternalError(absl::StrFormat("Failed to open pidfd for pid %d: %s", pid_, strerror(errno)));
@@ -804,7 +804,7 @@ absl::Status Process::Stop(co::Coroutine *c) {
           client->Log(proc->Name(), toolbelt::LogLevel::kDebug,
                       "Killing process %s with SIGINT (timeout %d seconds)",
                       proc->Name().c_str(), timeout);
-#ifdef __linux__
+#if defined(__linux__) && HAVE_PIDFD
           int e = pidfd_send_signal(proc->GetPidFd().Fd(), SIGINT, nullptr, 0);
           if (e != 0) {
             client->Log(proc->Name(), toolbelt::LogLevel::kError,
@@ -827,7 +827,7 @@ absl::Status Process::Stop(co::Coroutine *c) {
         }
         timeout = proc->SigTermTimeoutSecs();
         if (timeout > 0) {
-#ifdef __linux__
+#if defined(__linux__) && HAVE_PIDFD
           int e = pidfd_send_signal(proc->GetPidFd().Fd(), SIGTERM, nullptr, 0);
           if (e != 0) {
             client->Log(proc->Name(), toolbelt::LogLevel::kError,
@@ -845,7 +845,7 @@ absl::Status Process::Stop(co::Coroutine *c) {
           client->Log(proc->Name(), toolbelt::LogLevel::kDebug,
                       "Killing process %s with SIGTERM (timeout %d seconds)",
                       proc->Name().c_str(), timeout);
-#ifdef __linux__
+#if defined(__linux__) && HAVE_PIDFD
 		  c2->Wait(proc->GetPidFd().Fd(), POLLIN, std::chrono::nanoseconds(timeout).count());
 #else
           (void)proc->WaitLoop(c2, std::chrono::seconds(timeout));
@@ -857,7 +857,7 @@ absl::Status Process::Stop(co::Coroutine *c) {
           client->Log(proc->Name(), toolbelt::LogLevel::kDebug,
                       "Killing process %s with SIGKILL", proc->Name().c_str());
 
-#ifdef __linux__
+#if defined(__linux__) && HAVE_PIDFD
           int e = pidfd_send_signal(proc->GetPidFd().Fd(), SIGKILL, nullptr, 0);
           if (e != 0) {
             client->Log(proc->Name(), toolbelt::LogLevel::kError,
@@ -1126,7 +1126,7 @@ Zygote::Spawn(const stagezero::control::LaunchVirtualProcessRequest &req,
   if (!response.error().empty()) {
     return absl::InternalError(response.error());
   }
-#ifdef __linux__
+#if defined(__linux__) && HAVE_PIDFD
   toolbelt::FileDescriptor pidfd(std::move(fds[response.pidfd_index()]));
   return std::make_pair(response.pid(), std::move(pidfd));
 #else
@@ -1184,7 +1184,7 @@ absl::Status VirtualProcess::Start(co::Coroutine *c) {
   }
   SetPid(pids->first);
   SetProcessId();
-#ifdef __linux__
+#if defined(__linux__) && HAVE_PIDFD
   SetPidFd(std::move(pids->second));
 #endif
 
@@ -1317,14 +1317,14 @@ absl::Status Process::AddToCgroup(int pid) {
   if (cgroup_.empty()) {
     return absl::OkStatus();
   }
-  return stagezero::AddToCgroup(Name(), cgroup_, pid);
+  return stagezero::AddToCgroup(Name(), cgroup_, pid, client_->GetLogger());
 }
 
 absl::Status Process::RemoveFromCgroup(int pid) {
   if (cgroup_.empty()) {
     return absl::OkStatus();
   }
-  return stagezero::RemoveFromCgroup(Name(), cgroup_, pid);
+  return stagezero::RemoveFromCgroup(Name(), cgroup_, pid, client_->GetLogger());
 }
 
 } // namespace adastra::stagezero

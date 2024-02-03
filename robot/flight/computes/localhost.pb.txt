@@ -5,18 +5,20 @@ compute {
 
   cgroups {
     name: "high"
-    cpuset: "0-4"
-    cpushare: 1024
-    memory: 100000
+    cpuset {
+      cpus: "0-1"
+    }
   }
   cgroups {
     name: "zygote"
-    cpuset: "0-2"
-    cpushare: 600
+    cpuset {
+      cpus: "2-3"
+    }
   }
   cgroups {
     name: "ipc"
-    cpuset: "0-2"
-    cpushare: 800
+    cpuset {
+      cpus: "1"
+    }
   }
 }

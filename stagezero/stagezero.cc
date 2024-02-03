@@ -263,11 +263,11 @@ void StageZero::KillAllProcesses(bool emergency, co::Coroutine *c) {
 }
 
 absl::Status StageZero::RegisterCgroup(const Cgroup &cgroup) {
-  return CreateCgroup(cgroup);
+  return adastra::stagezero::CreateCgroup(cgroup, logger_);
 }
 
 absl::Status StageZero::UnregisterCgroup(const std::string &cgroup) {
-  return RemoveCgroup(cgroup);
+  return adastra::stagezero::RemoveCgroup(cgroup, logger_);
 }
 
 absl::Status StageZero::SendProcessStartEvent(const std::string &process_id) {
