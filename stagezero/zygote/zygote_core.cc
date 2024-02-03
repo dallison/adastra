@@ -98,7 +98,7 @@ absl::Status ZygoteCore::Run() {
             // pipe.  Set the top bit to distinguish this from any other
             // notification.
             logger_.Log(toolbelt::LogLevel::kDebug, "Process %d died", pid);
-            uint64_t val = (1LL << 63) | (static_cast<uint64_t>(pid) << 32) |
+            uint64_t val = (1LL << 63LL) | (static_cast<uint64_t>(pid) << 32LL) |
                            static_cast<uint64_t>(status);
             (void)write(notification_pipe_.Fd(), &val, 8);
           }

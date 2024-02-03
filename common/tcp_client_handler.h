@@ -25,7 +25,12 @@ class TCPClientHandler : public std::enable_shared_from_this<
                              TCPClientHandler<Request, Response, Event>> {
 public:
   TCPClientHandler(toolbelt::TCPSocket socket)
-      : command_socket_(std::move(socket)) {}
+      : command_socket_(std::move(socket)) {
+        if (absl::Status status = stop_trigger_.Open(); !status.ok()) {
+          std::cerr << "Failed to open stop trigger: " << status << std::endl;
+          abort();
+        }
+      }
   virtual ~TCPClientHandler() = default;
 
   void Run(co::Coroutine *c);
@@ -127,6 +132,10 @@ inline void TCPClientHandler<Request, Response, Event>::Run(co::Coroutine *c) {
       return;
     }
 
+    if (*n == 0) {
+      // EOF.
+      return;
+    }
     Request request;
     if (request.ParseFromArray(command_buffer_, *n)) {
       Response response;

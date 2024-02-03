@@ -84,8 +84,12 @@ constexpr long double operator"" _hz(long double f) { return f; }
 constexpr long double operator"" _khz(long double f) { return f * 1000; }
 constexpr long double operator"" _mhz(long double f) { return f * 1000000; }
 constexpr long double operator"" _hz(unsigned long long f) { return f; }
-constexpr long double operator"" _khz(unsigned long long f) { return f * 1000.0; }
-constexpr long double operator"" _mhz(unsigned long long f) { return f * 1000000.0; }
+constexpr long double operator"" _khz(unsigned long long f) {
+  return f * 1000.0;
+}
+constexpr long double operator"" _mhz(unsigned long long f) {
+  return f * 1000000.0;
+}
 } // namespace frequency_literals
 
 class Module {
@@ -758,13 +762,15 @@ Module::RegisterZeroCopyPublisher(
 
 #define _DEFINE_MODULE(_type, _main)                                           \
   extern "C" void _main(const char *enc_syms, int syms_len, int argc,          \
+                        char **argv);                                          \
+  extern "C" void _main(const char *enc_syms, int syms_len, int argc,          \
                         char **argv) {                                         \
     absl::InitializeSymbolizer(argv[0]);                                       \
                                                                                \
     absl::InstallFailureSignalHandler({                                        \
         .use_alternate_stack = false,                                          \
     });                                                                        \
-    auto symbols = std::make_unique<adastra::stagezero::SymbolTable>();                 \
+    auto symbols = std::make_unique<adastra::stagezero::SymbolTable>();        \
     std::stringstream symstream;                                               \
     symstream.write(enc_syms, syms_len);                                       \
     symbols->Decode(symstream);                                                \

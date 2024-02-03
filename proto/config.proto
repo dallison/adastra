@@ -7,14 +7,8 @@ syntax = "proto3";
 package adastra.stagezero.config;
 
 import "proto/stream.proto";
+import "proto/cgroup.proto";
 
-// Cgroups are supported only on Linux.
-message Cgroup {
-  string name = 1;
-  string cpuset = 2;
-  uint32 cpushare = 3;
-  uint64 memory = 4;
-}
 
 message Compute {
   string name = 1;

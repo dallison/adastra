@@ -9,6 +9,7 @@ package adastra.stagezero.control;
 import "proto/config.proto";
 import "proto/stream.proto";
 import "proto/log.proto";
+import "proto/cgroup.proto";
 
 message InitRequest {
   string client_name = 1;

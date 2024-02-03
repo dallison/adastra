@@ -335,10 +335,8 @@ void ClientHandler::HandleAbort(const control::AbortRequest &req,
 void ClientHandler::HandleAddCgroup(const control::AddCgroupRequest &req,
                                     control::AddCgroupResponse *response,
                                     co::Coroutine *c) {
-  Cgroup cgroup = {.name = req.cgroup().name(),
-                   .cpuset = req.cgroup().cpuset(),
-                   .cpushare = req.cgroup().cpushare(),
-                   .memory = req.cgroup().memory()};
+  Cgroup cgroup;
+  cgroup.FromProto(req.cgroup());
 
   if (!stagezero_.AddCgroup(req.cgroup().name(), cgroup)) {
     response->set_error(absl::StrFormat(

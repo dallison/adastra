@@ -1,0 +1,64 @@
+// Copyright 2024 David Allison
+// All Rights Reserved
+// See LICENSE file for licensing information.
+
+syntax = "proto3";
+
+package adastra.stagezero.config;
+
+
+// Cgroups are supported only on Linux.
+// https://docs.kernel.org/admin-guide/cgroup-v2.html
+message Cgroup {
+  enum Type {
+    CG_DOMAIN = 0;
+    CG_DOMAIN_THREADED = 1;
+    CG_THREADED = 2;
+  }
+
+  message CpuController {
+    optional int32 weight = 1;
+    optional int32 weight_nice = 2;
+    optional int32 max = 3;
+    optional int32 max_burst = 4;
+    optional float uclamp_min = 5;
+    optional float uclamp_max = 6;
+    optional int32 idle = 7;
+  }
+
+  message MemoryController {
+    optional int64 min = 1;
+    optional int64 low = 2;
+    optional int64 high = 3;
+    optional int64 max = 4;
+    optional int32 oom_group = 5;
+    optional int64 swap_high = 6;
+    optional int64 swap_max = 7;
+    optional int64 zswap_max = 9;
+    optional int32 zswap_writeback = 10;
+  }
+
+  message CpusetController {
+    enum Partition {
+      P_MEMBER = 0;
+      P_ROOT = 1;
+      P_ISOLATED = 2;
+    }
+    optional string cpus = 1;
+    optional string mems = 2;
+    optional string cpus_exclusive = 3;
+    optional Partition partition = 4;
+  }
+
+  message IOController {
+    optional int32 weight = 1;
+    optional string max = 2;
+  }
+
+  Type type = 1;
+  string name = 2;
+  CpusetController cpuset = 3;
+  CpuController cpu = 4;
+  MemoryController memory = 5;
+  IOController io = 6;
+}

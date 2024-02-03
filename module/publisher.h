@@ -1,11 +1,11 @@
 #pragma once
 #include "absl/types/span.h"
-#include "google/protobuf/message.h"
 #include "client/client.h"
 #include "coroutine.h"
+#include "google/protobuf/message.h"
+#include "module/subscriber.h"
 #include "toolbelt/triggerfd.h"
 #include <vector>
-#include "module/subscriber.h"
 
 namespace adastra::module {
 
@@ -108,8 +108,8 @@ template <typename MessageType> class ZeroCopyPublisher : public PublisherBase {
 public:
   ZeroCopyPublisher(Module &module, subspace::Publisher pub,
                     PublisherOptions options,
-                    std::function<bool(std::shared_ptr<ZeroCopyPublisher>, MessageType &,
-                                       co::Coroutine *)>
+                    std::function<bool(std::shared_ptr<ZeroCopyPublisher>,
+                                       MessageType &, co::Coroutine *)>
                         callback)
       : ZeroCopyPublisher<MessageType>(module, std::move(pub),
                                        std::move(options)) {
@@ -148,7 +148,8 @@ public:
   void Run();
 
 private:
-  std::function<bool(std::shared_ptr<ZeroCopyPublisher>, MessageType &, co::Coroutine *)>
+  std::function<bool(std::shared_ptr<ZeroCopyPublisher>, MessageType &,
+                     co::Coroutine *)>
       callback_;
 };
-}
+} // namespace adastra::module

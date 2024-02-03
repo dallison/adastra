@@ -1,8 +1,8 @@
 #pragma once
-#include <variant>
 #include "absl/types/span.h"
-#include "google/protobuf/message.h"
 #include "client/client.h"
+#include "google/protobuf/message.h"
+#include <variant>
 
 namespace adastra::module {
 
@@ -118,4 +118,4 @@ private:
   std::variant<std::shared_ptr<MessageType>, subspace::shared_ptr<MessageType>>
       msg_;
 };
-}
+} // namespace adastra::module
