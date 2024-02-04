@@ -118,6 +118,9 @@ public:
   absl::Status Abort(const std::string &reason, bool emergency, co::Coroutine *co = nullptr);
 
   absl::Status RegisterCgroup(const Cgroup& cgroup, co::Coroutine *co = nullptr);
+  absl::Status FreezeCgroup(const std::string& cgroup, co::Coroutine *co = nullptr);
+  absl::Status ThawCgroup(const std::string& cgroup, co::Coroutine *co = nullptr);
+  absl::Status KillCgroup(const std::string& cgroup, co::Coroutine *co = nullptr);
 
 private:
   absl::StatusOr<std::pair<std::string, int>> LaunchStaticProcessInternal(

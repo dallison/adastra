@@ -1,10 +1,13 @@
 #!/bin/bash
 
-export RUNFILES_DIR=bazel-bin/flight/flight.runfiles
+# This is used by stagezero to set the value of ${runfiles_dir}
+export RUNFILES_DIR=bazel-bin/run_flight.runfiles
 
 SILENT=true
 TEST_MODE=false
-# SUDO=sudo
+
+# Uncomment this to run stagezero as root.
+#SUDO=sudo
 
 echo Running stagezero
 if [[ "$SUDO" != "" ]]; then

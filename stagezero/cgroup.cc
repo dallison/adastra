@@ -63,59 +63,32 @@ static absl::Status WriteFile(std::filesystem::path file,
   return absl::OkStatus();
 }
 
+// Write a field to a file.
+#define W(obj, field, file)                                                    \
+  if (absl::Status status = WriteFile(cgroup / #obj #file, obj.field);         \
+      !status.ok()) {                                                          \
+    return status;                                                             \
+  }
+
 static absl::Status SetCpuController(std::filesystem::path cgroup,
                                      const CgroupCpuController &cpu) {
 
-  if (absl::Status status = WriteFile(cgroup / "cpu.weight", cpu.weight);
-      !status.ok()) {
-    return status;
-  }
+  W(cpu, weight, weight);
+  W(cpu, weight_nice, weight.nice);
+  W(cpu, max, max);
+  W(cpu, max_burst, max);
+  W(cpu, uclamp_min, uclamp.min);
+  W(cpu, uclamp_max, uclamp.max);
+  W(cpu, idle, idle);
 
-  if (absl::Status status =
-          WriteFile(cgroup / "cpu.weight.nice", cpu.weight_nice);
-      !status.ok()) {
-    return status;
-  }
-  if (absl::Status status = WriteFile(cgroup / "cpu.max", cpu.max);
-      !status.ok()) {
-    return status;
-  }
-  if (absl::Status status = WriteFile(cgroup / "cpu.max.burst", cpu.max_burst);
-      !status.ok()) {
-    return status;
-  }
-  if (absl::Status status =
-          WriteFile(cgroup / "cpu.uclamp.min", cpu.uclamp_min);
-      !status.ok()) {
-    return status;
-  }
-  if (absl::Status status =
-          WriteFile(cgroup / "cpu.uclamp.max", cpu.uclamp_max);
-      !status.ok()) {
-    return status;
-  }
-  if (absl::Status status = WriteFile(cgroup / "cpu.idle", cpu.idle);
-      !status.ok()) {
-    return status;
-  }
   return absl::OkStatus();
 }
 
 static absl::Status SetCpusetController(std::filesystem::path cgroup,
                                         const CgroupCpusetController &cpuset) {
-  if (absl::Status status = WriteFile(cgroup / "cpuset.cpus", cpuset.cpus);
-      !status.ok()) {
-    return status;
-  }
-  if (absl::Status status = WriteFile(cgroup / "cpuset.mems", cpuset.mems);
-      !status.ok()) {
-    return status;
-  }
-  if (absl::Status status =
-          WriteFile(cgroup / "cpuset.cpus.exclusive", cpuset.cpus_exclusive);
-      !status.ok()) {
-    return status;
-  }
+  W(cpuset, cpus, cpus);
+  W(cpuset, mems, mems);
+  W(cpuset, cpus_exclusive, cpus.exclusive);
 
   if (cpuset.partition.has_value()) {
     switch (cpuset.partition.value()) {
@@ -127,12 +100,16 @@ static absl::Status SetCpusetController(std::filesystem::path cgroup,
       }
       break;
     case CgroupCpusetController::Partition::kRoot:
+      W(cpuset, mems, mems);
+
       if (absl::Status status = WriteFile(cgroup / "cpuset.partition", "root");
           !status.ok()) {
         return status;
       }
       break;
     case CgroupCpusetController::Partition::kIsolated:
+      W(cpuset, mems, mems);
+
       if (absl::Status status =
               WriteFile(cgroup / "cpuset.partition", "isolated");
           !status.ok()) {
@@ -146,63 +123,61 @@ static absl::Status SetCpusetController(std::filesystem::path cgroup,
 
 static absl::Status SetMemoryController(std::filesystem::path cgroup,
                                         const CgroupMemoryController &memory) {
-  if (absl::Status status = WriteFile(cgroup / "memory.min", memory.min);
-      !status.ok()) {
-    return status;
-  }
-  if (absl::Status status = WriteFile(cgroup / "memory.low", memory.low);
-      !status.ok()) {
-    return status;
-  }
-
-  if (absl::Status status = WriteFile(cgroup / "memory.high", memory.high);
-      !status.ok()) {
-    return status;
-  }
-  if (absl::Status status = WriteFile(cgroup / "memory.max", memory.max);
-      !status.ok()) {
-    return status;
-  }
-  if (absl::Status status =
-          WriteFile(cgroup / "memory.oom.group", memory.oom_group);
-      !status.ok()) {
-    return status;
-  }
-  if (absl::Status status =
-          WriteFile(cgroup / "memory.swap.high", memory.swap_high);
-      !status.ok()) {
-    return status;
-  }
-  if (absl::Status status =
-          WriteFile(cgroup / "memory.swap.max", memory.swap_max);
-      !status.ok()) {
-    return status;
-  }
-  if (absl::Status status =
-          WriteFile(cgroup / "memory.zswap.max", memory.zswap_max);
-      !status.ok()) {
-    return status;
-  }
-  if (absl::Status status =
-          WriteFile(cgroup / "memory.zswap.writeback", memory.zswap_writeback);
-      !status.ok()) {
-    return status;
-  }
+  W(memory, min, min);
+  W(memory, low, low);
+  W(memory, high, high);
+  W(memory, max, max);
+  W(memory, oom_group, oom.group);
+  W(memory, swap_high, swap.high);
+  W(memory, swap_max, swap.max);
+  W(memory, zswap_max, zswap.max);
+  W(memory, zswap_writeback, zswapwriteback);
   return absl::OkStatus();
 }
 
 static absl::Status SetIOController(std::filesystem::path cgroup,
                                     const CgroupIOController &io) {
-  if (absl::Status status = WriteFile(cgroup / "io.weight", io.weight);
-      !status.ok()) {
-    return status;
+  W(io, weight, weight);
+  W(io, max, max);
+  return absl::OkStatus();
+}
+
+static absl::Status SetPIDController(std::filesystem::path cgroup,
+                                     const CgroupPIDController &pid) {
+  if (!pid.max.has_value()) {
+    if (absl::Status status = WriteFile(cgroup / "pid.max", "max");
+        !status.ok()) {
+      return status;
+    }
+    return absl::OkStatus();
   }
-  if (absl::Status status = WriteFile(cgroup / "io.max", io.max);
-      !status.ok()) {
-    return status;
+  W(pid, max, max);
+  return absl::OkStatus();
+}
+
+static absl::Status SetRDMAController(std::filesystem::path cgroup,
+                                      const CgroupRDMAController &rdma) {
+  std::filesystem::path file = cgroup / "rdma.max";
+  std::ofstream out(file);
+  if (!out) {
+    return absl::InternalError(
+        absl::StrFormat("Failed to write to file %s", file));
+  }
+  for (auto &dev : rdma.devices) {
+    std::string line;
+    if (dev.hca_object.has_value()) {
+      line = absl::StrFormat("%s hca_handle=%d hca_object=%d", dev.name,
+                             dev.hca_handle, dev.hca_object.value());
+    } else {
+      line = absl::StrFormat("%s hca_handle=%d hca_object=max", dev.name,
+                             dev.hca_handle);
+    }
+    out << line << std::endl;
   }
   return absl::OkStatus();
 }
+
+#undef W
 
 absl::Status CreateCgroup(const Cgroup &cgroup, toolbelt::Logger &logger) {
   bool cgroups_supported = true;
@@ -228,11 +203,31 @@ absl::Status CreateCgroup(const Cgroup &cgroup, toolbelt::Logger &logger) {
   std::error_code error;
   if (!std::filesystem::exists(cgroup_path)) {
     if (!std::filesystem::create_directories(cgroup_path, error)) {
-      return absl::InternalError(absl::StrFormat("Failed to create cgroup %s: %s",
-                                                 cgroup.name, error.message()));
+      return absl::InternalError(absl::StrFormat(
+          "Failed to create cgroup %s: %s", cgroup.name, error.message()));
     }
   }
 
+  // Write the type to cgroup.type.
+  std::ofstream out(cgroup_path / "cgroup.type");
+  if (!out) {
+    return absl::InternalError(
+        absl::StrFormat("Failed to write cgroup.type: %s", strerror(errno)));
+  }
+  switch (cgroup.type) {
+  case CgroupType::kDomain:
+    out << "domain\n";
+    break;
+  case CgroupType::kDomainThreaded:
+    out << "domain threaded\n";
+    break;
+  case CgroupType::kThreaded:
+    out << "threaded\n";
+    break;
+  }
+  out.close();
+
+  // Write all the cgroup controllers.
   if (cgroup.cpu != nullptr) {
     if (absl::Status status = SetCpuController(cgroup_path, *cgroup.cpu);
         !status.ok()) {
@@ -258,7 +253,18 @@ absl::Status CreateCgroup(const Cgroup &cgroup, toolbelt::Logger &logger) {
       return status;
     }
   }
-
+  if (cgroup.pid != nullptr) {
+    if (absl::Status status = SetPIDController(cgroup_path, *cgroup.pid);
+        !status.ok()) {
+      return status;
+    }
+  }
+  if (cgroup.rdma != nullptr) {
+    if (absl::Status status = SetRDMAController(cgroup_path, *cgroup.rdma);
+        !status.ok()) {
+      return status;
+    }
+  }
   return absl::OkStatus();
 }
 
@@ -307,30 +313,54 @@ absl::Status AddToCgroup(const std::string &proc, const std::string &cgroup,
 
     return absl::OkStatus();
   }
+  std::filesystem::path cgroup_path(
+      absl::StrFormat("/sys/fs/cgroup/%s", cgroup));
+
+  std::ofstream out(cgroup_path / "cgroup.procs");
+  if (!out) {
+    return absl::InternalError(
+        absl::StrFormat("Failed to write cgroup.procs: %s", strerror(errno)));
+  }
+  out << pid << std::endl;
   return absl::OkStatus();
 }
 
-absl::Status RemoveFromCgroup(const std::string &proc,
-                              const std::string &cgroup, int pid,
-                              toolbelt::Logger &logger) {
-  bool cgroups_supported = true;
-#if !defined(__linux__)
-  cgroups_supported = false;
-#endif
-  if (!cgroups_supported) {
-    logger.Log(toolbelt::LogLevel::kInfo,
-               "Cgroups are not supported on this OS; removal of process %s "
-               "with pid %d from cgroup '%s' ignored",
-               proc.c_str(), pid, cgroup.c_str());
-    return absl::OkStatus();
+absl::Status FreezeCgroup(const std::string &cgroup) {
+  std::filesystem::path cgroup_path(
+      absl::StrFormat("/sys/fs/cgroup/%s", cgroup));
+
+  std::ofstream out(cgroup_path / "cgroup.freeze");
+  if (!out) {
+    return absl::InternalError(
+        absl::StrFormat("Failed to write cgroup.freeze: %s", strerror(errno)));
   }
-  if (geteuid() != 0) {
-    // Not root.
-    logger.Log(toolbelt::LogLevel::kInfo,
-               "Not running as root;; removal of process %s "
-               "with pid %d from cgroup '%s' ignored",
-               proc.c_str(), pid, cgroup.c_str());
+  out << 1 << std::endl;
+  return absl::OkStatus();
+}
+
+absl::Status ThawCgroup(const std::string &cgroup) {
+  std::filesystem::path cgroup_path(
+      absl::StrFormat("/sys/fs/cgroup/%s", cgroup));
+
+  std::ofstream out(cgroup_path / "cgroup.freeze");
+  if (!out) {
+    return absl::InternalError(
+        absl::StrFormat("Failed to write cgroup.freeze: %s", strerror(errno)));
   }
+  out << 0 << std::endl;
+  return absl::OkStatus();
+}
+
+absl::Status KillCgroup(const std::string &cgroup) {
+  std::filesystem::path cgroup_path(
+      absl::StrFormat("/sys/fs/cgroup/%s", cgroup));
+
+  std::ofstream out(cgroup_path / "cgroup.kill");
+  if (!out) {
+    return absl::InternalError(
+        absl::StrFormat("Failed to write cgroup.kill: %s", strerror(errno)));
+  }
+  out << 1 << std::endl;
   return absl::OkStatus();
 }
 

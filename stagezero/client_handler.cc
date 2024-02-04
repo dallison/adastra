@@ -4,6 +4,7 @@
 
 #include "stagezero/client_handler.h"
 #include "absl/strings/str_format.h"
+#include "stagezero/cgroup.h"
 #include "stagezero/stagezero.h"
 #include "toolbelt/clock.h"
 #include "toolbelt/hexdump.h"
@@ -97,6 +98,18 @@ absl::Status ClientHandler::HandleMessage(const control::Request &req,
     HandleRemoveCgroup(req.remove_cgroup(), resp.mutable_remove_cgroup(), c);
     break;
 
+  case control::Request::kFreezeCgroup:
+    HandleFreezeCgroup(req.freeze_cgroup(), resp.mutable_freeze_cgroup(), c);
+    break;
+
+  case control::Request::kThawCgroup:
+    HandleThawCgroup(req.thaw_cgroup(), resp.mutable_thaw_cgroup(), c);
+    break;
+
+  case control::Request::kKillCgroup:
+    HandleKillCgroup(req.kill_cgroup(), resp.mutable_kill_cgroup(), c);
+    break;
+
   case control::Request::REQUEST_NOT_SET:
     return absl::InternalError("Protocol error: unknown request");
   }
@@ -142,8 +155,8 @@ void ClientHandler::HandleLaunchStaticProcess(
 void ClientHandler::HandleLaunchZygote(
     const control::LaunchStaticProcessRequest &&req,
     control::LaunchResponse *response, co::Coroutine *c) {
-  auto zygote = std::make_shared<Zygote>(GetScheduler(), stagezero_, shared_from_this(),
-                                         std::move(req));
+  auto zygote = std::make_shared<Zygote>(GetScheduler(), stagezero_,
+                                         shared_from_this(), std::move(req));
   absl::Status status = zygote->Start(c);
   if (!status.ok()) {
     response->set_error(status.ToString());
@@ -365,4 +378,36 @@ void ClientHandler::HandleRemoveCgroup(const control::RemoveCgroupRequest &req,
                                         req.cgroup(), status.ToString()));
   }
 }
+
+void ClientHandler::HandleFreezeCgroup(const control::FreezeCgroupRequest &req,
+                                       control::FreezeCgroupResponse *response,
+                                       co::Coroutine *c) {
+  if (absl::Status status = adastra::stagezero::FreezeCgroup(req.cgroup());
+      !status.ok()) {
+    response->set_error(absl::StrFormat("Failed to freeze cgroup %s: %s",
+                                        req.cgroup(), status.ToString()));
+  }
+}
+
+void ClientHandler::HandleThawCgroup(const control::ThawCgroupRequest &req,
+                                     control::ThawCgroupResponse *response,
+                                     co::Coroutine *c) {
+
+  if (absl::Status status = adastra::stagezero::ThawCgroup(req.cgroup());
+      !status.ok()) {
+    response->set_error(absl::StrFormat("Failed to freeze cgroup %s: %s",
+                                        req.cgroup(), status.ToString()));
+  }
+}
+
+void ClientHandler::HandleKillCgroup(const control::KillCgroupRequest &req,
+                                     control::KillCgroupResponse *response,
+                                     co::Coroutine *c) {
+  if (absl::Status status = adastra::stagezero::KillCgroup(req.cgroup());
+      !status.ok()) {
+    response->set_error(absl::StrFormat("Failed to freeze cgroup %s: %s",
+                                        req.cgroup(), status.ToString()));
+  }
+}
+
 } // namespace adastra::stagezero

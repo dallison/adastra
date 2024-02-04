@@ -104,6 +104,30 @@ message RemoveCgroupResponse {
   string error = 1;
 }
 
+message FreezeCgroupRequest {
+  string cgroup = 1;
+}
+
+message FreezeCgroupResponse {
+  string error = 1;
+}
+
+message ThawCgroupRequest {
+  string cgroup = 1;
+}
+
+message ThawCgroupResponse {
+  string error = 1;
+}
+
+message KillCgroupRequest {
+  string cgroup = 1;
+}
+
+message KillCgroupResponse {
+  string error = 1;
+}
+
 message Request {
   oneof request {
     InitRequest init = 1;
@@ -118,6 +142,9 @@ message Request {
     AbortRequest abort = 10;
     AddCgroupRequest add_cgroup = 11;
     RemoveCgroupRequest remove_cgroup = 12;
+    FreezeCgroupRequest freeze_cgroup = 13;
+    ThawCgroupRequest thaw_cgroup = 14;
+    KillCgroupRequest kill_cgroup = 15;
   }
 }
 
@@ -133,7 +160,9 @@ message Response {
     AbortResponse abort = 8;
     AddCgroupResponse add_cgroup = 9;
     RemoveCgroupResponse remove_cgroup = 10;
-  }
+    FreezeCgroupResponse freeze_cgroup = 11;
+    ThawCgroupResponse thaw_cgroup = 12;
+    KillCgroupResponse kill_cgroup = 13;  }
 }
 
 message StartEvent { string process_id = 1; }

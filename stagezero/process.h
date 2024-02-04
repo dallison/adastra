@@ -108,7 +108,6 @@ public:
   void SetCgroup(const std::string &cgroup) { cgroup_ = cgroup; }
 
   absl::Status AddToCgroup(int pid);
-  absl::Status RemoveFromCgroup(int pid);
 
   bool IsDetached() const { return detached_; }
 

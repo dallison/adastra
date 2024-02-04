@@ -212,13 +212,6 @@ StaticProcess::StartInternal(const std::vector<std::string> extra_env_vars,
         // now but ignore it if it's already gone.
         client->TryRemoveProcess(proc);
 
-        if (absl::Status status = proc->RemoveFromCgroup(proc->GetPid());
-            !status.ok()) {
-          client->Log(proc->Name(), toolbelt::LogLevel::kError, "%s\n",
-                      status.ToString().c_str());
-          return;
-        }
-
         bool signaled = WIFSIGNALED(status);
         bool exited = WIFEXITED(status);
         int term_sig = WTERMSIG(status);
@@ -1241,13 +1234,6 @@ absl::Status VirtualProcess::Start(co::Coroutine *c) {
     int status = vproc->WaitForZygoteNotification(c2);
     zygote->RemoveVirtualProcess(vproc);
 
-    if (absl::Status status = proc->RemoveFromCgroup(proc->GetPid());
-        !status.ok()) {
-      client->Log(proc->Name(), toolbelt::LogLevel::kError,
-                  "Failed to remove process %s from cgroup: %s",
-                  proc->Name().c_str(), status.ToString().c_str());
-    }
-
     bool signaled = WIFSIGNALED(status);
     bool exited = WIFEXITED(status);
     int term_sig = WTERMSIG(status);
@@ -1320,11 +1306,5 @@ absl::Status Process::AddToCgroup(int pid) {
   return stagezero::AddToCgroup(Name(), cgroup_, pid, client_->GetLogger());
 }
 
-absl::Status Process::RemoveFromCgroup(int pid) {
-  if (cgroup_.empty()) {
-    return absl::OkStatus();
-  }
-  return stagezero::RemoveFromCgroup(Name(), cgroup_, pid, client_->GetLogger());
-}
 
 } // namespace adastra::stagezero

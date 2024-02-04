@@ -14,8 +14,8 @@
 #include "toolbelt/sockets.h"
 #include "toolbelt/triggerfd.h"
 
-#include <list>
 #include "absl/container/flat_hash_map.h"
+#include <list>
 
 #include "coroutine.h"
 
@@ -26,7 +26,7 @@ class StageZero;
 class ClientHandler
     : public common::TCPClientHandler<control::Request, control::Response,
                                       control::Event> {
- public:
+public:
   ClientHandler(StageZero &stagezero, toolbelt::TCPSocket socket)
       : TCPClientHandler(std::move(socket)), stagezero_(stagezero) {}
   ~ClientHandler() = default;
@@ -53,14 +53,14 @@ class ClientHandler
   void AddCoroutine(std::unique_ptr<co::Coroutine> c) override;
 
   void StopAllCoroutines();
-  
+
   const std::string &GetCompute() const;
 
-  StageZero& GetStageZero() const { return stagezero_; }
-  
+  StageZero &GetStageZero() const { return stagezero_; }
+
   void KillAllProcesses();
 
- private:
+private:
   std::shared_ptr<ClientHandler> shared_from_this() {
     return std::static_pointer_cast<ClientHandler>(
         TCPClientHandler<control::Request, control::Response,
@@ -74,16 +74,18 @@ class ClientHandler
   void HandleInit(const control::InitRequest &req,
                   control::InitResponse *response, co::Coroutine *c);
 
-  void HandleLaunchStaticProcess(
-      const control::LaunchStaticProcessRequest &&req,
-      control::LaunchResponse *response, co::Coroutine *c);
+  void
+  HandleLaunchStaticProcess(const control::LaunchStaticProcessRequest &&req,
+                            control::LaunchResponse *response,
+                            co::Coroutine *c);
 
   void HandleLaunchZygote(const control::LaunchStaticProcessRequest &&req,
                           control::LaunchResponse *response, co::Coroutine *c);
 
-  void HandleLaunchVirtualProcess(
-      const control::LaunchVirtualProcessRequest &&req,
-      control::LaunchResponse *response, co::Coroutine *c);
+  void
+  HandleLaunchVirtualProcess(const control::LaunchVirtualProcessRequest &&req,
+                             control::LaunchResponse *response,
+                             co::Coroutine *c);
 
   void HandleStopProcess(const control::StopProcessRequest &req,
                          control::StopProcessResponse *response,
@@ -107,11 +109,22 @@ class ClientHandler
   void HandleAbort(const control::AbortRequest &req,
                    control::AbortResponse *response, co::Coroutine *c);
 
-void HandleAddCgroup(const control::AddCgroupRequest &req,
-                   control::AddCgroupResponse *response, co::Coroutine *c);
+  void HandleAddCgroup(const control::AddCgroupRequest &req,
+                       control::AddCgroupResponse *response, co::Coroutine *c);
 
   void HandleRemoveCgroup(const control::RemoveCgroupRequest &req,
-                   control::RemoveCgroupResponse *response, co::Coroutine *c);   
+                          control::RemoveCgroupResponse *response,
+                          co::Coroutine *c);
+
+  void HandleFreezeCgroup(const control::FreezeCgroupRequest &req,
+                          control::FreezeCgroupResponse *response,
+                          co::Coroutine *c);
+  void HandleThawCgroup(const control::ThawCgroupRequest &req,
+                        control::ThawCgroupResponse *response,
+                        co::Coroutine *c);
+  void HandleKillCgroup(const control::KillCgroupRequest &req,
+                        control::KillCgroupResponse *response,
+                        co::Coroutine *c);
 
   void AddProcess(const std::string &id, std::shared_ptr<Process> proc) {
     processes_.emplace(std::make_pair(id, std::move(proc)));
@@ -122,4 +135,4 @@ void HandleAddCgroup(const control::AddCgroupRequest &req,
   // Keep track of the processs we spawned here.
   absl::flat_hash_map<std::string, std::shared_ptr<Process>> processes_;
 };
-}  // namespace adastra::stagezero
+} // namespace adastra::stagezero

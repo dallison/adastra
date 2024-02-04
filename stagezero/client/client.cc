@@ -274,4 +274,67 @@ absl::Status Client::RegisterCgroup(const Cgroup &cgroup, co::Coroutine *co) {
   return absl::OkStatus();
 }
 
+absl::Status Client::FreezeCgroup(const std::string &cgroup,
+                                  co::Coroutine *co) {
+  if (co == nullptr) {
+    co = co_;
+  }
+  adastra::stagezero::control::Request req;
+  auto f = req.mutable_freeze_cgroup();
+  f->set_cgroup(cgroup);
+
+  adastra::stagezero::control::Response resp;
+  if (absl::Status status = SendRequestReceiveResponse(req, resp, co);
+      !status.ok()) {
+    return status;
+  }
+  auto &freeze_resp = resp.freeze_cgroup();
+  if (!freeze_resp.error().empty()) {
+    return absl::InternalError(
+        absl::StrFormat("Failed to freeze cgroup: %s", freeze_resp.error()));
+  }
+  return absl::OkStatus();
+}
+
+absl::Status Client::ThawCgroup(const std::string &cgroup, co::Coroutine *co) {
+  if (co == nullptr) {
+    co = co_;
+  }
+  adastra::stagezero::control::Request req;
+  auto f = req.mutable_thaw_cgroup();
+  f->set_cgroup(cgroup);
+
+  adastra::stagezero::control::Response resp;
+  if (absl::Status status = SendRequestReceiveResponse(req, resp, co);
+      !status.ok()) {
+    return status;
+  }
+  auto &thaw_resp = resp.add_cgroup();
+  if (!thaw_resp.error().empty()) {
+    return absl::InternalError(
+        absl::StrFormat("Failed to thaw cgroup: %s", thaw_resp.error()));
+  }
+  return absl::OkStatus();
+}
+
+absl::Status Client::KillCgroup(const std::string &cgroup, co::Coroutine *co) {
+  if (co == nullptr) {
+    co = co_;
+  }
+  adastra::stagezero::control::Request req;
+  auto f = req.mutable_kill_cgroup();
+  f->set_cgroup(cgroup);
+
+  adastra::stagezero::control::Response resp;
+  if (absl::Status status = SendRequestReceiveResponse(req, resp, co);
+      !status.ok()) {
+    return status;
+  }
+  auto &kill_resp = resp.add_cgroup();
+  if (!kill_resp.error().empty()) {
+    return absl::InternalError(
+        absl::StrFormat("Failed to kill cgroup: %s", kill_resp.error()));
+  }
+  return absl::OkStatus();
+}
 } // namespace adastra::stagezero

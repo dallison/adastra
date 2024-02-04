@@ -2,129 +2,71 @@
 
 namespace adastra {
 
+// ToProto converter.
+#define T(field)                                                               \
+  if (field.has_value()) {                                                     \
+    dest->set_##field(field.value());                                          \
+  }
+
+// FromProto converter.
+#define F(field)                                                               \
+  if (src.has_##field()) {                                                     \
+    field = src.field();                                                       \
+  }
+
 void CgroupCpuController::ToProto(
     stagezero::config::Cgroup::CpuController *dest) const {
-  if (weight.has_value()) {
-    dest->set_weight(weight.value());
-  }
-  if (weight_nice.has_value()) {
-    dest->set_weight_nice(weight_nice.value());
-  }
-  if (max.has_value()) {
-    dest->set_max(max.value());
-  }
-  if (max_burst.has_value()) {
-    dest->set_max_burst(max_burst.value());
-  }
-  if (uclamp_min.has_value()) {
-    dest->set_uclamp_min(uclamp_min.value());
-  }
-  if (uclamp_max.has_value()) {
-    dest->set_uclamp_max(uclamp_max.value());
-  }
-  if (idle.has_value()) {
-    dest->set_idle(idle.value());
-  }
+  T(weight);
+  T(weight_nice);
+  T(max);
+  T(max_burst);
+  T(uclamp_min);
+  T(uclamp_max);
+  T(idle);
 }
 
 void CgroupCpuController::FromProto(
     const stagezero::config::Cgroup::CpuController &src) {
-  if (src.has_weight()) {
-    weight = src.weight();
-  }
-  if (src.has_weight_nice()) {
-    weight_nice = src.weight_nice();
-  }
-  if (src.has_max()) {
-    max = src.max();
-  }
-  if (src.has_max_burst()) {
-    max_burst = src.max_burst();
-  }
-  if (src.has_uclamp_min()) {
-    uclamp_min = src.uclamp_min();
-  }
-  if (src.has_uclamp_max()) {
-    uclamp_max = src.uclamp_max();
-  }
-  if (src.has_idle()) {
-    idle = src.idle();
-  }
+  F(weight);
+  F(weight_nice);
+  F(max);
+  F(max_burst);
+  F(uclamp_min);
+  F(uclamp_max);
+  F(idle);
 }
 
 void CgroupMemoryController::ToProto(
     stagezero::config::Cgroup::MemoryController *dest) const {
-  if (min.has_value()) {
-    dest->set_min(min.value());
-  }
-  if (low.has_value()) {
-    dest->set_low(low.value());
-  }
-  if (high.has_value()) {
-    dest->set_high(high.value());
-  }
-  if (max.has_value()) {
-    dest->set_max(max.value());
-  }
-  if (oom_group.has_value()) {
-    dest->set_oom_group(oom_group.value());
-  }
-  if (swap_high.has_value()) {
-    dest->set_swap_high(swap_high.value());
-  }
-  if (swap_max.has_value()) {
-    dest->set_swap_max(swap_max.value());
-  }
-  if (zswap_max.has_value()) {
-    dest->set_zswap_max(zswap_max.value());
-  }
-  if (zswap_writeback.has_value()) {
-    dest->set_zswap_writeback(zswap_writeback.value());
-  }
+  T(min);
+  T(low);
+  T(high);
+  T(max);
+  T(oom_group);
+  T(swap_high);
+  T(swap_max);
+  T(zswap_max);
+  T(zswap_writeback);
 }
 
 void CgroupMemoryController::FromProto(
     const stagezero::config::Cgroup::MemoryController &src) {
-  if (src.has_min()) {
-    min = src.min();
-  }
-  if (src.has_low()) {
-    low = src.low();
-  }
-  if (src.has_high()) {
-    high = src.high();
-  }
-  if (src.has_max()) {
-    max = src.max();
-  }
-  if (src.has_oom_group()) {
-    oom_group = src.oom_group();
-  }
-  if (src.has_swap_high()) {
-    swap_high = src.swap_high();
-  }
-  if (src.has_swap_max()) {
-    swap_max = src.swap_max();
-  }
-  if (src.has_zswap_max()) {
-    zswap_max = src.zswap_max();
-  }
-  if (src.has_zswap_writeback()) {
-    zswap_writeback = src.zswap_writeback();
-  }
+  F(min);
+  F(low);
+  F(high);
+  F(max);
+  F(oom_group);
+  F(swap_high);
+  F(swap_max);
+  F(zswap_max);
+  F(zswap_writeback);
 }
 
 void CgroupCpusetController::ToProto(
     stagezero::config::Cgroup::CpusetController *dest) const {
-  if (cpus.has_value()) {
-    dest->set_cpus(cpus.value());
-  }
-  if (mems.has_value()) {
-    dest->set_mems(mems.value());
-  }
-  if (cpus_exclusive.has_value()) {
-    dest->set_cpus_exclusive(cpus_exclusive.value());
-  }
+  T(cpus);
+  T(mems);
+  T(cpus_exclusive);
   if (partition.has_value()) {
     switch (partition.value()) {
     case Partition::kMember:
@@ -144,15 +86,9 @@ void CgroupCpusetController::ToProto(
 
 void CgroupCpusetController::FromProto(
     const stagezero::config::Cgroup::CpusetController &src) {
-  if (src.has_cpus()) {
-    cpus = src.cpus();
-  }
-  if (src.has_mems()) {
-    mems = src.mems();
-  }
-  if (src.has_cpus_exclusive()) {
-    cpus_exclusive = src.cpus_exclusive();
-  }
+  F(cpus);
+  F(mems);
+  F(cpus_exclusive);
   if (src.has_partition()) {
     switch (src.partition()) {
     case stagezero::config::Cgroup::CpusetController::P_MEMBER:
@@ -172,21 +108,48 @@ void CgroupCpusetController::FromProto(
 
 void CgroupIOController::ToProto(
     stagezero::config::Cgroup::IOController *dest) const {
-  if (weight.has_value()) {
-    dest->set_weight(weight.value());
-  }
-  if (weight.has_value()) {
-    dest->set_max(max.value());
-  }
+  T(weight);
+  T(max);
 }
 
 void CgroupIOController::FromProto(
     const stagezero::config::Cgroup::IOController &src) {
-  if (src.has_weight()) {
-    weight = src.weight();
+  F(weight);
+  F(max);
+}
+
+void CgroupPIDController::ToProto(
+    stagezero::config::Cgroup::PIDController *dest) const {
+  T(max)
+}
+
+void CgroupPIDController::FromProto(
+    const stagezero::config::Cgroup::PIDController &src) {
+  F(max);
+}
+
+void CgroupRDMAController::ToProto(
+    stagezero::config::Cgroup::RDMAController *dest) const {
+  for (auto &device : devices) {
+    auto dev = dest->add_device();
+    dev->set_name(device.name);
+    dev->set_hca_handle(device.hca_handle);
+
+    if (device.hca_object.has_value()) {
+      dev->set_hca_object(device.hca_object.value());
+    }
   }
-  if (src.has_max()) {
-    max = src.max();
+}
+
+void CgroupRDMAController::FromProto(
+    const stagezero::config::Cgroup::RDMAController &src) {
+  for (auto &dev : src.device()) {
+    CgroupRDMAController::Device d = {.name = dev.name(),
+                              .hca_handle = dev.hca_handle()};
+    if (dev.has_hca_object()) {
+      d.hca_object = dev.hca_object();
+    }
+    devices.push_back(d);
   }
 }
 
@@ -214,6 +177,9 @@ void Cgroup::ToProto(stagezero::config::Cgroup *dest) const {
   }
   if (io != nullptr) {
     io->ToProto(dest->mutable_io());
+  }
+  if (pid != nullptr) {
+    pid->ToProto(dest->mutable_pid());
   }
 }
 
@@ -247,6 +213,10 @@ void Cgroup::FromProto(const stagezero::config::Cgroup &src) {
   if (src.has_io()) {
     io = std::make_shared<CgroupIOController>();
     io->FromProto(src.io());
+  }
+  if (src.has_pid()) {
+    pid = std::make_shared<CgroupPIDController>();
+    pid->FromProto(src.pid());
   }
 }
 } // namespace adastra

@@ -9,6 +9,12 @@ package adastra.stagezero.config;
 
 // Cgroups are supported only on Linux.
 // https://docs.kernel.org/admin-guide/cgroup-v2.html
+//
+// This implements almost all of the V2 cgroup controllers
+// in Linux.  The only one missing is the hugetlb controller
+// which I don't understand how to configure.
+//
+// TODO: add hugetlb controller.
 message Cgroup {
   enum Type {
     CG_DOMAIN = 0;
@@ -55,10 +61,25 @@ message Cgroup {
     optional string max = 2;
   }
 
+  message PIDController {
+    optional int32 max = 1;   // Omitted means "max"
+  }
+
+  message RDMAController {
+    message Device {
+      string name = 1;
+      int64 hca_handle = 2;
+      optional int64 hca_object = 3;
+    }
+    repeated Device device = 1;
+  }
+
   Type type = 1;
   string name = 2;
   CpusetController cpuset = 3;
   CpuController cpu = 4;
   MemoryController memory = 5;
   IOController io = 6;
+  PIDController pid = 7;
+  RDMAController rdma = 8;
 }

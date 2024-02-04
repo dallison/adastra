@@ -374,9 +374,10 @@ absl::Status ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
   }
 
   resp->set_pid(pid);
+  fds.clear();
+
 #ifdef __linux__
   int pidfd = pidfd_open(pid, 0);
-  fds.clear();
   fds.push_back(toolbelt::FileDescriptor(pidfd));
   resp->set_pidfd_index(0);
 #endif

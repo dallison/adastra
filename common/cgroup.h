@@ -65,6 +65,25 @@ struct CgroupIOController {
   void FromProto(const stagezero::config::Cgroup::IOController &src);
 };
 
+struct CgroupPIDController {
+  std::optional<int32_t> max;
+  void ToProto(stagezero::config::Cgroup::PIDController *dest) const;
+  void FromProto(const stagezero::config::Cgroup::PIDController &src);
+};
+
+struct CgroupRDMAController {
+  struct Device {
+    std::string name;
+    int64_t hca_handle;
+    std::optional<int64_t> hca_object;
+  };
+
+  std::vector<Device> devices;
+
+  void ToProto(stagezero::config::Cgroup::RDMAController *dest) const;
+  void FromProto(const stagezero::config::Cgroup::RDMAController &src);
+};
+
 struct Cgroup {
   CgroupType type;
   std::string name;
@@ -72,6 +91,8 @@ struct Cgroup {
   std::shared_ptr<CgroupCpuController> cpu;
   std::shared_ptr<CgroupMemoryController> memory;
   std::shared_ptr<CgroupIOController> io;
+  std::shared_ptr<CgroupPIDController> pid;
+  std::shared_ptr<CgroupRDMAController> rdma;
 
   void ToProto(stagezero::config::Cgroup *dest) const;
   void FromProto(const stagezero::config::Cgroup &src);
