@@ -226,9 +226,11 @@ absl::Status CreateCgroup(const Cgroup &cgroup, toolbelt::Logger &logger) {
   std::filesystem::path cgroup_path(
       absl::StrFormat("/sys/fs/cgroup/%s", cgroup.name));
   std::error_code error;
-  if (!std::filesystem::create_directories(cgroup_path, error)) {
-    return absl::InternalError(absl::StrFormat("Failed to create cgroup %s: %s",
-                                               cgroup.name, error.message()));
+  if (!std::filesystem::exists(cgroup_path)) {
+    if (!std::filesystem::create_directories(cgroup_path, error)) {
+      return absl::InternalError(absl::StrFormat("Failed to create cgroup %s: %s",
+                                                 cgroup.name, error.message()));
+    }
   }
 
   if (cgroup.cpu != nullptr) {

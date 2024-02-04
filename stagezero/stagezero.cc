@@ -109,10 +109,11 @@ std::string GetRunfilesDir() {
       return ".";
     }
 #elif defined(__linux__)
-    int e = readlink("/proc/self/exe", path, sizeof(path));
-    if (e == -1) {
+    int n = readlink("/proc/self/exe", path, sizeof(path));
+    if (n == -1) {
       return ".";
     }
+    path[n] = '\0';
 #else
 #error "Unsupported OS"
 #endif

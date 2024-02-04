@@ -1,12 +1,17 @@
 #!/bin/bash
 
-export RUNFILES_DIR=bazel-bin//flight/flight.runfiles
+export RUNFILES_DIR=bazel-bin/flight/flight.runfiles
 
-SILENT=false
+SILENT=true
 TEST_MODE=false
+# SUDO=sudo
 
 echo Running stagezero
-bazel-bin/flight/flight.runfiles/__main__/stagezero/stagezero --silent=$SILENT 0<&1 &
+if [[ "$SUDO" != "" ]]; then
+  (cd $RUNFILES_DIR ; $SUDO ./__main__/stagezero/stagezero --silent=$SILENT 0<&1 &)
+else
+  $RUNFILES_DIR/__main__/stagezero/stagezero --silent=$SILENT 0<&1 &
+fi
 s0_pid=$!
 sleep 1
 
