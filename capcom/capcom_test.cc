@@ -50,15 +50,14 @@ public:
 
     stagezero_addr_ = toolbelt::InetAddress("localhost", port);
     stagezero_ = std::make_unique<adastra::stagezero::StageZero>(
-        stagezero_scheduler_, stagezero_addr_, true, "/tmp",
-        "debug",
+        stagezero_scheduler_, stagezero_addr_, true, "/tmp", "", "debug",
         stagezero_pipe_[1]);
 
     // Start stagezero running in a thread.
     stagezero_thread_ = std::thread([]() {
 
       absl::Status s = stagezero_->Run();
-    if (!s.ok()) {
+      if (!s.ok()) {
         fprintf(stderr, "Error running stagezero: %s\n", s.ToString().c_str());
         exit(1);
       }
@@ -80,8 +79,8 @@ public:
 
     capcom_addr_ = toolbelt::InetAddress("localhost", port);
     capcom_ = std::make_unique<adastra::capcom::Capcom>(
-        capcom_scheduler_, capcom_addr_, true, stagezero_port, "", "debug", false,
-        capcom_pipe_[1]);
+        capcom_scheduler_, capcom_addr_, true, stagezero_port, "", "debug",
+        false, capcom_pipe_[1]);
 
     // Start capcom running in a thread.
     capcom_thread_ = std::thread([]() {
@@ -180,8 +179,7 @@ public:
     std::cout << "waiting for output " << match << "\n";
     std::stringstream s;
     for (int retry = 0; retry < 10; retry++) {
-      absl::StatusOr<std::shared_ptr<adastra::Event>> e =
-          client.WaitForEvent();
+      absl::StatusOr<std::shared_ptr<adastra::Event>> e = client.WaitForEvent();
       std::cout << e.status().ToString() << "\n";
       if (!e.ok()) {
         return s.str();
@@ -205,8 +203,7 @@ public:
                     adastra::Alarm::Reason reason) {
     std::cout << "waiting for alarm\n";
     for (int retry = 0; retry < 10; retry++) {
-      absl::StatusOr<std::shared_ptr<adastra::Event>> e =
-          client.WaitForEvent();
+      absl::StatusOr<std::shared_ptr<adastra::Event>> e = client.WaitForEvent();
       ASSERT_TRUE(e.ok());
 
       std::shared_ptr<adastra::Event> event = *e;
@@ -223,9 +220,8 @@ public:
     FAIL();
   }
 
-  void SendInput(adastra::capcom::client::Client &client,
-                 std::string subsystem, std::string process, int fd,
-                 std::string s) {
+  void SendInput(adastra::capcom::client::Client &client, std::string subsystem,
+                 std::string process, int fd, std::string s) {
     absl::Status status = client.SendInput(subsystem, process, fd, s);
     ASSERT_TRUE(status.ok());
   }
@@ -705,6 +701,87 @@ TEST_F(CapcomTest, StartSimpleSubsystemTree) {
   ASSERT_TRUE(status.ok());
 }
 
+TEST_F(CapcomTest, ManualRestartSimpleSubsystem) {
+  adastra::capcom::client::Client client(ClientMode::kNonBlocking);
+  InitClient(client, "foobar1");
+
+  absl::Status status = client.AddSubsystem(
+      "manual",
+      {.static_processes = {{
+           .name = "loop",
+           .executable = "${runfiles_dir}/__main__/testdata/loop",
+       }},
+       .restart_policy = adastra::capcom::client::RestartPolicy::kManual});
+  ASSERT_TRUE(status.ok());
+
+  WaitForState(client, "manual", AdminState::kOffline, OperState::kOffline);
+
+  status = client.StartSubsystem("manual");
+  ASSERT_TRUE(status.ok());
+  Event e =
+      WaitForState(client, "manual", AdminState::kOnline, OperState::kOnline);
+  sleep(1);
+
+  // Restart the subsystem
+  status = client.RestartSubsystem("manual");
+  ASSERT_TRUE(status.ok());
+  sleep(1);
+  WaitForState(client, "manual", AdminState::kOnline, OperState::kOnline);
+
+  // Stop the subsystem
+  status = client.StopSubsystem("manual");
+  ASSERT_TRUE(status.ok());
+  WaitForState(client, "manual", AdminState::kOffline, OperState::kOffline);
+
+  status = client.RemoveSubsystem("manual", false);
+  ASSERT_TRUE(status.ok());
+}
+
+TEST_F(CapcomTest, ManualRestartSimpleSubsystemAfterCrash) {
+  adastra::capcom::client::Client client(ClientMode::kNonBlocking);
+  InitClient(client, "foobar1");
+
+  absl::Status status = client.AddSubsystem(
+      "manual",
+      {.static_processes = {{
+           .name = "loop",
+           .executable = "${runfiles_dir}/__main__/testdata/loop",
+       }},
+       .restart_policy = adastra::capcom::client::RestartPolicy::kManual});
+  ASSERT_TRUE(status.ok());
+
+  WaitForState(client, "manual", AdminState::kOffline, OperState::kOffline);
+
+  status = client.StartSubsystem("manual");
+  ASSERT_TRUE(status.ok());
+  Event e =
+      WaitForState(client, "manual", AdminState::kOnline, OperState::kOnline);
+  sleep(1);
+
+  // Kill the process.
+  SubsystemStatus s = std::get<0>(e.event);
+  ASSERT_EQ(1, s.processes.size());
+  int pid = s.processes[0].pid;
+  kill(pid, SIGTERM);
+
+  // Wait for degraded state.
+  WaitForState(client, "manual", AdminState::kOnline, OperState::kDegraded);
+
+  // Restart the subsystem
+  status = client.RestartSubsystem("manual");
+  ASSERT_TRUE(status.ok());
+  WaitForState(client, "manual", AdminState::kOnline, OperState::kOnline);
+  sleep(1);
+
+  // Stop the subsystem
+  status = client.StopSubsystem("manual");
+  ASSERT_TRUE(status.ok());
+  WaitForState(client, "manual", AdminState::kOffline, OperState::kOffline);
+
+  status = client.RemoveSubsystem("manual", false);
+  ASSERT_TRUE(status.ok());
+}
+
 TEST_F(CapcomTest, Abort) {
   adastra::capcom::client::Client client(ClientMode::kBlocking);
   InitClient(client, "foobar1");
@@ -919,6 +996,8 @@ TEST_F(CapcomTest, AbortVirtual) {
   status = client.StartSubsystem("zygote1");
   ASSERT_TRUE(status.ok());
 
+  WaitForState(client, "zygote1", AdminState::kOnline, OperState::kOnline);
+
   // Start virtual.
   status = client.StartSubsystem("virtual");
   ASSERT_TRUE(status.ok());
@@ -1054,25 +1133,24 @@ TEST_F(CapcomTest, BadStreams) {
            .name = "echo1",
            .executable = "${runfiles_dir}/__main__/testdata/echo",
            .notify = true,
-           .streams =
-               {{
-                    .stream_fd = STDIN_FILENO,
-                    .tty = true,
-                    .disposition = adastra::Stream::Disposition::kClient,
-                    .direction = adastra::Stream::Direction::kOutput,
-                },
-                {
-                    .stream_fd = STDOUT_FILENO,
-                    .tty = true,
-                    .disposition = adastra::Stream::Disposition::kClient,
-                    .direction = adastra::Stream::Direction::kOutput,
-                },
-                {
-                    .stream_fd = STDERR_FILENO,
-                    .tty = true,
-                    .disposition = adastra::Stream::Disposition::kClient,
-                    .direction = adastra::Stream::Direction::kOutput,
-                }},
+           .streams = {{
+                           .stream_fd = STDIN_FILENO,
+                           .tty = true,
+                           .disposition = adastra::Stream::Disposition::kClient,
+                           .direction = adastra::Stream::Direction::kOutput,
+                       },
+                       {
+                           .stream_fd = STDOUT_FILENO,
+                           .tty = true,
+                           .disposition = adastra::Stream::Disposition::kClient,
+                           .direction = adastra::Stream::Direction::kOutput,
+                       },
+                       {
+                           .stream_fd = STDERR_FILENO,
+                           .tty = true,
+                           .disposition = adastra::Stream::Disposition::kClient,
+                           .direction = adastra::Stream::Direction::kOutput,
+                       }},
        }}});
   ASSERT_FALSE(status.ok());
 
@@ -1083,25 +1161,24 @@ TEST_F(CapcomTest, BadStreams) {
            .name = "echo2",
            .executable = "${runfiles_dir}/__main__/testdata/echo",
            .notify = true,
-           .streams =
-               {{
-                    .stream_fd = STDIN_FILENO,
-                    .tty = true,
-                    .disposition = adastra::Stream::Disposition::kClient,
-                    .direction = adastra::Stream::Direction::kInput,
-                },
-                {
-                    .stream_fd = STDOUT_FILENO,
-                    .tty = true,
-                    .disposition = adastra::Stream::Disposition::kClient,
-                    .direction = adastra::Stream::Direction::kInput,
-                },
-                {
-                    .stream_fd = STDERR_FILENO,
-                    .tty = true,
-                    .disposition = adastra::Stream::Disposition::kClient,
-                    .direction = adastra::Stream::Direction::kOutput,
-                }},
+           .streams = {{
+                           .stream_fd = STDIN_FILENO,
+                           .tty = true,
+                           .disposition = adastra::Stream::Disposition::kClient,
+                           .direction = adastra::Stream::Direction::kInput,
+                       },
+                       {
+                           .stream_fd = STDOUT_FILENO,
+                           .tty = true,
+                           .disposition = adastra::Stream::Disposition::kClient,
+                           .direction = adastra::Stream::Direction::kInput,
+                       },
+                       {
+                           .stream_fd = STDERR_FILENO,
+                           .tty = true,
+                           .disposition = adastra::Stream::Disposition::kClient,
+                           .direction = adastra::Stream::Direction::kOutput,
+                       }},
        }}});
   ASSERT_FALSE(status.ok());
 
@@ -1112,23 +1189,22 @@ TEST_F(CapcomTest, BadStreams) {
            .name = "echo3",
            .executable = "${runfiles_dir}/__main__/testdata/echo",
            .notify = true,
-           .streams =
-               {{
-                    .stream_fd = STDIN_FILENO,
-                    .tty = true,
-                    .disposition = adastra::Stream::Disposition::kClient,
-                },
-                {
-                    .stream_fd = STDOUT_FILENO,
-                    .tty = true,
-                    .disposition = adastra::Stream::Disposition::kClient,
-                },
-                {
-                    .stream_fd = STDERR_FILENO,
-                    .tty = true,
-                    .disposition = adastra::Stream::Disposition::kClient,
-                    .direction = adastra::Stream::Direction::kOutput,
-                }},
+           .streams = {{
+                           .stream_fd = STDIN_FILENO,
+                           .tty = true,
+                           .disposition = adastra::Stream::Disposition::kClient,
+                       },
+                       {
+                           .stream_fd = STDOUT_FILENO,
+                           .tty = true,
+                           .disposition = adastra::Stream::Disposition::kClient,
+                       },
+                       {
+                           .stream_fd = STDERR_FILENO,
+                           .tty = true,
+                           .disposition = adastra::Stream::Disposition::kClient,
+                           .direction = adastra::Stream::Direction::kOutput,
+                       }},
        }}});
   ASSERT_TRUE(status.ok());
 
@@ -1160,4 +1236,3 @@ int main(int argc, char **argv) {
 
   return RUN_ALL_TESTS();
 }
-

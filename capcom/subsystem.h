@@ -40,6 +40,7 @@ struct Message {
     kChangeAdmin,
     kReportOper,
     kAbort,     // See emergency_abort.
+    kRestart,
   };
   Code code;
   Subsystem *sender;
@@ -187,8 +188,13 @@ private:
 
 class Subsystem : public std::enable_shared_from_this<Subsystem> {
 public:
+  enum class RestartPolicy {
+    kAutomatic,
+    kManual,
+  };
+
   Subsystem(std::string name, Capcom &capcom, std::vector<Variable> vars,
-  std::vector<Stream> streams, int max_restarts, bool critical);
+  std::vector<Stream> streams, int max_restarts, bool critical, RestartPolicy restart_policy);
   ~Subsystem() {}
 
   absl::Status AddStaticProcess(
@@ -299,18 +305,18 @@ private:
 
   // TODO: remove parent function.
 
-  void AddProcess(std::unique_ptr<Process> p) {
-    process_map_.insert(std::make_pair(p->Name(), p.get()));
+  void AddProcess(std::shared_ptr<Process> p) {
+    process_map_.insert(std::make_pair(p->Name(), p));
     processes_.push_back(std::move(p));
   }
 
-  void RecordProcessId(const std::string &id, Process *p) {
+  void RecordProcessId(const std::string &id, std::shared_ptr<Process> p) {
     process_id_map_[id] = p;
   }
 
   void DeleteProcessId(const std::string &id) { process_map_.erase(id); }
 
-  Process *FindProcess(const std::string &id) {
+  std::shared_ptr<Process> FindProcess(const std::string &id) {
     auto it = process_id_map_.find(id);
     if (it == process_id_map_.end()) {
       return nullptr;
@@ -318,7 +324,7 @@ private:
     return it->second;
   }
 
-  Process *FindProcessName(const std::string &name) {
+  std::shared_ptr<Process> FindProcessName(const std::string &name) {
     auto it = process_map_.find(name);
     if (it == process_map_.end()) {
       return nullptr;
@@ -401,7 +407,7 @@ private:
 
   void SendOutput(int fd, const std::string &data, co::Coroutine *c);
 
-  Process *FindInteractiveProcess();
+  std::shared_ptr<Process> FindInteractiveProcess();
 
   std::string name_;
   Capcom &capcom_;
@@ -419,9 +425,9 @@ private:
   // receive them through the read end.
   toolbelt::Pipe message_pipe_;
 
-  std::vector<std::unique_ptr<Process>> processes_;
-  absl::flat_hash_map<std::string, Process *> process_map_;
-  absl::flat_hash_map<std::string, Process *> process_id_map_;
+  std::vector<std::shared_ptr<Process>> processes_;
+  absl::flat_hash_map<std::string, std::shared_ptr<Process> > process_map_;
+  absl::flat_hash_map<std::string, std::shared_ptr<Process> > process_id_map_;
 
   std::list<std::shared_ptr<Subsystem>> children_;
   std::list<std::shared_ptr<Subsystem>> parents_;
@@ -432,6 +438,7 @@ private:
   int max_restarts_ = kDefaultMaxRestarts;
   bool critical_ = false;
   int restart_count_ = 0;
+  RestartPolicy restart_policy_ = RestartPolicy::kAutomatic;
 
   Alarm alarm_;
   bool alarm_raised_ = false;

@@ -22,6 +22,8 @@ ABSL_FLAG(std::string, logdir, "/tmp",
           "Directory to hold log files from processes");
 ABSL_FLAG(std::string, log_level, "info",
           "Log level (verbose, debug, info, warning, error)");
+ABSL_FLAG(std::string, runfiles_dir, "",
+          "Root dir for runfiles (value of ${runfiles_dir})");
 
 static void Signal(int sig) {
   if (sig == SIGQUIT && g_scheduler != nullptr) {
@@ -57,8 +59,8 @@ int main(int argc, char **argv) {
 
   adastra::stagezero::StageZero stagezero(
       scheduler, stagezero_addr, !absl::GetFlag(FLAGS_silent),
-      absl::GetFlag(FLAGS_logdir), absl::GetFlag(FLAGS_log_level),
-      absl::GetFlag(FLAGS_notify_fd));
+      absl::GetFlag(FLAGS_logdir), absl::GetFlag(FLAGS_runfiles_dir),
+      absl::GetFlag(FLAGS_log_level), absl::GetFlag(FLAGS_notify_fd));
   g_stagezero = &stagezero;
   if (absl::Status status = stagezero.Run(); !status.ok()) {
     std::cerr << "Failed to run StageZero: " << status.ToString() << std::endl;

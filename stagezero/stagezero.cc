@@ -21,10 +21,10 @@ namespace adastra::stagezero {
 
 StageZero::StageZero(co::CoroutineScheduler &scheduler,
                      toolbelt::InetAddress addr, bool log_to_output,
-                     const std::string &logdir, const std::string &log_level,
-                     int notify_fd)
-    : co_scheduler_(scheduler), addr_(addr), notify_fd_(notify_fd),
-      logger_("stagezero", log_to_output) {
+                     const std::string &logdir, const std::string &runfiles_dir,
+                     const std::string &log_level, int notify_fd)
+    : co_scheduler_(scheduler), addr_(addr), runfiles_dir_(runfiles_dir),
+      notify_fd_(notify_fd), logger_("stagezero", log_to_output) {
   logger_.SetLogLevel(log_level);
   // Add a global symbol for where we want log files.
   global_symbols_.AddSymbol("logdir", logdir, false);
@@ -142,9 +142,11 @@ std::string GetRunfilesDir() {
 
 absl::Status StageZero::Run() {
   // Work out the runfiles directory and set a variable
-  char *runfiles = getenv("RUNFILES_DIR");
   std::string runfiles_dir;
-  if (runfiles == nullptr) {
+  char *runfiles = getenv("RUNFILES_DIR");
+  if (!runfiles_dir_.empty()) {
+    runfiles_dir = runfiles_dir_;
+  } else if (runfiles == nullptr) {
     runfiles_dir = GetRunfilesDir();
   } else {
     runfiles_dir = runfiles;
@@ -191,8 +193,6 @@ absl::Status StageZero::Run() {
                                       },
                                       "Listener Socket"));
 
-  // Start a new process group.
-  setpgrp();
 
   // Run the coroutine main loop.
   co_scheduler_.Run();
@@ -282,7 +282,8 @@ absl::Status StageZero::SendProcessStopEvent(const std::string &process_id,
                                              bool exited, int exit_status,
                                              int term_signal) {
   for (auto &client : client_handlers_) {
-    (void)client->SendProcessStopEvent(process_id, exited, exit_status, term_signal);
+    (void)client->SendProcessStopEvent(process_id, exited, exit_status,
+                                       term_signal);
   }
   return absl::OkStatus();
 }

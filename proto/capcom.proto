@@ -48,6 +48,11 @@ message Process {
 }
 
 message AddSubsystemRequest {
+  enum RestartPolicy {
+    AUTOMATIC = 0;
+    MANUAL = 1;
+  }
+
   string name = 1;
   repeated Process processes = 2;
 
@@ -67,6 +72,8 @@ message AddSubsystemRequest {
   int32 max_restarts = 7;
 
   bool critical = 8;
+
+  RestartPolicy restart_policy = 9;
 }
 
 message AddSubsystemResponse { string error = 1; }
@@ -85,6 +92,12 @@ message StartSubsystemRequest {
 }
 
 message StartSubsystemResponse { string error = 1; }
+
+message RestartSubsystemRequest {
+  string subsystem = 1;
+}
+
+message RestartSubsystemResponse { string error = 1; }
 
 message StopSubsystemRequest { string subsystem = 1; }
 
@@ -147,6 +160,7 @@ message Request {
     AddGlobalVariableRequest add_global_variable = 11;
     InputRequest input = 12;
     CloseFdRequest close_fd = 13;
+    RestartSubsystemRequest restart_subsystem = 14;
   }
 }
 
@@ -165,5 +179,6 @@ message Response {
     AddGlobalVariableResponse add_global_variable = 11;
     InputResponse input = 12;
     CloseFdResponse close_fd = 13;
+    RestartSubsystemResponse restart_subsystem = 14;
   }
 }

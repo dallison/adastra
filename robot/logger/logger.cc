@@ -34,7 +34,7 @@ template <typename T> using Message = adastra::module::Message<T>;
 
 class Logger : public adastra::module::ProtobufModule {
 public:
-  Logger(std::unique_ptr<adastra::stagezero::SymbolTable> symbols)
+  explicit Logger(std::unique_ptr<adastra::stagezero::SymbolTable> symbols)
       : ProtobufModule(std::move(symbols)) {}
 
   absl::Status Init(int argc, char **argv) override {

@@ -36,7 +36,7 @@ public:
 
     addr_ = toolbelt::InetAddress("localhost", 6522);
     server_ = std::make_unique<adastra::stagezero::StageZero>(
-        scheduler_, addr_, true, "/tmp", "debug", server_pipe_[1]);
+        scheduler_, addr_, true, "/tmp", "debug", "", server_pipe_[1]);
 
     // Start server running in a thread.
     server_thread_ = std::thread([]() {

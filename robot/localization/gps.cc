@@ -14,7 +14,7 @@ using namespace adastra::module::frequency_literals;
 
 class GpsReceiver : public adastra::module::ProtobufModule {
 public:
-  GpsReceiver(std::unique_ptr<adastra::stagezero::SymbolTable> symbols)
+  explicit GpsReceiver(std::unique_ptr<adastra::stagezero::SymbolTable> symbols)
       : ProtobufModule(std::move(symbols)) {}
 
   absl::Status Init(int argc, char **argv) override {

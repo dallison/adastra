@@ -59,7 +59,7 @@ absl::Status Client::AddCompute(const std::string &name,
     auto *cg = compute->add_cgroups();
     cgroup.ToProto(cg);
   }
-  
+
   adastra::capcom::proto::Response resp;
   absl::Status status = SendRequestReceiveResponse(req, resp, c);
   if (!status.ok()) {
@@ -236,7 +236,16 @@ absl::Status Client::AddSubsystem(const std::string &name,
 
   add->set_max_restarts(options.max_restarts);
   add->set_critical(options.critical);
-
+  switch (options.restart_policy) {
+  case RestartPolicy::kAutomatic:
+    add->set_restart_policy(
+        adastra::capcom::proto::AddSubsystemRequest::AUTOMATIC);
+    break;
+  case RestartPolicy::kManual:
+    add->set_restart_policy(
+        adastra::capcom::proto::AddSubsystemRequest::MANUAL);
+    break;
+  }
   adastra::capcom::proto::Response resp;
   absl::Status status = SendRequestReceiveResponse(req, resp, c);
   if (!status.ok()) {
@@ -336,6 +345,33 @@ absl::Status Client::StopSubsystem(const std::string &name, co::Coroutine *c) {
   if (mode_ == ClientMode::kBlocking) {
     return WaitForSubsystemState(name, AdminState::kOffline,
                                  OperState::kOffline, c);
+  }
+  return absl::OkStatus();
+}
+
+absl::Status Client::RestartSubsystem(const std::string &name, co::Coroutine *c) {
+  if (c == nullptr) {
+    c = co_;
+  }
+  adastra::capcom::proto::Request req;
+  auto s = req.mutable_restart_subsystem();
+  s->set_subsystem(name);
+
+  adastra::capcom::proto::Response resp;
+  absl::Status status = SendRequestReceiveResponse(req, resp, c);
+  if (!status.ok()) {
+    return status;
+  }
+
+  auto &restart_resp = resp.stop_subsystem();
+  if (!restart_resp.error().empty()) {
+    return absl::InternalError(
+        absl::StrFormat("Failed to restart subsystem: %s", restart_resp.error()));
+  }
+
+  if (mode_ == ClientMode::kBlocking) {
+    return WaitForSubsystemState(name, AdminState::kOnline,
+                                 OperState::kOnline, c);
   }
   return absl::OkStatus();
 }

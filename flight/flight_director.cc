@@ -607,7 +607,7 @@ absl::Status FlightDirector::LoadSubsystemGraph(
       return absl::InternalError(
           absl::StrFormat("No such subsystem %s specified as autostart", name));
     }
-    if (autostarts_.find(name) != interfaces_.end()) {
+    if (autostarts_.find(name) != autostarts_.end()) {
       return absl::InternalError(
           absl::StrFormat("Subsystem %s is already autostarted", name));
     }

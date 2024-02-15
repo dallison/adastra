@@ -26,6 +26,7 @@ class StageZero {
 public:
   StageZero(co::CoroutineScheduler &scheduler, toolbelt::InetAddress addr,
             bool log_to_output, const std::string &logdir, const std::string& log_level = "debug", 
+            const std::string& runfiles_dir = "",
             int notify_fd = -1);
   ~StageZero();
   absl::Status Run();
@@ -179,6 +180,7 @@ private:
                                     int exit_status, int term_signal);
   co::CoroutineScheduler &co_scheduler_;
   toolbelt::InetAddress addr_;
+  std::string runfiles_dir_;
   toolbelt::FileDescriptor notify_fd_;
   std::string compute_;
 

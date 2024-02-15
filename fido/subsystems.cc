@@ -102,6 +102,7 @@ void SubsystemsWindow::PopulateTable() {
       oper_color = retro::kColorPairMagenta;
       break;
     case adastra::OperState::kBroken:
+    case adastra::OperState::kDegraded:
       oper_color = retro::kColorPairRed;
       break;
     case adastra::OperState::kOnline:

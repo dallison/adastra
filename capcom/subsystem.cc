@@ -10,10 +10,11 @@
 namespace adastra::capcom {
 Subsystem::Subsystem(std::string name, Capcom &capcom,
                      std::vector<Variable> vars, std::vector<Stream> streams,
-                     int max_restarts, bool critical)
+                     int max_restarts, bool critical,
+                     RestartPolicy restart_policy)
     : name_(std::move(name)), capcom_(capcom), vars_(std::move(vars)),
       streams_(std::move(streams)), max_restarts_(max_restarts),
-      critical_(critical) {
+      critical_(critical), restart_policy_(restart_policy) {
   // Build the message pipe.
   if (absl::Status status = BuildMessagePipe(); !status.ok()) {
     capcom_.Log(Name(), toolbelt::LogLevel::kError, "%s",
@@ -144,7 +145,7 @@ void Subsystem::NotifyParents() {
 
 absl::Status Subsystem::SendInput(const std::string &process, int fd,
                                   const std::string &data, co::Coroutine *c) {
-  Process *proc = FindProcessName(process);
+  std::shared_ptr<Process> proc = FindProcessName(process);
   if (proc == nullptr) {
     return absl::InternalError(absl::StrFormat("No such process %s", process));
   }
@@ -153,7 +154,7 @@ absl::Status Subsystem::SendInput(const std::string &process, int fd,
 
 absl::Status Subsystem::CloseFd(const std::string &process, int fd,
                                 co::Coroutine *c) {
-  Process *proc = FindProcessName(process);
+  std::shared_ptr<Process> proc = FindProcessName(process);
   if (proc == nullptr) {
     return absl::InternalError(absl::StrFormat("No such process %s", process));
   }
@@ -193,7 +194,7 @@ absl::Status Subsystem::LaunchProcesses(co::Coroutine *c) {
       // A failure to launch one is a failure for all.
       return status;
     }
-    RecordProcessId(proc->GetProcessId(), proc.get());
+    RecordProcessId(proc->GetProcessId(), proc);
   }
   return absl::OkStatus();
 }
@@ -219,7 +220,7 @@ void Subsystem::SendOutput(int fd, const std::string &data, co::Coroutine *c) {
   }
 }
 
-Process *Subsystem::FindInteractiveProcess() { return nullptr; }
+std::shared_ptr<Process> Subsystem::FindInteractiveProcess() { return nullptr; }
 
 void Subsystem::RaiseAlarm(const Alarm &alarm) {
   alarm_ = alarm;
@@ -370,6 +371,9 @@ void Subsystem::BuildStatus(adastra::proto::SubsystemStatus *status) {
     break;
   case OperState::kBroken:
     status->set_oper_state(adastra::proto::OPER_BROKEN);
+    break;
+  case OperState::kDegraded:
+    status->set_oper_state(adastra::proto::OPER_DEGRADED);
     break;
   }
   status->set_alarm_count(alarm_count_);

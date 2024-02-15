@@ -80,6 +80,11 @@ private:
   void HandleStopSubsystem(const proto::StopSubsystemRequest &req,
                            proto::StopSubsystemResponse *response,
                            co::Coroutine *c);
+
+  void HandleRestartSubsystem(const proto::RestartSubsystemRequest &req,
+                              proto::RestartSubsystemResponse *response,
+                              co::Coroutine *c);
+
   void HandleGetSubsystems(const proto::GetSubsystemsRequest &req,
                            proto::GetSubsystemsResponse *response,
                            co::Coroutine *c);

@@ -82,7 +82,7 @@ absl::Status TCPClient<Request, Response, Event>::Init(
 
   absl::StatusOr<int> event_port = parse_response(resp);
   if (!event_port.ok()) {
-    return status;
+    return event_port.status();
   }
 
   toolbelt::InetAddress event_addr = addr;

@@ -84,7 +84,7 @@ absl::Status ZygoteCore::Run() {
           WaitForSpawn(c);
         }
 
-      });
+      }, "ZygoteServer");
 
   monitor_ =
       std::make_unique<co::Coroutine>(scheduler_, [this](co::Coroutine *c) {
@@ -106,7 +106,7 @@ absl::Status ZygoteCore::Run() {
           c->Millisleep(kWaitTimeMs);
         }
 
-      });
+      }, "ZygoteMonitor");
 
   scheduler_.Run();
   // When we get here we are either in the zygote that has been stopped or
@@ -129,8 +129,14 @@ absl::Status ZygoteCore::Run() {
 void ZygoteCore::WaitForSpawn(co::Coroutine *c) {
   char *sendbuf = buffer_ + sizeof(int32_t);
   constexpr size_t kSendBufLen = sizeof(buffer_) - sizeof(int32_t);
+
+  int fd = c->Wait(control_socket_->GetFileDescriptor().Fd());
+  if (fd != control_socket_->GetFileDescriptor().Fd()) {
+    return;
+  }
+
   absl::StatusOr<ssize_t> n =
-      control_socket_->ReceiveMessage(buffer_, sizeof(buffer_), c);
+      control_socket_->ReceiveMessage(buffer_, sizeof(buffer_));
   if (!n.ok()) {
     logger_.Log(toolbelt::LogLevel::kError, "ReceiveMessage error %s\n",
                 n.status().ToString().c_str());
@@ -140,7 +146,7 @@ void ZygoteCore::WaitForSpawn(co::Coroutine *c) {
 
   std::vector<toolbelt::FileDescriptor> fds;
 
-  if (absl::Status status = control_socket_->ReceiveFds(fds, c); !status.ok()) {
+  if (absl::Status status = control_socket_->ReceiveFds(fds); !status.ok()) {
     logger_.Log(toolbelt::LogLevel::kError, "Failed to receive fds %s\n",
                 n.status().ToString().c_str());
     control_socket_->Close();
@@ -160,8 +166,7 @@ void ZygoteCore::WaitForSpawn(co::Coroutine *c) {
       return;
     }
     size_t msglen = response.ByteSizeLong();
-    absl::StatusOr<ssize_t> n =
-        control_socket_->SendMessage(sendbuf, msglen, c);
+    absl::StatusOr<ssize_t> n = control_socket_->SendMessage(sendbuf, msglen);
     if (!n.ok()) {
       logger_.Log(toolbelt::LogLevel::kError,
                   "Failed to send spawn response: %s",
@@ -169,7 +174,7 @@ void ZygoteCore::WaitForSpawn(co::Coroutine *c) {
       control_socket_->Close();
       return;
     }
-    if (absl::Status s = control_socket_->SendFds(fds, c); !s.ok()) {
+    if (absl::Status s = control_socket_->SendFds(fds); !s.ok()) {
       logger_.Log(toolbelt::LogLevel::kError,
                   "Failed to send spawn fds response: %s",
                   s.ToString().c_str());
@@ -361,7 +366,7 @@ absl::Status ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
     c->Yield();
 
     // Won't get here in the child process.
-    return absl::OkStatus();
+    abort();
   }
 
   for (auto &stream : req.streams()) {

@@ -159,6 +159,7 @@ absl::Status StatusCommand::Execute(flight::client::Client *client, int argc,
       oper_color = toolbelt::color::BoldMagenta();
       break;
     case OperState::kBroken:
+    case OperState::kDegraded:
       oper_color = toolbelt::color::BoldRed();
       break;
     case OperState::kOnline:
@@ -226,7 +227,7 @@ absl::Status LogCommand::Execute(flight::client::Client *client, int argc,
         break;
       }
       // Convert to little endian value;
-      int64_t length = 0;
+      uint64_t length = 0;
       for (int i = 0; i < 8; i++) {
         length |= length_buf[i] << (i*8);
       }
@@ -260,7 +261,6 @@ absl::Status LogCommand::Execute(flight::client::Client *client, int argc,
       logger.Log(log.level, log.timestamp, log.source, log.text);
     }
   }
-  return absl::OkStatus();
 }
 
 absl::Status RunCommand::Execute(flight::client::Client *client, int argc,

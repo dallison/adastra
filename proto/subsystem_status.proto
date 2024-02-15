@@ -22,6 +22,7 @@ enum OperState {
   OPER_STOPPING_CHILDREN = 6;
   OPER_RESTARTING = 7;
   OPER_BROKEN = 8;
+  OPER_DEGRADED = 9;
 }
 
 message SubsystemStatus {

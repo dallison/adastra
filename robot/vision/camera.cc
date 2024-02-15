@@ -12,7 +12,7 @@ template <typename T> using Message = adastra::module::Message<T>;
 
 class Camera : public adastra::module::ProtobufModule {
 public:
-  Camera(std::unique_ptr<adastra::stagezero::SymbolTable> symbols) : ProtobufModule(std::move(symbols)) {}
+  explicit Camera(std::unique_ptr<adastra::stagezero::SymbolTable> symbols) : ProtobufModule(std::move(symbols)) {}
 
   absl::Status Init(int argc, char **argv) override {
     adastra::stagezero::Symbol *name = symbols_->FindSymbol("camera_name");

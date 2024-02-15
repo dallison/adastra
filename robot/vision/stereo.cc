@@ -12,7 +12,7 @@ template <typename T> using Message = adastra::module::Message<T>;
 
 class Stereo : public adastra::module::ProtobufModule {
 public:
-  Stereo(std::unique_ptr<adastra::stagezero::SymbolTable> symbols)
+  explicit Stereo(std::unique_ptr<adastra::stagezero::SymbolTable> symbols)
       : ProtobufModule(std::move(symbols)) {}
 
   // A stereo image consists of 2 camera images and a disparity

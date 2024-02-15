@@ -22,6 +22,9 @@ void SubsystemStatus::ToProto(proto::SubsystemStatus *dest) const {
   case OperState::kBroken:
     dest->set_oper_state(adastra::proto::OPER_BROKEN);
     break;
+  case OperState::kDegraded:
+    dest->set_oper_state(adastra::proto::OPER_DEGRADED);
+    break;
   case OperState::kOffline:
     dest->set_oper_state(adastra::proto::OPER_OFFLINE);
     break;
@@ -108,6 +111,9 @@ absl::Status SubsystemStatus::FromProto(const proto::SubsystemStatus &src) {
     break;
   case adastra::proto::OPER_BROKEN:
     this->oper_state = OperState::kBroken;
+    break;
+  case adastra::proto::OPER_DEGRADED:
+    this->oper_state = OperState::kDegraded;
     break;
   default:
     return absl::InternalError(

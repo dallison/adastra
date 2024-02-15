@@ -26,6 +26,12 @@ enum class ClientMode {
   kNonBlocking,
 };
 
+
+enum class RestartPolicy {
+  kAutomatic,
+  kManual,
+};
+
 static constexpr int kDefaultMaxRestarts = 3;
 
 constexpr int32_t kDefaultStartupTimeout = 2;
@@ -98,6 +104,7 @@ struct SubsystemOptions {
 
   int max_restarts = kDefaultMaxRestarts;
   bool critical = false;
+  RestartPolicy restart_policy = RestartPolicy::kAutomatic;
 };
 
 enum class RunMode {
@@ -142,6 +149,9 @@ public:
   absl::Status StopSubsystem(const std::string &name,
                              co::Coroutine *c = nullptr);
 
+  absl::Status RestartSubsystem(const std::string &name,
+                             co::Coroutine *c = nullptr);
+                             
   absl::Status AddGlobalVariable(const Variable &var,
                                  co::Coroutine *c = nullptr);
 

@@ -27,7 +27,7 @@ static inline constexpr char kMapResponseChannel[] = "/map_response";
 
 class MapServer : public adastra::module::ProtobufModule {
 public:
-  MapServer(std::unique_ptr<adastra::stagezero::SymbolTable> symbols)
+  explicit MapServer(std::unique_ptr<adastra::stagezero::SymbolTable> symbols)
       : ProtobufModule(std::move(symbols)) {}
 
   absl::Status Init(int argc, char **argv) override {

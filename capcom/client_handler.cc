@@ -90,6 +90,10 @@ absl::Status ClientHandler::HandleMessage(const proto::Request &req,
   case proto::Request::kStopSubsystem:
     HandleStopSubsystem(req.stop_subsystem(), resp.mutable_stop_subsystem(), c);
     break;
+  case proto::Request::kRestartSubsystem:
+    HandleRestartSubsystem(req.restart_subsystem(),
+                           resp.mutable_restart_subsystem(), c);
+    break;
   case proto::Request::kGetSubsystems:
     HandleGetSubsystems(req.get_subsystems(), resp.mutable_get_subsystems(), c);
     break;
@@ -223,9 +227,19 @@ void ClientHandler::HandleAddSubsystem(const proto::AddSubsystemRequest &req,
     }
     streams.push_back(stream);
   }
+  Subsystem::RestartPolicy restart_policy;
+  switch (req.restart_policy()) {
+  case adastra::capcom::proto::AddSubsystemRequest::AUTOMATIC:
+  default:
+    restart_policy = Subsystem::RestartPolicy::kAutomatic;
+    break;
+  case adastra::capcom::proto::AddSubsystemRequest::MANUAL:
+    restart_policy = Subsystem::RestartPolicy::kManual;
+    break;
+  }
   auto subsystem = std::make_shared<Subsystem>(
       req.name(), capcom_, std::move(vars), std::move(streams),
-      req.max_restarts(), req.critical());
+      req.max_restarts(), req.critical(), restart_policy);
 
   // Add the processes to the subsystem.
   for (auto &proc : req.processes()) {
@@ -398,6 +412,24 @@ void ClientHandler::HandleStopSubsystem(const proto::StopSubsystemRequest &req,
                      .state = {.admin = AdminState::kOffline}};
   if (absl::Status status = subsystem->SendMessage(message); !status.ok()) {
     response->set_error(absl::StrFormat("Failed to stop subsystem %s: %s",
+                                        req.subsystem(), status.ToString()));
+    return;
+  }
+}
+
+void ClientHandler::HandleRestartSubsystem(const proto::RestartSubsystemRequest &req,
+                                        proto::RestartSubsystemResponse *response,
+                                        co::Coroutine *c) {
+  std::shared_ptr<Subsystem> subsystem = capcom_.FindSubsystem(req.subsystem());
+  if (subsystem == nullptr) {
+    response->set_error(
+        absl::StrFormat("No such subsystem %s", req.subsystem()));
+    return;
+  }
+  Message message = {.code = Message::kRestart,
+                     .client_id = id_};
+  if (absl::Status status = subsystem->SendMessage(message); !status.ok()) {
+    response->set_error(absl::StrFormat("Failed to restart subsystem %s: %s",
                                         req.subsystem(), status.ToString()));
     return;
   }

@@ -27,7 +27,7 @@ static constexpr int32_t kNumSlots = 16;
 
 class Localizer : public adastra::module::ProtobufModule {
 public:
-  Localizer(std::unique_ptr<adastra::stagezero::SymbolTable> symbols)
+  explicit Localizer(std::unique_ptr<adastra::stagezero::SymbolTable> symbols)
       : ProtobufModule(std::move(symbols)) {}
 
   absl::Status Init(int argc, char **argv) override {
