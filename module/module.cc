@@ -206,7 +206,7 @@ void Module::Stop() { scheduler_.Stop(); }
 SubscriberBase::SubscriberBase(Module &module, subspace::Subscriber sub,
                                SubscriberOptions options)
     : module_(module), sub_(std::move(sub)), options_(std::move(options)) {
-  if (absl::Status status = trigger_.Open(); !status.ok()) {
+  if (absl::Status status = stop_trigger_.Open(); !status.ok()) {
     // TODO log.
     std::cerr << "Failed to open trigger: " << status.ToString() << std::endl;
   }
@@ -219,8 +219,9 @@ absl::StatusOr<void *> PublisherBase::GetMessageBuffer(size_t size,
   // If we are a reliable publisher we need to keep trying to get a buffer.
   // We will wait for the reliable publisher's trigger to be triggered if
   // we fail to get a buffer.
+  bool backpressure_applied = false;
+
   for (;;) {
-    bool backpressure_applied = false;
     absl::StatusOr<void *> buffer = pub->pub_.GetMessageBuffer(size);
     if (!buffer.ok()) {
       return buffer.status();
@@ -274,13 +275,13 @@ void PublisherBase::Stop() {
 
 void PublisherBase::BackpressureSubscribers() {
   for (auto sub : options_.backpressured_subscribers) {
-    sub->Stop();
+    sub->Backpressure();
   }
 }
 
 void PublisherBase::ReleaseSubscribers() {
   for (auto sub : options_.backpressured_subscribers) {
-    sub->Run();
+    sub->ReleaseBackpressure();
   }
 }
 

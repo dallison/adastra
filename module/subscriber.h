@@ -23,7 +23,12 @@ public:
                  SubscriberOptions options);
   virtual ~SubscriberBase() = default;
   virtual void Run() = 0;
-  void Stop() { trigger_.Trigger(); }
+  void Stop() { stop_trigger_.Trigger(); }
+
+  void Backpressure() { backpressured_ = true; }
+  void ReleaseBackpressure() { backpressured_ = false; }
+  
+  std::string Name() const { return sub_.Name(); }
 
 protected:
   template <typename T> friend class ZeroCopySubscriber;
@@ -31,8 +36,9 @@ protected:
   Module &module_;
   subspace::Subscriber sub_;
   SubscriberOptions options_;
-  toolbelt::TriggerFd trigger_;
+  toolbelt::TriggerFd stop_trigger_;
   std::string coroutine_name_;
+  bool backpressured_ = false;
 };
 
 // A Subscriber calls a callback when a message arrives on the Subspace channel.

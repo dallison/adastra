@@ -412,6 +412,11 @@ absl::Status Process::BuildStreams(
                                                buf, len);
               },
               c);
+             if (!status.ok()) {
+              client->Log(proc->Name(), toolbelt::LogLevel::kError,
+                          "Failed to read from stream: %s",
+                          status.ToString().c_str());
+            }
         }));
   }
 
@@ -493,6 +498,11 @@ absl::Status Process::BuildStreams(
                       proc->Name(), std::string(buf, len));
                 },
                 c);
+            if (!status.ok()) {
+              client->Log(proc->Name(), toolbelt::LogLevel::kError,
+                          "Failed to read from stream: %s",
+                          status.ToString().c_str());
+            }
           }));
 
       break;

@@ -414,11 +414,13 @@ inline void SerializingSubscriber<MessageType, Deserialize>::Run() {
       module_.scheduler_,
       [sub = this->shared_from_this()](co::Coroutine * c) {
         for (;;) {
-          int fd = c->Wait({sub->sub_.GetFileDescriptor().Fd(),
-                            sub->trigger_.GetPollFd().Fd()},
-                           POLLIN);
-          if (fd == sub->trigger_.GetPollFd().Fd()) {
-            sub->trigger_.Clear();
+          std::vector<int> wait_fds = {sub->stop_trigger_.GetPollFd().Fd()};
+          if (!sub->backpressured_) {
+            wait_fds.push_back(sub->sub_.GetFileDescriptor().Fd());
+          }
+          int fd = c->Wait(wait_fds, POLLIN);
+          if (fd == sub->stop_trigger_.GetPollFd().Fd()) {
+            sub->stop_trigger_.Clear();
             break;
           }
           for (;;) {
@@ -450,12 +452,13 @@ inline void ZeroCopySubscriber<MessageType>::Run() {
       module_.scheduler_,
       [sub = this->shared_from_this()](co::Coroutine * c) {
         for (;;) {
-          int fd = c->Wait({sub->sub_.GetFileDescriptor().Fd(),
-                            sub->trigger_.GetPollFd().Fd()},
-                           POLLIN);
-
-          if (fd == sub->trigger_.GetPollFd().Fd()) {
-            sub->trigger_.Clear();
+          std::vector<int> wait_fds = {sub->stop_trigger_.GetPollFd().Fd()};
+          if (!sub->backpressured_) {
+            wait_fds.push_back(sub->sub_.GetFileDescriptor().Fd());
+          }
+          int fd = c->Wait(wait_fds, POLLIN);
+          if (fd == sub->stop_trigger_.GetPollFd().Fd()) {
+            sub->stop_trigger_.Clear();
             break;
           }
           for (;;) {
