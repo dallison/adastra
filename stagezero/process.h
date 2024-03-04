@@ -8,6 +8,7 @@
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "common/stream.h"
+#include "common/namespace.h"
 #include "coroutine.h"
 #include "proto/config.pb.h"
 #include "proto/control.pb.h"
@@ -113,6 +114,10 @@ public:
 
   StageZero& GetStageZero() { return stagezero_; }
 
+  void SetNamespace(Namespace ns) {
+    ns_ = std::move(ns);
+  }
+  
 protected:
   virtual int Wait() = 0;
   absl::Status BuildStreams(
@@ -150,6 +155,7 @@ protected:
   toolbelt::FileDescriptor interactive_proc_end_;
   std::string cgroup_;
   bool detached_ = false;      // Process is detached from a client.
+  std::optional<Namespace> ns_;
 };
 
 class StaticProcess : public Process {

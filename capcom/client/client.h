@@ -176,6 +176,10 @@ public:
   absl::Status CloseFd(const std::string &subsystem, const std::string &process,
                        int fd, co::Coroutine *c = nullptr);
 
+  absl::Status FreezeCgroup(const std::string& compute, const std::string& cgroup, co::Coroutine *co = nullptr);
+  absl::Status ThawCgroup(const std::string& compute, const std::string& cgroup, co::Coroutine *co = nullptr);
+  absl::Status KillCgroup(const std::string& compute, const std::string& cgroup, co::Coroutine *co = nullptr);
+  
 private:
   absl::Status WaitForSubsystemState(const std::string &subsystem,
                                      AdminState admin_state,

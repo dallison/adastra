@@ -223,6 +223,9 @@ message SpawnRequest {
   optional int32 notify_fd_index = 10;        // Index of notify fd (into fds)
 
   string cgroup = 11;     // Cgroup for process (if supported by OS)
+
+  // Namespaces, only on Linux.
+  optional config.Namespace ns = 12;
 }
 
 message SpawnResponse {

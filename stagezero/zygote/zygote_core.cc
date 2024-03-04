@@ -259,8 +259,24 @@ absl::Status ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
     }
   }
 
+  pid_t pid;
   // All looks good for the attempt to fork the zygote.  Let's do it.
-  pid_t pid = fork();
+  #if defined(__linux__)
+  // On Linux we can use clone3 instead of fork if we have any namespace assignments.
+  if (req.has_ns()) {
+    Namespace ns;
+    ns.FromProto(req.ns());
+    struct clone_args args = {
+        .flags = .CloneType(),
+        // All other members are zero.
+    };
+    pid = syscall(SYS_clone3, &args, sizeof(args));
+  } else {
+    pid = fork();
+  }
+#else
+  pid = fork();
+#endif
   if (pid == -1) {
     return absl::InternalError(
         absl::StrFormat("Failed to fork: %s", strerror(errno)));

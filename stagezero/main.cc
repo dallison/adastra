@@ -57,12 +57,12 @@ int main(int argc, char **argv) {
       listen_addr.empty() ? toolbelt::InetAddress::AnyAddress(listen_port)
                           : toolbelt::InetAddress(listen_addr, listen_port));
 
-  adastra::stagezero::StageZero stagezero(
+  auto stagezero = std::make_unique<adastra::stagezero::StageZero>(
       scheduler, stagezero_addr, !absl::GetFlag(FLAGS_silent),
       absl::GetFlag(FLAGS_logdir), absl::GetFlag(FLAGS_runfiles_dir),
       absl::GetFlag(FLAGS_log_level), absl::GetFlag(FLAGS_notify_fd));
-  g_stagezero = &stagezero;
-  if (absl::Status status = stagezero.Run(); !status.ok()) {
+  g_stagezero = stagezero.get();
+  if (absl::Status status = stagezero->Run(); !status.ok()) {
     std::cerr << "Failed to run StageZero: " << status.ToString() << std::endl;
     exit(1);
   }

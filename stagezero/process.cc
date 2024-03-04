@@ -21,8 +21,11 @@
 #include <sys/wait.h>
 #include <vector>
 #if defined(__linux__)
+#include <linux/sched.h>
 #include <linux/wait.h> // For P_PIDFD
 #include <pty.h>
+#include <sched.h>
+#include <syscall.h>
 #elif defined(__APPLE__)
 #include <util.h>
 #else
@@ -134,13 +137,18 @@ StaticProcess::StaticProcess(
   SetUserAndGroup(req.opts().user(), req.opts().group());
   SetCgroup(req.opts().cgroup());
   SetDetached(req.opts().detached());
+  if (req.opts().has_ns()) {
+    Namespace n;
+    n.FromProto(req.opts().ns());
+    SetNamespace(std::move(n));
+  }
 
   interactive_ = req.opts().interactive();
   if (req.opts().has_interactive_terminal()) {
     interactive_terminal_.FromProto(req.opts().interactive_terminal());
   }
   critical_ = req.opts().critical();
-}
+} // namespace adastra::stagezero
 
 absl::Status StaticProcess::Start(co::Coroutine *c) {
   return StartInternal({}, true);
@@ -412,11 +420,11 @@ absl::Status Process::BuildStreams(
                                                buf, len);
               },
               c);
-             if (!status.ok()) {
-              client->Log(proc->Name(), toolbelt::LogLevel::kError,
-                          "Failed to read from stream: %s",
-                          status.ToString().c_str());
-            }
+          if (!status.ok()) {
+            client->Log(proc->Name(), toolbelt::LogLevel::kError,
+                        "Failed to read from stream: %s",
+                        status.ToString().c_str());
+          }
         }));
   }
 
@@ -580,7 +588,20 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
     gid = g->gr_gid;
   }
 
+#if defined(__linux__)
+  // On Linux we can use clone3 instead of fork if we have any namespace assignments.
+  if (ns_.has_value()) {
+    struct clone_args args = {
+        .flags = ns_.CloneType(),
+        // All other members are zero.
+    };
+    pid_ = syscall(SYS_clone3, &args, sizeof(args));
+  } else {
+    pid_ = fork();
+  }
+#else
   pid_ = fork();
+#endif
   if (pid_ == -1) {
     return absl::InternalError(
         absl::StrFormat("Fork failed: %s", strerror(errno)));
@@ -740,8 +761,16 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
 
     if (geteuid() == 0) {
       // We can only set the user and group if we are running as root.
-      seteuid(uid);
-      setegid(gid);
+      e = seteuid(uid);
+      if (e == -1) {
+        std::cerr << "Failed to seteuid: " << strerror(errno) << std::endl;
+        exit(1);
+      }
+      e = setegid(gid);
+      if (e == -1) {
+        std::cerr << "Failed to setegid: " << strerror(errno) << std::endl;
+        exit(1);
+      }
     }
 
     // Add the process to the cgroup if it is set.
@@ -1106,6 +1135,12 @@ Zygote::Spawn(const stagezero::control::LaunchVirtualProcessRequest &req,
     *a = arg;
   }
 
+  // Namespaces.
+  if (req.opts().has_ns()) {
+    auto *n = spawn.mutable_ns();
+    *n = req.opts().ns();
+  }
+
   spawn.set_user(req.opts().user());
   spawn.set_group(req.opts().group());
   spawn.set_cgroup(req.opts().cgroup());
@@ -1172,6 +1207,11 @@ VirtualProcess::VirtualProcess(
   SetCgroup(req.opts().cgroup());
   SetDetached(req.opts().detached());
   critical_ = req.opts().critical();
+  if (req.opts().has_ns()) {
+    Namespace n;
+    n.FromProto(req.opts().ns());
+    SetNamespace(std::move(n));
+  }
 
   // Create the notification pipe for zygote notifications.
   absl::StatusOr<toolbelt::Pipe> pipe = toolbelt::Pipe::Create();

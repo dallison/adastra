@@ -103,6 +103,14 @@ private:
 
   void HandleCloseFd(const proto::CloseFdRequest &req,
                      proto::CloseFdResponse *response, co::Coroutine *c);
+
+  void HandleFreezeCgroup(const proto::FreezeCgroupRequest &req,
+                          proto::FreezeCgroupResponse *response,
+                          co::Coroutine *c);
+  void HandleThawCgroup(const proto::ThawCgroupRequest &req,
+                        proto::ThawCgroupResponse *response, co::Coroutine *c);
+  void HandleKillCgroup(const proto::KillCgroupRequest &req,
+                        proto::KillCgroupResponse *response, co::Coroutine *c);
   Capcom &capcom_;
   uint32_t id_;
 };

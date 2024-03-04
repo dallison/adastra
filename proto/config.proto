@@ -9,20 +9,37 @@ package adastra.stagezero.config;
 import "proto/stream.proto";
 import "proto/cgroup.proto";
 
-
 message Compute {
   string name = 1;
-  bytes ip_addr = 2;  // Host byte order.
-  int32 port = 3;       // Host byte order.
-  bool disabled = 4; 
+  bytes ip_addr = 2; // Host byte order.
+  int32 port = 3;    // Host byte order.
+  bool disabled = 4;
   repeated Cgroup cgroups = 5;
 }
 
 message Variable {
-  string name = 1;     // Varible name
-  string value = 2;    // Expression for value (use $ for var names)
-  bool exported = 3;     // Export to environment.
+  string name = 1;   // Varible name
+  string value = 2;  // Expression for value (use $ for var names)
+  bool exported = 3; // Export to environment.
   bool disabled = 4;
+}
+
+message Namespace {
+  // These should be combined into the 'type' by ORing them together (except for NS_ANY
+  // of course).
+  enum Type {
+    NS_ANY = 0;
+    NS_NEWCGROUP = 1;
+    NS_NEWIPC = 2;
+    NS_NEWNET = 4;
+    NS_NEWPID = 8;
+    NS_NEWUSER = 16;
+    NS_NEWUTS = 32;
+  }
+  Type type = 1;
+  // Some Linux manuals say that a pidfd can be used to clone the namespaces
+  // from another process.  I'm not sure about how widespread the support for this
+  // is, so it's not supported for now.
 }
 
 message ProcessOptions {
@@ -40,7 +57,7 @@ message ProcessOptions {
   int32 sigint_shutdown_timeout_secs = 5;
   int32 sigterm_shutdown_timeout_secs = 6;
 
-  bool notify = 7;      // Notify of startup via pipe.
+  bool notify = 7; // Notify of startup via pipe.
 
   // If the process will notify us, we wait this long for it
   // to do so.
@@ -69,15 +86,16 @@ message ProcessOptions {
   // Cgroup name (if supported by OS).  Must be present on the compute instance.
   string cgroup = 15;
 
-  bool detached = 16;        // Process is detached from client.
+  bool detached = 16; // Process is detached from client.
+
+  // Namespaces to assign to (only on Linux).
+  optional Namespace ns = 17;
 }
 
-message StaticProcess {
-  string executable = 1;
-}
+message StaticProcess { string executable = 1; }
 
 message VirtualProcess {
-  string zygote = 1; // Zygote to use.
-  string dso = 2;    // Dynamic shared object to load (empty for none)
+  string zygote = 1;    // Zygote to use.
+  string dso = 2;       // Dynamic shared object to load (empty for none)
   string main_func = 3; // Main function to call.
 }

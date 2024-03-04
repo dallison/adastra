@@ -1230,6 +1230,54 @@ TEST_F(CapcomTest, BadStreams) {
   ASSERT_TRUE(status.ok());
 }
 
+TEST_F(CapcomTest, CgroupOps) {
+  adastra::capcom::client::Client client(ClientMode::kBlocking);
+  InitClient(client, "foobar1");
+
+  adastra::Cgroup cgroup = {.type = adastra::CgroupType::kDomain,
+                            .name = "test"};
+  cgroup.cpuset = std::make_unique<adastra::CgroupCpusetController>();
+  cgroup.cpuset->cpus = "0:3";
+
+  absl::Status status =
+      client.AddCompute("compute1", toolbelt::InetAddress("localhost", 6522),
+                        {
+                            cgroup,
+                        });
+  ASSERT_TRUE(status.ok());
+
+  status = client.FreezeCgroup("compute1", "test");
+  ASSERT_TRUE(status.ok());
+
+  status = client.ThawCgroup("compute1", "test");
+  ASSERT_TRUE(status.ok());
+
+  status = client.KillCgroup("compute1", "test");
+  ASSERT_TRUE(status.ok());
+
+  // Negative tests.
+  status = client.FreezeCgroup("xxx", "test");
+  ASSERT_FALSE(status.ok());
+
+  status = client.ThawCgroup("xxx", "test");
+  ASSERT_FALSE(status.ok());
+
+  status = client.KillCgroup("xxx", "test");
+  ASSERT_FALSE(status.ok());
+
+  status = client.FreezeCgroup("compute1", "xxx");
+  ASSERT_FALSE(status.ok());
+
+  status = client.ThawCgroup("compute1", "xxx");
+  ASSERT_FALSE(status.ok());
+
+  status = client.KillCgroup("compute1", "xxx");
+  ASSERT_FALSE(status.ok());
+
+  status = client.RemoveCompute("compute1");
+  ASSERT_TRUE(status.ok());
+}
+
 int main(int argc, char **argv) {
   testing::InitGoogleTest(&argc, argv);
   absl::ParseCommandLine(argc, argv);

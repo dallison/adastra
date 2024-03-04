@@ -123,6 +123,10 @@ void Client::BuildProcessOptions(
   options->set_critical(opts.critical);
   options->set_cgroup(opts.cgroup);
   options->set_detached(opts.detached);
+  if (opts.ns.has_value()) {
+    auto* n = options->mutable_ns();
+    opts.ns->ToProto(n);
+  }
 }
 
 absl::Status Client::StopProcess(const std::string &process_id,
@@ -309,7 +313,7 @@ absl::Status Client::ThawCgroup(const std::string &cgroup, co::Coroutine *co) {
       !status.ok()) {
     return status;
   }
-  auto &thaw_resp = resp.add_cgroup();
+  auto &thaw_resp = resp.thaw_cgroup();
   if (!thaw_resp.error().empty()) {
     return absl::InternalError(
         absl::StrFormat("Failed to thaw cgroup: %s", thaw_resp.error()));
@@ -330,7 +334,7 @@ absl::Status Client::KillCgroup(const std::string &cgroup, co::Coroutine *co) {
       !status.ok()) {
     return status;
   }
-  auto &kill_resp = resp.add_cgroup();
+  auto &kill_resp = resp.kill_cgroup();
   if (!kill_resp.error().empty()) {
     return absl::InternalError(
         absl::StrFormat("Failed to kill cgroup: %s", kill_resp.error()));

@@ -56,14 +56,14 @@ int main(int argc, char **argv) {
       listen_addr.empty() ? toolbelt::InetAddress::AnyAddress(listen_port)
                           : toolbelt::InetAddress(listen_addr, listen_port));
 
-  adastra::capcom::Capcom capcom(
+  auto capcom = std::make_unique<adastra::capcom::Capcom>(
       scheduler, capcom_addr, !absl::GetFlag(FLAGS_silent),
       absl::GetFlag(FLAGS_local_stagezero_port), absl::GetFlag(FLAGS_log_file),
       absl::GetFlag(FLAGS_log_level), absl::GetFlag(FLAGS_test_mode),
       absl::GetFlag(FLAGS_notify_fd));
-  g_capcom = &capcom;
+  g_capcom = capcom.get();
 
-  if (absl::Status status = capcom.Run(); !status.ok()) {
+  if (absl::Status status = capcom->Run(); !status.ok()) {
     std::cerr << "Failed to run Capcom: " << status.ToString() << std::endl;
     exit(1);
   }

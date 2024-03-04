@@ -93,9 +93,7 @@ message StartSubsystemRequest {
 
 message StartSubsystemResponse { string error = 1; }
 
-message RestartSubsystemRequest {
-  string subsystem = 1;
-}
+message RestartSubsystemRequest { string subsystem = 1; }
 
 message RestartSubsystemResponse { string error = 1; }
 
@@ -145,6 +143,27 @@ message CloseFdRequest {
 
 message CloseFdResponse { string error = 1; }
 
+message FreezeCgroupRequest {
+  string compute = 1;
+  string cgroup = 2;
+}
+
+message FreezeCgroupResponse { string error = 1; }
+
+message ThawCgroupRequest {
+  string compute = 1;
+  string cgroup = 2;
+}
+
+message ThawCgroupResponse { string error = 1; }
+
+message KillCgroupRequest {
+  string compute = 1;
+  string cgroup = 2;
+}
+
+message KillCgroupResponse { string error = 1; }
+
 message Request {
   oneof request {
     InitRequest init = 1;
@@ -161,6 +180,9 @@ message Request {
     InputRequest input = 12;
     CloseFdRequest close_fd = 13;
     RestartSubsystemRequest restart_subsystem = 14;
+    FreezeCgroupRequest freeze_cgroup = 15;
+    ThawCgroupRequest thaw_cgroup = 16;
+    KillCgroupRequest kill_cgroup = 17;
   }
 }
 
@@ -180,5 +202,8 @@ message Response {
     InputResponse input = 12;
     CloseFdResponse close_fd = 13;
     RestartSubsystemResponse restart_subsystem = 14;
+    FreezeCgroupResponse freeze_cgroup = 15;
+    ThawCgroupResponse thaw_cgroup = 16;
+    KillCgroupResponse kill_cgroup = 17;
   }
 }

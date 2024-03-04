@@ -349,7 +349,8 @@ absl::Status Client::StopSubsystem(const std::string &name, co::Coroutine *c) {
   return absl::OkStatus();
 }
 
-absl::Status Client::RestartSubsystem(const std::string &name, co::Coroutine *c) {
+absl::Status Client::RestartSubsystem(const std::string &name,
+                                      co::Coroutine *c) {
   if (c == nullptr) {
     c = co_;
   }
@@ -365,13 +366,13 @@ absl::Status Client::RestartSubsystem(const std::string &name, co::Coroutine *c)
 
   auto &restart_resp = resp.stop_subsystem();
   if (!restart_resp.error().empty()) {
-    return absl::InternalError(
-        absl::StrFormat("Failed to restart subsystem: %s", restart_resp.error()));
+    return absl::InternalError(absl::StrFormat(
+        "Failed to restart subsystem: %s", restart_resp.error()));
   }
 
   if (mode_ == ClientMode::kBlocking) {
-    return WaitForSubsystemState(name, AdminState::kOnline,
-                                 OperState::kOnline, c);
+    return WaitForSubsystemState(name, AdminState::kOnline, OperState::kOnline,
+                                 c);
   }
   return absl::OkStatus();
 }
@@ -557,4 +558,75 @@ absl::Status Client::CloseFd(const std::string &subsystem,
   }
   return absl::OkStatus();
 }
+
+absl::Status Client::FreezeCgroup(const std::string &compute,
+                                  const std::string &cgroup,
+                                  co::Coroutine *co) {
+  if (co == nullptr) {
+    co = co_;
+  }
+  adastra::capcom::proto::Request req;
+  auto f = req.mutable_freeze_cgroup();
+  f->set_compute(compute);
+  f->set_cgroup(cgroup);
+
+  adastra::capcom::proto::Response resp;
+  if (absl::Status status = SendRequestReceiveResponse(req, resp, co);
+      !status.ok()) {
+    return status;
+  }
+  auto &freeze_resp = resp.freeze_cgroup();
+  if (!freeze_resp.error().empty()) {
+    return absl::InternalError(
+        absl::StrFormat("Failed to freeze cgroup: %s", freeze_resp.error()));
+  }
+  return absl::OkStatus();
+}
+
+absl::Status Client::ThawCgroup(const std::string &compute,
+                                const std::string &cgroup, co::Coroutine *co) {
+  if (co == nullptr) {
+    co = co_;
+  }
+  adastra::capcom::proto::Request req;
+  auto f = req.mutable_thaw_cgroup();
+  f->set_compute(compute);
+  f->set_cgroup(cgroup);
+
+  adastra::capcom::proto::Response resp;
+  if (absl::Status status = SendRequestReceiveResponse(req, resp, co);
+      !status.ok()) {
+    return status;
+  }
+  auto &thaw_resp = resp.thaw_cgroup();
+  if (!thaw_resp.error().empty()) {
+    return absl::InternalError(
+        absl::StrFormat("Failed to thaw cgroup: %s", thaw_resp.error()));
+  }
+  return absl::OkStatus();
+}
+
+absl::Status Client::KillCgroup(const std::string &compute,
+                                const std::string &cgroup, co::Coroutine *co) {
+  if (co == nullptr) {
+    co = co_;
+  }
+  adastra::capcom::proto::Request req;
+  auto f = req.mutable_kill_cgroup();
+  f->set_compute(compute);
+  f->set_cgroup(cgroup);
+
+  adastra::capcom::proto::Response resp;
+  if (absl::Status status = SendRequestReceiveResponse(req, resp, co);
+      !status.ok()) {
+    return status;
+  }
+  auto &kill_resp = resp.kill_cgroup();
+  if (!kill_resp.error().empty()) {
+    return absl::InternalError(
+        absl::StrFormat("Failed to kill cgroup: %s", kill_resp.error()));
+  }
+  return absl::OkStatus();
+}
+
 } // namespace adastra::capcom::client

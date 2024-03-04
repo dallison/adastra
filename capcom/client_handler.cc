@@ -117,6 +117,17 @@ absl::Status ClientHandler::HandleMessage(const proto::Request &req,
     HandleAddGlobalVariable(req.add_global_variable(),
                             resp.mutable_add_global_variable(), c);
     break;
+  case proto::Request::kFreezeCgroup:
+    HandleFreezeCgroup(req.freeze_cgroup(), resp.mutable_freeze_cgroup(), c);
+    break;
+
+  case proto::Request::kThawCgroup:
+    HandleThawCgroup(req.thaw_cgroup(), resp.mutable_thaw_cgroup(), c);
+    break;
+
+  case proto::Request::kKillCgroup:
+    HandleKillCgroup(req.kill_cgroup(), resp.mutable_kill_cgroup(), c);
+    break;
 
   case proto::Request::REQUEST_NOT_SET:
     return absl::InternalError("Protocol error: unknown request");
@@ -517,6 +528,36 @@ void ClientHandler::HandleCloseFd(const proto::CloseFdRequest &req,
   if (absl::Status status = subsystem->CloseFd(req.process(), req.fd(), c);
       !status.ok()) {
     response->set_error(status.ToString());
+  }
+}
+void ClientHandler::HandleFreezeCgroup(const proto::FreezeCgroupRequest &req,
+                                       proto::FreezeCgroupResponse *response,
+                                       co::Coroutine *c) {
+  if (absl::Status status = capcom_.FreezeCgroup(req.compute(), req.cgroup(), c);
+      !status.ok()) {
+    response->set_error(absl::StrFormat("Failed to freeze cgroup %s: %s",
+                                        req.cgroup(), status.ToString()));
+  }
+}
+
+void ClientHandler::HandleThawCgroup(const proto::ThawCgroupRequest &req,
+                                     proto::ThawCgroupResponse *response,
+                                     co::Coroutine *c) {
+
+  if (absl::Status status = capcom_.ThawCgroup(req.compute(), req.cgroup(), c);
+      !status.ok()) {
+    response->set_error(absl::StrFormat("Failed to freeze cgroup %s: %s",
+                                        req.cgroup(), status.ToString()));
+  }
+}
+
+void ClientHandler::HandleKillCgroup(const proto::KillCgroupRequest &req,
+                                     proto::KillCgroupResponse *response,
+                                     co::Coroutine *c) {
+  if (absl::Status status = capcom_.KillCgroup(req.compute(), req.cgroup(), c);
+      !status.ok()) {
+    response->set_error(absl::StrFormat("Failed to freeze cgroup %s: %s",
+                                        req.cgroup(), status.ToString()));
   }
 }
 } // namespace adastra::capcom

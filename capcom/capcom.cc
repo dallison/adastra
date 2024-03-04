@@ -473,4 +473,77 @@ absl::Status Capcom::RegisterComputeCgroups(stagezero::Client &client,
   return absl::OkStatus();
 }
 
+static const Cgroup *FindCgroup(const Compute &comp, const std::string &cgroup) {
+  for (auto &cg : comp.cgroups) {
+    if (cg.name == cgroup) {
+      return &cg;
+    }
+  }
+  return nullptr;
+}
+
+absl::Status Capcom::FreezeCgroup(const std::string &compute,
+                                  const std::string &cgroup, co::Coroutine *c) {
+  const Compute *comp = FindCompute(compute);
+  if (comp == nullptr) {
+    return absl::InternalError(absl::StrFormat("No such compute %s", compute));
+  }
+  const Cgroup *cg = FindCgroup(*comp, cgroup);
+  if (cg == nullptr) {
+    return absl::InternalError(
+        absl::StrFormat("No such cgroup %s on computer %s", cgroup, compute));
+  }
+  stagezero::Client client;
+  if (absl::Status status = client.Init(comp->addr, "<cgroup freeze>");
+      !status.ok()) {
+    return absl::InternalError(
+        absl::StrFormat("Failed to connect compute %s for freeze cgroup: %s",
+                        compute, status.ToString()));
+  }
+  return client.FreezeCgroup(cgroup, c);
+}
+
+absl::Status Capcom::ThawCgroup(const std::string &compute,
+                                const std::string &cgroup, co::Coroutine *c) {
+  const Compute *comp = FindCompute(compute);
+  if (comp == nullptr) {
+    return absl::InternalError(absl::StrFormat("No such compute %s", compute));
+  }
+  const Cgroup *cg = FindCgroup(*comp, cgroup);
+  if (cg == nullptr) {
+    return absl::InternalError(
+        absl::StrFormat("No such cgroup %s on computer %s", cgroup, compute));
+  }
+  stagezero::Client client;
+  if (absl::Status status = client.Init(comp->addr, "<cgroup thaw>");
+      !status.ok()) {
+    return absl::InternalError(
+        absl::StrFormat("Failed to connect compute %s for freeze cgroup: %s",
+                        compute, status.ToString()));
+  }
+  return client.ThawCgroup(cgroup, c);
+}
+
+absl::Status Capcom::KillCgroup(const std::string &compute,
+                                const std::string &cgroup, co::Coroutine *c) {
+
+  const Compute *comp = FindCompute(compute);
+  if (comp == nullptr) {
+    return absl::InternalError(absl::StrFormat("No such compute %s", compute));
+  }
+  const Cgroup *cg = FindCgroup(*comp, cgroup);
+  if (cg == nullptr) {
+    return absl::InternalError(
+        absl::StrFormat("No such cgroup %s on computer %s", cgroup, compute));
+  }
+  stagezero::Client client;
+  if (absl::Status status = client.Init(comp->addr, "<cgroup kill>");
+      !status.ok()) {
+    return absl::InternalError(
+        absl::StrFormat("Failed to connect compute %s for freeze cgroup: %s",
+                        compute, status.ToString()));
+  }
+  return client.KillCgroup(cgroup, c);
+}
+
 } // namespace adastra::capcom

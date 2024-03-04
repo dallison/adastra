@@ -4,9 +4,10 @@ cc_library(
     name = "common",
     srcs = [
         "alarm.cc",
-        "event.cc",
-        "stream.cc",
         "cgroup.cc",
+        "event.cc",
+        "namespace.cc",
+        "stream.cc",
         "subsystem_status.cc",
     ],
     hdrs = [
@@ -14,6 +15,7 @@ cc_library(
         "cgroup.h",
         "event.h",
         "log.h",
+        "namespace.h",
         "states.h",
         "stream.h",
         "subsystem_status.h",

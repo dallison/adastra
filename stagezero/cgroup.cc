@@ -325,7 +325,27 @@ absl::Status AddToCgroup(const std::string &proc, const std::string &cgroup,
   return absl::OkStatus();
 }
 
-absl::Status FreezeCgroup(const std::string &cgroup) {
+absl::Status FreezeCgroup(const std::string &cgroup, toolbelt::Logger &logger) {
+  bool cgroups_supported = true;
+#if !defined(__linux__)
+  cgroups_supported = false;
+#endif
+  if (!cgroups_supported) {
+    logger.Log(
+        toolbelt::LogLevel::kInfo,
+        "Cgroups are not supported on this OS; freezing of cgroup '%s' ignored",
+        cgroup.c_str());
+
+    return absl::OkStatus();
+  }
+  if (geteuid() != 0) {
+    // Not root.
+    logger.Log(toolbelt::LogLevel::kInfo,
+               "Not running as root; freezing of cgroup '%s' ignored",
+               cgroup.c_str());
+
+    return absl::OkStatus();
+  }
   std::filesystem::path cgroup_path(
       absl::StrFormat("/sys/fs/cgroup/%s", cgroup));
 
@@ -338,7 +358,27 @@ absl::Status FreezeCgroup(const std::string &cgroup) {
   return absl::OkStatus();
 }
 
-absl::Status ThawCgroup(const std::string &cgroup) {
+absl::Status ThawCgroup(const std::string &cgroup, toolbelt::Logger &logger) {
+  bool cgroups_supported = true;
+#if !defined(__linux__)
+  cgroups_supported = false;
+#endif
+  if (!cgroups_supported) {
+    logger.Log(
+        toolbelt::LogLevel::kInfo,
+        "Cgroups are not supported on this OS; thawing of cgroup '%s' ignored",
+        cgroup.c_str());
+
+    return absl::OkStatus();
+  }
+  if (geteuid() != 0) {
+    // Not root.
+    logger.Log(toolbelt::LogLevel::kInfo,
+               "Not running as root; thawing of cgroup '%s' ignored",
+               cgroup.c_str());
+
+    return absl::OkStatus();
+  }
   std::filesystem::path cgroup_path(
       absl::StrFormat("/sys/fs/cgroup/%s", cgroup));
 
@@ -351,7 +391,27 @@ absl::Status ThawCgroup(const std::string &cgroup) {
   return absl::OkStatus();
 }
 
-absl::Status KillCgroup(const std::string &cgroup) {
+absl::Status KillCgroup(const std::string &cgroup, toolbelt::Logger &logger) {
+  bool cgroups_supported = true;
+#if !defined(__linux__)
+  cgroups_supported = false;
+#endif
+  if (!cgroups_supported) {
+    logger.Log(
+        toolbelt::LogLevel::kInfo,
+        "Cgroups are not supported on this OS; killing of cgroup '%s' ignored",
+        cgroup.c_str());
+
+    return absl::OkStatus();
+  }
+  if (geteuid() != 0) {
+    // Not root.
+    logger.Log(toolbelt::LogLevel::kInfo,
+               "Not running as root; freezing of killing '%s' ignored",
+               cgroup.c_str());
+
+    return absl::OkStatus();
+  }
   std::filesystem::path cgroup_path(
       absl::StrFormat("/sys/fs/cgroup/%s", cgroup));
 

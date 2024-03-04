@@ -68,11 +68,11 @@ int main(int argc, char **argv) {
     std::cerr << "--config_root_dir directory not found\n";
     exit(1);
   }
-  adastra::flight::FlightDirector flight(
+  auto flight = std::make_unique<adastra::flight::FlightDirector>(
       scheduler, flight_addr, capcom, root_dir, absl::GetFlag(FLAGS_log_level),
       !absl::GetFlag(FLAGS_silent), absl::GetFlag(FLAGS_notify_fd));
-  g_flight = &flight;
-  if (absl::Status status = flight.Run(); !status.ok()) {
+  g_flight = flight.get();
+  if (absl::Status status = flight->Run(); !status.ok()) {
     std::cerr << "Failed to run FlightDirector: " << status.ToString()
               << std::endl;
     exit(1);

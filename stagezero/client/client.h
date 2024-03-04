@@ -6,8 +6,9 @@
 
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
-#include "common/event.h"
 #include "common/cgroup.h"
+#include "common/event.h"
+#include "common/namespace.h"
 #include "common/stream.h"
 #include "common/tcp_client.h"
 #include "common/vars.h"
@@ -40,10 +41,11 @@ struct ProcessOptions {
   bool critical;
   std::string cgroup;
   bool detached;
+  std::optional<Namespace> ns;
 };
 
-class Client
-    : public adastra::TCPClient<control::Request, control::Response, control::Event> {
+class Client : public adastra::TCPClient<control::Request, control::Response,
+                                         control::Event> {
 public:
   Client(co::Coroutine *co = nullptr)
       : TCPClient<control::Request, control::Response, control::Event>(co) {}
@@ -115,12 +117,17 @@ public:
   absl::StatusOr<std::pair<std::string, bool>>
   GetGlobalVariable(std::string name, co::Coroutine *co = nullptr);
 
-  absl::Status Abort(const std::string &reason, bool emergency, co::Coroutine *co = nullptr);
+  absl::Status Abort(const std::string &reason, bool emergency,
+                     co::Coroutine *co = nullptr);
 
-  absl::Status RegisterCgroup(const Cgroup& cgroup, co::Coroutine *co = nullptr);
-  absl::Status FreezeCgroup(const std::string& cgroup, co::Coroutine *co = nullptr);
-  absl::Status ThawCgroup(const std::string& cgroup, co::Coroutine *co = nullptr);
-  absl::Status KillCgroup(const std::string& cgroup, co::Coroutine *co = nullptr);
+  absl::Status RegisterCgroup(const Cgroup &cgroup,
+                              co::Coroutine *co = nullptr);
+  absl::Status FreezeCgroup(const std::string &cgroup,
+                            co::Coroutine *co = nullptr);
+  absl::Status ThawCgroup(const std::string &cgroup,
+                          co::Coroutine *co = nullptr);
+  absl::Status KillCgroup(const std::string &cgroup,
+                          co::Coroutine *co = nullptr);
 
 private:
   absl::StatusOr<std::pair<std::string, int>> LaunchStaticProcessInternal(

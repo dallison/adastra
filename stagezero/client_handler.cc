@@ -382,7 +382,8 @@ void ClientHandler::HandleRemoveCgroup(const control::RemoveCgroupRequest &req,
 void ClientHandler::HandleFreezeCgroup(const control::FreezeCgroupRequest &req,
                                        control::FreezeCgroupResponse *response,
                                        co::Coroutine *c) {
-  if (absl::Status status = adastra::stagezero::FreezeCgroup(req.cgroup());
+  if (absl::Status status =
+          adastra::stagezero::FreezeCgroup(req.cgroup(), GetLogger());
       !status.ok()) {
     response->set_error(absl::StrFormat("Failed to freeze cgroup %s: %s",
                                         req.cgroup(), status.ToString()));
@@ -393,7 +394,8 @@ void ClientHandler::HandleThawCgroup(const control::ThawCgroupRequest &req,
                                      control::ThawCgroupResponse *response,
                                      co::Coroutine *c) {
 
-  if (absl::Status status = adastra::stagezero::ThawCgroup(req.cgroup());
+  if (absl::Status status =
+          adastra::stagezero::ThawCgroup(req.cgroup(), GetLogger());
       !status.ok()) {
     response->set_error(absl::StrFormat("Failed to freeze cgroup %s: %s",
                                         req.cgroup(), status.ToString()));
@@ -403,7 +405,8 @@ void ClientHandler::HandleThawCgroup(const control::ThawCgroupRequest &req,
 void ClientHandler::HandleKillCgroup(const control::KillCgroupRequest &req,
                                      control::KillCgroupResponse *response,
                                      co::Coroutine *c) {
-  if (absl::Status status = adastra::stagezero::KillCgroup(req.cgroup());
+  if (absl::Status status =
+          adastra::stagezero::KillCgroup(req.cgroup(), GetLogger());
       !status.ok()) {
     response->set_error(absl::StrFormat("Failed to freeze cgroup %s: %s",
                                         req.cgroup(), status.ToString()));
