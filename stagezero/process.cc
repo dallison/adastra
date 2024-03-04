@@ -535,8 +535,8 @@ absl::Status Process::BuildStreams(
                 [proc, stream, client](const char *buf,
                                        size_t len) -> absl::Status {
 
-                  syslog(stream->fd == 1 ? LOG_INFO : LOG_ERR, "%s",
-                         std::string(buf, len).c_str());
+                  syslog(stream->fd == 1 ? LOG_INFO : LOG_ERR, "%s: %s",
+                         proc->Name().c_str(), std::string(buf, len).c_str());
                   return absl::OkStatus();
                 },
                 c);
@@ -676,8 +676,6 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
       interactive_proc_end_.Reset();
     }
 
-    bool syslog_opened = false;
-
     for (auto &stream : streams_) {
       if (stream->disposition != proto::StreamControl::CLOSE &&
           stream->disposition != proto::StreamControl::STAGEZERO) {
@@ -708,12 +706,6 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
               stream->pipe.SetWriteFd(file_fd);
             } else {
               stream->pipe.SetReadFd(file_fd);
-            }
-          } else if (stream->disposition == proto::StreamControl::SYSLOG) {
-            // Open the syslog client with the process name.
-            if (!syslog_opened) {
-              syslog_opened = true;
-              openlog(Name().c_str(), LOG_CONS, 0);
             }
           }
           toolbelt::FileDescriptor &fd =
