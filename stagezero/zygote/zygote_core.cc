@@ -4,6 +4,7 @@
 
 #include "stagezero/zygote/zygote_core.h"
 #include "stagezero/cgroup.h"
+#include "common/namespace.h"
 
 #include "absl/container/flat_hash_set.h"
 #include "absl/strings/numbers.h"
@@ -23,6 +24,7 @@
 #include <unistd.h>
 
 #ifdef __linux__
+#include <linux/sched.h>
 #include <syscall.h>
 static int pidfd_open(pid_t pid, unsigned int flags) {
   return syscall(__NR_pidfd_open, pid, flags);
@@ -264,10 +266,10 @@ absl::Status ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
   #if defined(__linux__)
   // On Linux we can use clone3 instead of fork if we have any namespace assignments.
   if (req.has_ns()) {
-    Namespace ns;
+    adastra::Namespace ns;
     ns.FromProto(req.ns());
     struct clone_args args = {
-        .flags = .CloneType(),
+        .flags = static_cast<uint64_t>(ns.CloneType()),
         // All other members are zero.
     };
     pid = syscall(SYS_clone3, &args, sizeof(args));

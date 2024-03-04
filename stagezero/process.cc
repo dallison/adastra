@@ -592,7 +592,7 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
   // On Linux we can use clone3 instead of fork if we have any namespace assignments.
   if (ns_.has_value()) {
     struct clone_args args = {
-        .flags = ns_.CloneType(),
+        .flags = static_cast<uint64_t>(ns_->CloneType()),
         // All other members are zero.
     };
     pid_ = syscall(SYS_clone3, &args, sizeof(args));
