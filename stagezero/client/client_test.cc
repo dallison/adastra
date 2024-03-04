@@ -104,10 +104,11 @@ public:
     FAIL();
   }
 
-  std::string WaitForOutput(adastra::stagezero::Client &client, std::string match) {
+  std::string WaitForOutput(adastra::stagezero::Client &client,
+                            std::string match, int retries = 10) {
     std::cout << "waiting for output " << match << "\n";
     std::stringstream s;
-    for (int retry = 0; retry < 10; retry++) {
+    for (int retry = 0; retry < retries; retry++) {
       absl::StatusOr<std::shared_ptr<adastra::stagezero::control::Event>> e =
           client.WaitForEvent();
       std::cout << e.status().ToString() << "\n";
@@ -126,8 +127,8 @@ public:
     abort();
   }
 
-  void SendInput(adastra::stagezero::Client &client, std::string process_id, int fd,
-                 std::string s) {
+  void SendInput(adastra::stagezero::Client &client, std::string process_id,
+                 int fd, std::string s) {
     absl::Status status = client.SendInput(process_id, fd, s);
     ASSERT_TRUE(status.ok());
   }
@@ -827,6 +828,42 @@ TEST_F(ClientTest, VirtualOutput) {
   // Stop zygote
   std::cerr << "Stopping zygote\n";
   s = client.StopProcess(zygote_process_id);
+  ASSERT_TRUE(s.ok());
+  WaitForEvent(client, adastra::stagezero::control::Event::kStop);
+}
+
+TEST_F(ClientTest, Namespaces) {
+  adastra::stagezero::Client client;
+  InitClient(client, "foobar2", adastra::kOutputEvents);
+
+  adastra::Stream output = {
+      .stream_fd = 1,
+      .disposition = adastra::Stream::Disposition::kClient,
+      .direction = adastra::Stream::Direction::kOutput,
+  };
+
+  absl::StatusOr<std::pair<std::string, int>> status =
+      client.LaunchStaticProcess(
+          "ifconfig", "/bin/bash",
+          {.args =
+               {
+                   "-c", "/sbin/ifconfig -a; echo FOO",
+               },
+           .streams =
+               {
+                   output,
+               },
+           .ns = adastra::Namespace{
+               .type = adastra::stagezero::config::Namespace::NS_NEWNET,
+           }});
+  ASSERT_TRUE(status.ok());
+  std::string process_id = status->first;
+  WaitForEvent(client, adastra::stagezero::control::Event::kStart);
+
+  std::string data = WaitForOutput(client, "FOO", 100);
+  std::cout << data;
+
+  absl::Status s = client.StopProcess(process_id);
   ASSERT_TRUE(s.ok());
   WaitForEvent(client, adastra::stagezero::control::Event::kStop);
 }

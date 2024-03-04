@@ -21,8 +21,8 @@ namespace adastra::stagezero {
 
 StageZero::StageZero(co::CoroutineScheduler &scheduler,
                      toolbelt::InetAddress addr, bool log_to_output,
-                     const std::string &logdir, const std::string &runfiles_dir,
-                     const std::string &log_level, int notify_fd)
+                     const std::string &logdir, const std::string &log_level,
+                     const std::string &runfiles_dir, int notify_fd)
     : co_scheduler_(scheduler), addr_(addr), runfiles_dir_(runfiles_dir),
       notify_fd_(notify_fd), logger_("stagezero", log_to_output) {
   logger_.SetLogLevel(log_level);
@@ -192,7 +192,6 @@ absl::Status StageZero::Run() {
                                         ListenerCoroutine(listen_socket, c);
                                       },
                                       "Listener Socket"));
-
 
   // Run the coroutine main loop.
   co_scheduler_.Run();
