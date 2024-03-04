@@ -30,6 +30,7 @@ struct Stream {
     kFd,
     kClose,
     kLog,
+    kSyslog,
   };
 
   enum class Direction {

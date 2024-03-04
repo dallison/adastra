@@ -19,7 +19,8 @@ void Terminal::FromProto(const stagezero::proto::Terminal &src) {
 }
 
 absl::Status ValidateStreams(
-    google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl> streams) {
+    google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
+        streams) {
   for (auto &stream : streams) {
 
     if (stream.disposition() == stagezero::proto::StreamControl::CLOSE ||
@@ -90,6 +91,11 @@ absl::Status Stream::FromProto(const stagezero::proto::StreamControl &src) {
     direction = Stream::Direction::kOutput;
     direction_set = true;
     break;
+  case stagezero::proto::StreamControl::SYSLOG:
+    disposition = Stream::Disposition::kSyslog;
+    direction = Stream::Direction::kOutput;
+    direction_set = true;
+    break;
   default:
     return absl::InternalError("Unknown stream disposition");
   }
@@ -142,6 +148,11 @@ void Stream::ToProto(stagezero::proto::StreamControl *dest) const {
     break;
   case Stream::Disposition::kLog:
     dest->set_disposition(stagezero::proto::StreamControl::LOGGER);
+    dest->set_direction(stagezero::proto::StreamControl::OUTPUT);
+    direction_set = true;
+    break;
+  case Stream::Disposition::kSyslog:
+    dest->set_disposition(stagezero::proto::StreamControl::SYSLOG);
     dest->set_direction(stagezero::proto::StreamControl::OUTPUT);
     direction_set = true;
     break;

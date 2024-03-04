@@ -12,6 +12,7 @@
 #include "toolbelt/hexdump.h"
 
 #include <ctype.h>
+#include <syslog.h>
 
 #include <cerrno>
 #include <csignal>
@@ -515,6 +516,39 @@ absl::Status Process::BuildStreams(
 
       break;
     }
+    case proto::StreamControl::SYSLOG: {
+      absl::StatusOr<toolbelt::Pipe> pipe = MakeFileDescriptors(
+          s.tty(), s.has_terminal() ? &s.terminal() : nullptr);
+      if (!pipe.ok()) {
+        return pipe.status();
+      }
+      stream->pipe = std::move(*pipe);
+
+      if (s.has_terminal()) {
+        stream->term_name = s.terminal().name();
+      }
+      client_->AddCoroutine(std::make_unique<co::Coroutine>(
+          scheduler_, [ proc = shared_from_this(), stream,
+                        client = client_ ](co::Coroutine * c) {
+            absl::Status status = StreamFromFileDescriptor(
+                stream->pipe.ReadFd().Fd(),
+                [proc, stream, client](const char *buf,
+                                       size_t len) -> absl::Status {
+
+                  syslog(stream->fd == 1 ? LOG_INFO : LOG_ERR, "%s",
+                         std::string(buf, len).c_str());
+                  return absl::OkStatus();
+                },
+                c);
+            if (!status.ok()) {
+              client->Log(proc->Name(), toolbelt::LogLevel::kError,
+                          "Failed to read from stream: %s",
+                          status.ToString().c_str());
+            }
+          }));
+
+      break;
+    }
     case proto::StreamControl::FILENAME: {
       std::string filename = s.filename();
       if (filename.empty()) {
@@ -589,13 +623,15 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
   }
 
 #if defined(__linux__)
-  // On Linux we can use clone3 instead of fork if we have any namespace assignments.
+  // On Linux we can use clone3 instead of fork if we have any namespace
+  // assignments.
   if (ns_.has_value()) {
     struct clone_args args = {
         .flags = static_cast<uint64_t>(ns_->CloneType()),
         // All other members are zero.
     };
-    std::cerr << "calling clone3 with flags " << std::hex << args.flags << std::endl;
+    std::cerr << "calling clone3 with flags " << std::hex << args.flags
+              << std::endl;
     pid_ = syscall(SYS_clone3, &args, sizeof(args));
   } else {
     pid_ = fork();
@@ -640,6 +676,8 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
       interactive_proc_end_.Reset();
     }
 
+    bool syslog_opened = false;
+
     for (auto &stream : streams_) {
       if (stream->disposition != proto::StreamControl::CLOSE &&
           stream->disposition != proto::StreamControl::STAGEZERO) {
@@ -670,6 +708,12 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
               stream->pipe.SetWriteFd(file_fd);
             } else {
               stream->pipe.SetReadFd(file_fd);
+            }
+          } else if (stream->disposition == proto::StreamControl::SYSLOG) {
+            // Open the syslog client with the process name.
+            if (!syslog_opened) {
+              syslog_opened = true;
+              openlog(Name().c_str(), LOG_CONS, 0);
             }
           }
           toolbelt::FileDescriptor &fd =

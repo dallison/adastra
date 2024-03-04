@@ -385,6 +385,33 @@ TEST_F(ClientTest, OutputTTY) {
   WaitForEvent(client, adastra::stagezero::control::Event::kStop);
 }
 
+TEST_F(ClientTest, OutputSyslog) {
+  adastra::stagezero::Client client;
+  InitClient(client, "foobar2", adastra::kOutputEvents);
+
+  adastra::Stream output = {
+      .stream_fd = 1,
+      .tty = true,
+      .disposition = adastra::Stream::Disposition::kSyslog,
+  };
+
+  absl::StatusOr<std::pair<std::string, int>> status =
+      client.LaunchStaticProcess("loop2",
+                                 "${runfiles_dir}/__main__/testdata/loop",
+                                 {.streams = {
+                                      output,
+                                  }});
+  ASSERT_TRUE(status.ok());
+  std::string process_id = status->first;
+  WaitForEvent(client, adastra::stagezero::control::Event::kStart);
+  sleep(2);
+
+  std::cout << "stopping process " << process_id << std::endl;
+  absl::Status s = client.StopProcess(process_id);
+  ASSERT_TRUE(s.ok());
+  WaitForEvent(client, adastra::stagezero::control::Event::kStop);
+}
+
 TEST_F(ClientTest, Echo) {
   adastra::stagezero::Client client;
   InitClient(client, "foobar2", adastra::kOutputEvents);

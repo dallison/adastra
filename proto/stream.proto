@@ -21,6 +21,7 @@ message StreamControl {
     CLOSE = 5;    // Close
     NOTIFY = 6;   // Special stream for startup notification
     LOGGER = 7;   // Send to client as log message.
+    SYSLOG = 8;   // Send to syslog.
   };
 
   // Direction is as seen from the point of view of the process.
