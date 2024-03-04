@@ -4,6 +4,8 @@
 
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
+#include "absl/strings/str_split.h"
+
 #include "stagezero/client/client.h"
 #include "stagezero/stagezero.h"
 #include <gtest/gtest.h>
@@ -833,6 +835,11 @@ TEST_F(ClientTest, VirtualOutput) {
 }
 
 TEST_F(ClientTest, Namespaces) {
+  if (getuid() != 0) {
+    std::cerr << "Skipping Namespace test because we aren't root\n";
+    std::cerr << "Rerun using sudo if you want to run this\n";
+    return;
+  }
   adastra::stagezero::Client client;
   InitClient(client, "foobar2", adastra::kOutputEvents);
 
@@ -842,12 +849,19 @@ TEST_F(ClientTest, Namespaces) {
       .direction = adastra::Stream::Direction::kOutput,
   };
 
+  std::string cmd;
+#if defined(__linux__)
+  cmd = "/usr/sbin/ip addr; echo FOO";
+#else
+  cmd = "/sbin/ifconfig -a; echo FOO";
+#endif
+
   absl::StatusOr<std::pair<std::string, int>> status =
       client.LaunchStaticProcess(
           "ifconfig", "/bin/bash",
           {.args =
                {
-                   "-c", "/sbin/ifconfig -a; echo FOO",
+                   "-c", cmd,
                },
            .streams =
                {
@@ -856,6 +870,7 @@ TEST_F(ClientTest, Namespaces) {
            .ns = adastra::Namespace{
                .type = adastra::stagezero::config::Namespace::NS_NEWNET,
            }});
+  std::cerr << status.status() << std::endl;
   ASSERT_TRUE(status.ok());
   std::string process_id = status->first;
   WaitForEvent(client, adastra::stagezero::control::Event::kStart);
@@ -863,6 +878,33 @@ TEST_F(ClientTest, Namespaces) {
   std::string data = WaitForOutput(client, "FOO", 100);
   std::cout << data;
 
+#if defined(__linux__)
+  // On linux, as root, we should only see the loopback interface.
+  // This will appear as:
+  // 1: lo: <LOOPBACK> mtu 65536 qdisc noop state DOWN group default qlen 1000
+  //  link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+  // FOO
+  std::vector<std::string> lines = absl::StrSplit(data, '\n');
+  bool lo_found = false;
+  bool something_else_found = false;
+  for (auto& line : lines) {
+    if (line.find("FOO") != std::string::npos) {
+      continue;
+    }
+    if (line.find("lo:") != std::string::npos && line[0] == '1') {
+      lo_found = true;
+    } else {
+      if (line.empty() || isspace(line[0])) {
+        continue;
+      }
+      something_else_found = true;
+	  break;
+    }
+  }
+  ASSERT_TRUE(lo_found);
+  ASSERT_FALSE(something_else_found);
+#endif
+  
   absl::Status s = client.StopProcess(process_id);
   ASSERT_TRUE(s.ok());
   WaitForEvent(client, adastra::stagezero::control::Event::kStop);
