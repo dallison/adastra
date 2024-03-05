@@ -272,7 +272,7 @@ absl::Status ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
         .flags = static_cast<uint64_t>(ns.CloneType()),
         // All other members are zero.
     };
-    pid = syscall(SYS_clone3, &args, sizeof(args));
+    pid = syscall(__NR_clone3, &args, sizeof(args));
   } else {
     pid = fork();
   }

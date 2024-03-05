@@ -630,9 +630,7 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
         .flags = static_cast<uint64_t>(ns_->CloneType()),
         // All other members are zero.
     };
-    std::cerr << "calling clone3 with flags " << std::hex << args.flags
-              << std::endl;
-    pid_ = syscall(SYS_clone3, &args, sizeof(args));
+    pid_ = syscall(__NR_clone3, &args, sizeof(args));
   } else {
     pid_ = fork();
   }
