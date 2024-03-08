@@ -68,9 +68,9 @@ http_archive(
 
 http_archive(
   name = "toolbelt",
-  urls = ["https://github.com/dallison/cpp_toolbelt/archive/refs/tags/1.1.6.tar.gz"],
-  strip_prefix = "cpp_toolbelt-1.1.6",
-  #sha256 = "27429e66e47812da8c8bc18a823a27462277499029e9091be206f3844a7b05cc"
+  urls = ["https://github.com/dallison/cpp_toolbelt/archive/refs/tags/1.1.7.tar.gz"],
+  strip_prefix = "cpp_toolbelt-1.1.7",
+  sha256 = "be545bd2132d8a9fc90cf59b2ba6085e776cf078eb300a1cfe266343f057f557"
 )
 
 # For local debugging of toolbelt coroutine library.
@@ -81,9 +81,9 @@ http_archive(
 
 http_archive(
   name = "coroutines",
-  urls = ["https://github.com/dallison/co/archive/refs/tags/1.3.6.tar.gz"],
-  strip_prefix = "co-1.3.6",
-  # sha256 = "132ec0f47008a10f43dbc3dea6c31db954ea6f808245127e99af80ffebb58768"
+  urls = ["https://github.com/dallison/co/archive/refs/tags/1.3.7.tar.gz"],
+  strip_prefix = "co-1.3.7",
+  sha256 = "709ddaf3d55e6da6e34602e31cdb04b2321013e862fb9bddb6e021e117d35c22"
 )
 
 # For local debugging of co coroutine library.
@@ -127,9 +127,9 @@ http_archive(
 
 http_archive(
   name = "subspace",
-  urls = ["https://github.com/dallison/subspace/archive/refs/tags/1.3.2.tar.gz"],
-  strip_prefix = "subspace-1.3.2",
-  sha256 = "810ea8315020708a6ef4a5eeddcd627694a932d4f91cf74785ba23cfedc91de5"
+  urls = ["https://github.com/dallison/subspace/archive/refs/tags/1.3.3.tar.gz"],
+  strip_prefix = "subspace-1.3.3",
+  sha256 = "bbdd9149a73a4988c9c9ba24711661be8ae6ed5c918edd684ceae5f4e4d31734"
 )
 
 # For local debugging of subspace library.

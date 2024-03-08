@@ -50,7 +50,7 @@ public:
 
     stagezero_addr_ = toolbelt::InetAddress("localhost", port);
     stagezero_ = std::make_unique<adastra::stagezero::StageZero>(
-        stagezero_scheduler_, stagezero_addr_, true, "/tmp", "", "debug",
+        stagezero_scheduler_, stagezero_addr_, true, "/tmp", "debug", "",
         stagezero_pipe_[1]);
 
     // Start stagezero running in a thread.

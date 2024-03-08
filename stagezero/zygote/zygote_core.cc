@@ -3,8 +3,8 @@
 // See LICENSE file for licensing information.
 
 #include "stagezero/zygote/zygote_core.h"
-#include "stagezero/cgroup.h"
 #include "common/namespace.h"
+#include "stagezero/cgroup.h"
 
 #include "absl/container/flat_hash_set.h"
 #include "absl/strings/numbers.h"
@@ -81,20 +81,27 @@ absl::Status ZygoteCore::Run() {
   }
 
   server_ =
-      std::make_unique<co::Coroutine>(scheduler_, [this](co::Coroutine *c) {
-        while (control_socket_->Connected()) {
-          WaitForSpawn(c);
-        }
+      std::make_unique<co::Coroutine>(scheduler_,
+                                      [this](co::Coroutine *c) {
+                                        while (control_socket_->Connected()) {
+                                          WaitForSpawn(c);
+                                        }
 
-      }, "ZygoteServer");
+                                      },
+                                      "ZygoteServer");
 
-  monitor_ =
-      std::make_unique<co::Coroutine>(scheduler_, [this](co::Coroutine *c) {
+  monitor_ = std::make_unique<co::Coroutine>(
+      scheduler_,
+      [this](co::Coroutine *c) {
         constexpr int kWaitTimeMs = 500;
 
         for (;;) {
           int status;
-          pid_t pid = waitpid(-1, &status, WNOHANG);
+          int wait_arg = WNOHANG;
+#if defined(__linux__)
+          wait_arg |= __WALL;
+#endif
+          pid_t pid = waitpid(-1, &status, wait_arg);
           if (pid > 0) {
             // A process died.  Write the pid and status to the notification
             // pipe.  Set the top bit to distinguish this from any other
@@ -108,7 +115,8 @@ absl::Status ZygoteCore::Run() {
           c->Millisleep(kWaitTimeMs);
         }
 
-      }, "ZygoteMonitor");
+      },
+      "ZygoteMonitor");
 
   scheduler_.Run();
   // When we get here we are either in the zygote that has been stopped or
@@ -262,9 +270,10 @@ absl::Status ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
   }
 
   pid_t pid;
-  // All looks good for the attempt to fork the zygote.  Let's do it.
-  #if defined(__linux__)
-  // On Linux we can use clone3 instead of fork if we have any namespace assignments.
+// All looks good for the attempt to fork the zygote.  Let's do it.
+#if defined(__linux__)
+  // On Linux we can use clone3 instead of fork if we have any namespace
+  // assignments.
   if (req.has_ns()) {
     adastra::Namespace ns;
     ns.FromProto(req.ns());
