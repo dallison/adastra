@@ -127,9 +127,9 @@ http_archive(
 
 http_archive(
   name = "subspace",
-  urls = ["https://github.com/dallison/subspace/archive/refs/tags/1.3.4.tar.gz"],
-  strip_prefix = "subspace-1.3.4",
-  sha256 = "16d931a27245bfb3dd2eb9001ed020bef0318658da36bc659effd271f45a0a8d"
+  urls = ["https://github.com/dallison/subspace/archive/refs/tags/1.3.5.tar.gz"],
+  strip_prefix = "subspace-1.3.5",
+  sha256 = "d58c11f3dec1eb5680eef0cc054d1a1297ec5ece574d2e6244e1cfb5f061314c"
 )
 
 # For local debugging of subspace library.
