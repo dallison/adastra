@@ -11,7 +11,7 @@ build --cxxopt='-Wno-sign-compare'
 build --noenable_bzlmod
 
 # For Apple Silicon
-build:apple_silicon --cpu=darwin_arm64
+build:apple_silicon --cpu=darwin_arm64 --host_cpu=darwin_arm64 --host_cxxopt="-std=c++17"
 build:apple_silicon --features=oso_prefix_is_pwd
 
 # Common flags for Clang

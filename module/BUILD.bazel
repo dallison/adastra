@@ -1,3 +1,5 @@
+load("@davros//davros:davros_serdes_library.bzl", "davros_serdes_library")
+
 package(default_visibility = ["//visibility:public"])
 
 cc_library(
@@ -6,13 +8,12 @@ cc_library(
         "module.cc",
     ],
     hdrs = [
-        "module.h",
         "message.h",
+        "module.h",
         "publisher.h",
         "subscriber.h",
     ],
     deps = [
-        ":test_cc_proto",
         "//stagezero:symbols_lib",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
@@ -38,12 +39,42 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "ros_module",
+    hdrs = [
+        "ros_module.h",
+    ],
+    deps = [
+        ":module",
+        "@davros//davros:serdes_runtime",
+    ],
+)
+
 cc_test(
     name = "module_test",
     size = "small",
     srcs = ["module_test.cc"],
     deps = [
         ":protobuf_module",
+        ":test_cc_proto",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_googletest//:gtest",
+        "@coroutines//:co",
+        "@subspace//client:subspace_client",
+        "@subspace//server",
+    ],
+)
+
+cc_test(
+    name = "ros_test",
+    size = "small",
+    srcs = ["ros_test.cc"],
+    deps = [
+        ":ros_module",
+        ":test_ros",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/status",
@@ -63,6 +94,13 @@ proto_library(
 cc_proto_library(
     name = "test_cc_proto",
     deps = [":test_proto"],
+)
+
+davros_serdes_library(
+    name = "test_ros",
+    srcs = [
+        "testdata/msg/Test.msg",
+    ],
 )
 
 cc_binary(

@@ -218,7 +218,10 @@ TEST_F(ModuleTest, PubSub) {
   auto sub = mod.RegisterSubscriber<moduletest::TestMessage>(
       "foobar", [&mod](std::shared_ptr<Subscriber<moduletest::TestMessage>> sub,
                        Message<const moduletest::TestMessage> msg,
-                       co::Coroutine *c) { mod.Stop(); });
+                       co::Coroutine *c) { 
+                        ASSERT_EQ(1234, msg->x());
+                        ASSERT_EQ("dave", msg->s());
+                        mod.Stop(); });
   ASSERT_TRUE(sub.ok());
 
   pub->Publish();

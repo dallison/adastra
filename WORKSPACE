@@ -151,4 +151,16 @@ http_archive(
   # sha256 = "9cc2dfc3f1a5a52ab3c3891167b7f31a041255c9d2ce0c949cea44e0b72ebff1"
 )
 
+http_archive(
+  name = "davros",
+  urls = ["https://github.com/dallison/davros/archive/refs/tags/0.1.0.tar.gz"],
+  strip_prefix = "davros-0.1.0",
+  # sha256 = "9cc2dfc3f1a5a52ab3c3891167b7f31a041255c9d2ce0c949cea44e0b72ebff1"
+)
+
+# For local debugging of davros library.
+# local_repository(
+#     name = "davros",
+#     path = "../davros",
+# )
 
