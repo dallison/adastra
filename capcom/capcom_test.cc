@@ -667,6 +667,69 @@ TEST_F(CapcomTest, RestartSimpleSubsystem) {
   ASSERT_TRUE(status.ok());
 }
 
+TEST_F(CapcomTest, RestartSubsystemParentOffline) {
+  adastra::capcom::client::Client client(ClientMode::kNonBlocking);
+  InitClient(client, "foobar1");
+
+  absl::Status status = client.AddSubsystem(
+      "foobar1", {.static_processes = {{
+                      .name = "loop",
+                      .executable = "${runfiles_dir}/__main__/testdata/loop",
+                  }}});
+  ASSERT_TRUE(status.ok());
+
+  WaitForState(client, "foobar1", AdminState::kOffline, OperState::kOffline);
+
+  // This won't go online.  It has processes.
+  status = client.AddSubsystem(
+      "foobar2", {.static_processes = {{
+                      .name = "loop",
+                      .executable = "${runfiles_dir}/__main__/testdata/loop",
+                  }},
+                  .children = {
+                      "foobar1",
+                  }});
+  ASSERT_TRUE(status.ok());
+
+  // This won't go online.
+  status = client.AddSubsystem("foobar3", {.children = {
+                                               "foobar2",
+                                           }});
+  ASSERT_TRUE(status.ok());
+
+  WaitForState(client, "foobar3", AdminState::kOffline, OperState::kOffline);
+
+  status = client.StartSubsystem("foobar1");
+  ASSERT_TRUE(status.ok());
+  Event e =
+      WaitForState(client, "foobar1", AdminState::kOnline, OperState::kOnline);
+  sleep(1);
+
+  // Kill the process.
+  SubsystemStatus s = std::get<0>(e.event);
+  ASSERT_EQ(1, s.processes.size());
+  int pid = s.processes[0].pid;
+  kill(pid, SIGTERM);
+
+  // Wait for the subsytem to go into restarting, then back online.
+  WaitForState(client, "foobar1", AdminState::kOnline, OperState::kRestarting);
+  WaitForState(client, "foobar1", AdminState::kOnline, OperState::kOnline);
+  sleep(1);
+
+  // Stop the subsystem
+  status = client.StopSubsystem("foobar1");
+  ASSERT_TRUE(status.ok());
+  WaitForState(client, "foobar1", AdminState::kOffline, OperState::kOffline);
+
+  status = client.RemoveSubsystem("foobar1", false);
+  ASSERT_TRUE(status.ok());
+  status = client.RemoveSubsystem("foobar2", false);
+  ASSERT_TRUE(status.ok());
+  status = client.RemoveSubsystem("foobar3", false);
+  std::cerr << status << std::endl;
+  ASSERT_TRUE(status.ok());
+}
+
 TEST_F(CapcomTest, StartSimpleSubsystemTree) {
   adastra::capcom::client::Client client(ClientMode::kBlocking);
   InitClient(client, "foobar1");

@@ -150,10 +150,10 @@ void Subsystem::Offline(uint32_t client_id, co::Coroutine *c) {
   }
   OperState next_state = OperState::kOffline;
   RunSubsystemInState(
-      c, [ subsystem = shared_from_this(),
-           &next_state ](EventSource event_source,
-                         std::shared_ptr<stagezero::Client> stagezero_client,
-                         co::Coroutine * c)
+      c, [ subsystem = shared_from_this(), &next_state,
+           client_id ](EventSource event_source,
+                       std::shared_ptr<stagezero::Client> stagezero_client,
+                       co::Coroutine * c)
              ->StateTransition {
                switch (event_source) {
                case EventSource::kStageZero: {
@@ -222,6 +222,12 @@ void Subsystem::Offline(uint32_t client_id, co::Coroutine *c) {
                        "Subsystem %s has reported oper state as %s",
                        message->sender->Name().c_str(),
                        OperStateName(message->state.oper));
+                   if (message->state.oper == OperState::kRestarting) {
+                     // Child has entered restarting state.  This is our signal
+                     // to do that too.
+                     subsystem->EnterState(OperState::kRestarting, client_id);
+                     return StateTransition::kLeave;
+                   }
                    subsystem->NotifyParents();
                    break;
                  case Message::kAbort:
@@ -327,6 +333,11 @@ void Subsystem::StartingChildren(uint32_t client_id, co::Coroutine *c) {
                     OperStateName(message->state.oper));
                 if (message->state.oper == OperState::kOnline) {
                   child_notified[message->sender] = true;
+                } else if (subsystem->admin_state_ == AdminState::kOffline &&
+                           message->state.oper == OperState::kOffline) {
+                  // We are admin offline and a child has gone offline.  We consider this a final notification
+                  // from the child.
+                  child_notified[message->sender] = true;
                 }
                 subsystem->NotifyParents();
                 break;
@@ -348,6 +359,14 @@ void Subsystem::StartingChildren(uint32_t client_id, co::Coroutine *c) {
               }
             }
 
+            // If all children have reported in and we are admin offliine
+            // we enter the oper offline state.
+            if (subsystem->admin_state_ == AdminState::kOffline) {
+              // We are going offline.
+              subsystem->EnterState(OperState::kOffline, client_id);
+              return StateTransition::kLeave;
+            }
+
             if (next_state != OperState::kStartingProcesses) {
               subsystem->EnterState(next_state, client_id);
               return StateTransition::kLeave;
@@ -366,8 +385,11 @@ void Subsystem::StartingChildren(uint32_t client_id, co::Coroutine *c) {
 }
 
 void Subsystem::StartingProcesses(uint32_t client_id, co::Coroutine *c) {
-  if (processes_.empty()) {
-    EnterState(OperState::kOnline, client_id);
+  if (admin_state_ == AdminState::kOffline || processes_.empty()) {
+    EnterState(admin_state_ == AdminState::kOffline ? OperState::kOffline
+                                                    : OperState::kOnline,
+               client_id);
+    NotifyParents();
     return;
   }
   oper_state_ = OperState::kStartingProcesses;
