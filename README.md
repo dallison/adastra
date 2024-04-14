@@ -1,5 +1,5 @@
 # AdAstra Subsystem Launcher
-This software provides a means to coordinate the launch of subsystems withing a system of many computers.  **Ad Adstra** is a latin phrase meaning `to the stars` and introduces the general theme of `space travel` for this software.  Components of the software are:
+This software provides a means to coordinate the launch of subsystems within a system of many computers.  **Ad Adstra** is a latin phrase meaning `to the stars` and introduces the general theme of `space travel` for this software.  Components of the software are:
 
 1. **StageZero**: the process laucher.  This is at term used in the space industry for the launch complex needed to launch a rocket (which has stages 1, 2, 3, etc.).  StageZero is responsible for launching the processes and monitoring them, reporting events to `capcom`.
 2. **Modules**: the individual components of the system being run.  Analagous to the components of a spacecraft, modules make up the system being run on the robot.  They communicate using `subspace` IPC channels and are loaded as `virtual` processes.
