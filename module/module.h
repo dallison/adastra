@@ -168,11 +168,11 @@ public:
   //
   // You can use "auto" for the arguments of a lambda for the callback
   // function if you don't like repeating all the template arguments.
-  template <typename MessageType>
-  absl::StatusOr<std::shared_ptr<ZeroCopySubscriber<MessageType>>>
+  template <typename MessageType, typename Creator = NullSubCreator<MessageType>>
+  absl::StatusOr<std::shared_ptr<ZeroCopySubscriber<MessageType, Creator>>>
   RegisterZeroCopySubscriber(
       const std::string &channel, const SubscriberOptions &options,
-      std::function<void(std::shared_ptr<ZeroCopySubscriber<MessageType>>,
+      std::function<void(std::shared_ptr<ZeroCopySubscriber<MessageType, Creator>>,
                          Message<const MessageType>, co::Coroutine *)>
           callback);
 
@@ -185,11 +185,11 @@ public:
   //
   // You can use "auto" for the arguments of a lambda for the callback
   // function if you don't like repeating all the template arguments.
-  template <typename MessageType>
-  absl::StatusOr<std::shared_ptr<ZeroCopySubscriber<MessageType>>>
+  template <typename MessageType, typename Creator= NullSubCreator<MessageType>>
+  absl::StatusOr<std::shared_ptr<ZeroCopySubscriber<MessageType, Creator>>>
   RegisterZeroCopySubscriber(
       const std::string &channel,
-      std::function<void(std::shared_ptr<ZeroCopySubscriber<MessageType>>,
+      std::function<void(std::shared_ptr<ZeroCopySubscriber<MessageType, Creator>>,
                          Message<const MessageType>, co::Coroutine *)>
           callback) {
     return RegisterZeroCopySubscriber(channel, {}, std::move(callback));
@@ -286,36 +286,36 @@ public:
   // for the arguments of the lambda, but if you do you MUST use "auto&" for
   // the 'msg' argument otherwise the lambda will get a copy of the message
   // and that won't work.
-  template <typename MessageType>
-  absl::StatusOr<std::shared_ptr<ZeroCopyPublisher<MessageType>>>
+  template <typename MessageType, typename Creator>
+  absl::StatusOr<std::shared_ptr<ZeroCopyPublisher<MessageType, Creator>>>
   RegisterZeroCopyPublisher(
       const std::string &channel, int slot_size, int num_slots,
       const PublisherOptions &options,
-      std::function<bool(std::shared_ptr<ZeroCopyPublisher<MessageType>>,
+      std::function<bool(std::shared_ptr<ZeroCopyPublisher<MessageType, Creator>>,
                          MessageType &, co::Coroutine *)>
           callback);
 
-  template <typename MessageType>
-  absl::StatusOr<std::shared_ptr<ZeroCopyPublisher<MessageType>>>
+  template <typename MessageType, typename Creator>
+  absl::StatusOr<std::shared_ptr<ZeroCopyPublisher<MessageType, Creator>>>
   RegisterZeroCopyPublisher(
       const std::string &channel, int slot_size, int num_slots,
-      std::function<bool(std::shared_ptr<ZeroCopyPublisher<MessageType>>,
+      std::function<bool(std::shared_ptr<ZeroCopyPublisher<MessageType, Creator>>,
                          MessageType &, co::Coroutine *)>
           callback) {
     return RegisterZeroCopyPublisher(channel, slot_size, num_slots, {},
                                      callback);
   }
 
-  template <typename MessageType>
-  absl::StatusOr<std::shared_ptr<ZeroCopyPublisher<MessageType>>>
+  template <typename MessageType, typename Creator>
+  absl::StatusOr<std::shared_ptr<ZeroCopyPublisher<MessageType, Creator>>>
   RegisterZeroCopyPublisher(const std::string &channel, int slot_size,
                             int num_slots, const PublisherOptions &options);
 
-  template <typename MessageType>
-  absl::StatusOr<std::shared_ptr<ZeroCopyPublisher<MessageType>>>
+  template <typename MessageType, typename Creator>
+  absl::StatusOr<std::shared_ptr<ZeroCopyPublisher<MessageType, Creator>>>
   RegisterZeroCopyPublisher(const std::string &channel, int slot_size,
                             int num_slots) {
-    return RegisterZeroCopyPublisher<MessageType>(channel, slot_size, num_slots,
+    return RegisterZeroCopyPublisher<MessageType, Creator>(channel, slot_size, num_slots,
                                                   PublisherOptions{});
   }
 
@@ -376,10 +376,10 @@ public:
 
 protected:
   template <typename T, typename D> friend class SerializingSubscriber;
-  template <typename T> friend class ZeroCopySubscriber;
+  template <typename T, typename C> friend class ZeroCopySubscriber;
   template <typename T, typename L, typename S>
   friend class SerializingPublisher;
-  template <typename T> friend class ZeroCopyPublisher;
+  template <typename T, typename C> friend class ZeroCopyPublisher;
   friend class SubscriberBase;
   friend class PublisherBase;
 
@@ -446,8 +446,8 @@ inline void SerializingSubscriber<MessageType, Deserialize>::Run() {
   module_.AddCoroutine(std::unique_ptr<co::Coroutine>(runner));
 }
 
-template <typename MessageType>
-inline void ZeroCopySubscriber<MessageType>::Run() {
+template <typename MessageType, typename Creator>
+inline void ZeroCopySubscriber<MessageType, Creator>::Run() {
   co::Coroutine *runner = new co::Coroutine(
       module_.scheduler_,
       [sub = this->shared_from_this()](co::Coroutine * c) {
@@ -462,21 +462,27 @@ inline void ZeroCopySubscriber<MessageType>::Run() {
             break;
           }
           for (;;) {
-            absl::StatusOr<subspace::shared_ptr<const MessageType>> msg =
+            // Get a subspace::shared_ptr to the data in the buffer.
+            absl::StatusOr<subspace::shared_ptr<const MessageType>> ipc_msg =
                 sub->sub_.template ReadMessage<const MessageType>(
                     sub->options_.read_mode);
-            if (!msg.ok()) {
+            if (!ipc_msg.ok()) {
               std::cerr << "Error reading zero-copy message on channel "
-                        << sub->sub_.Name() << ": " << msg.status()
+                        << sub->sub_.Name() << ": " << ipc_msg.status()
                         << std::endl;
               return;
             }
-            auto shared_msg = std::move(*msg);
-            if (!shared_msg) {
+            subspace::shared_ptr<const MessageType> imsg = *ipc_msg;
+            if (!imsg) {
               break;
             }
-
-            sub->callback_(sub, Message(std::move(shared_msg)), c);
+            // Create the message that refers to the data in the buffer.
+            std::shared_ptr<const MessageType> msg = Creator::Invoke(imsg.GetMessage().buffer,
+                                       imsg.GetMessage().length);
+      
+            // We keep both the message and the shared pointer to the IPC
+            // data.  This keeps them both alive until the callback is done.
+            sub->callback_(sub, Message(std::move(msg), std::move(imsg)), c);
           }
         }
       },
@@ -513,11 +519,11 @@ Module::RegisterSerializingSubscriber(
   return sub;
 }
 
-template <typename MessageType>
-inline absl::StatusOr<std::shared_ptr<ZeroCopySubscriber<MessageType>>>
+template <typename MessageType, typename Creator>
+inline absl::StatusOr<std::shared_ptr<ZeroCopySubscriber<MessageType, Creator>>>
 Module::RegisterZeroCopySubscriber(
     const std::string &channel, const SubscriberOptions &options,
-    std::function<void(std::shared_ptr<ZeroCopySubscriber<MessageType>>,
+    std::function<void(std::shared_ptr<ZeroCopySubscriber<MessageType, Creator>>,
                        Message<const MessageType>, co::Coroutine *)>
         callback) {
   // Since we pass a shared pointer to the callback function, we
@@ -537,7 +543,7 @@ Module::RegisterZeroCopySubscriber(
   if (!subspace_sub.ok()) {
     return subspace_sub.status();
   }
-  auto sub = std::make_shared<ZeroCopySubscriber<MessageType>>(
+  auto sub = std::make_shared<ZeroCopySubscriber<MessageType, Creator>>(
       *this, std::move(*subspace_sub), std::move(options), std::move(callback));
 
   AddSubscriber(sub);
@@ -633,8 +639,8 @@ SerializingPublisher<MessageType, SerializedLength, Serialize>::Run() {
   module_.AddCoroutine(std::unique_ptr<co::Coroutine>(runner));
 }
 
-template <typename MessageType>
-inline void ZeroCopyPublisher<MessageType>::Run() {
+template <typename MessageType, typename Creator>
+inline void ZeroCopyPublisher<MessageType, Creator>::Run() {
   co::Coroutine *runner = new co::Coroutine(
       module_.scheduler_,
       [pub = this->shared_from_this()](co::Coroutine * c) {
@@ -652,10 +658,11 @@ inline void ZeroCopyPublisher<MessageType>::Run() {
                         << buffer.status().ToString() << std::endl;
               abort();
             }
-            std::shared_ptr<ZeroCopyPublisher<MessageType>> self =
-                std::static_pointer_cast<ZeroCopyPublisher<MessageType>>(pub);
+            std::shared_ptr<ZeroCopyPublisher<MessageType, Creator>> self =
+                std::static_pointer_cast<ZeroCopyPublisher<MessageType, Creator>>(pub);
+            MessageType msg = Creator::Invoke(*buffer, pub->pub_.SlotSize());
             bool publish = self->callback_(
-                self, *reinterpret_cast<MessageType *>(*buffer), c);
+                self, msg, c);
             if (publish) {
               self->Publish(pub->pub_.SlotSize(), c);
             }
@@ -716,8 +723,8 @@ Module::RegisterSerializingPublisher(const std::string &channel, int slot_size,
       *this, std::move(*subspace_pub), std::move(options));
 }
 
-template <typename MessageType>
-inline absl::StatusOr<std::shared_ptr<ZeroCopyPublisher<MessageType>>>
+template <typename MessageType, typename Creator>
+inline absl::StatusOr<std::shared_ptr<ZeroCopyPublisher<MessageType, Creator>>>
 Module::RegisterZeroCopyPublisher(const std::string &channel, int slot_size,
                                   int num_slots,
                                   const PublisherOptions &options) {
@@ -731,18 +738,18 @@ Module::RegisterZeroCopyPublisher(const std::string &channel, int slot_size,
     return subspace_pub.status();
   }
 
-  auto pub = std::make_shared<ZeroCopyPublisher<MessageType>>(
+  auto pub = std::make_shared<ZeroCopyPublisher<MessageType, Creator>>(
       *this, std::move(*subspace_pub), std::move(options));
   AddPublisher(pub);
   return pub;
 }
 
-template <typename MessageType>
-inline absl::StatusOr<std::shared_ptr<ZeroCopyPublisher<MessageType>>>
+template <typename MessageType, typename Creator>
+inline absl::StatusOr<std::shared_ptr<ZeroCopyPublisher<MessageType, Creator>>>
 Module::RegisterZeroCopyPublisher(
     const std::string &channel, int slot_size, int num_slots,
     const PublisherOptions &options,
-    std::function<bool(std::shared_ptr<ZeroCopyPublisher<MessageType>>,
+    std::function<bool(std::shared_ptr<ZeroCopyPublisher<MessageType, Creator>>,
                        MessageType &, co::Coroutine *)>
         callback) {
   absl::StatusOr<subspace::Publisher> subspace_pub =
@@ -755,7 +762,7 @@ Module::RegisterZeroCopyPublisher(
     return subspace_pub.status();
   }
 
-  auto pub = std::make_shared<ZeroCopyPublisher<MessageType>>(
+  auto pub = std::make_shared<ZeroCopyPublisher<MessageType, Creator>>(
       *this, std::move(*subspace_pub), std::move(options), std::move(callback));
   AddPublisher(pub);
 

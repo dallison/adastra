@@ -68,9 +68,9 @@ http_archive(
 
 http_archive(
   name = "toolbelt",
-  urls = ["https://github.com/dallison/cpp_toolbelt/archive/refs/tags/1.1.7.tar.gz"],
-  strip_prefix = "cpp_toolbelt-1.1.7",
-  sha256 = "be545bd2132d8a9fc90cf59b2ba6085e776cf078eb300a1cfe266343f057f557"
+  urls = ["https://github.com/dallison/cpp_toolbelt/archive/refs/tags/1.2.0.tar.gz"],
+  strip_prefix = "cpp_toolbelt-1.2.0",
+  sha256 = "70e019407b1c3cecacec9ebd0013a762c59863a2c3c36a8f409ebf07825ace9e"
 )
 
 # For local debugging of toolbelt coroutine library.
@@ -164,3 +164,15 @@ http_archive(
 #     path = "../davros",
 # )
 
+# http_archive(
+#   name = "phaser",
+#   urls = ["https://github.com/dallison/phaser/archive/refs/tags/0.1.0.tar.gz"],
+#   strip_prefix = "phaser-0.1.0",
+#   # sha256 = "9cc2dfc3f1a5a52ab3c3891167b7f31a041255c9d2ce0c949cea44e0b72ebff1"
+# )
+
+# For local debugging of phaser library.
+local_repository(
+    name = "phaser",
+    path = "../phaser",
+)

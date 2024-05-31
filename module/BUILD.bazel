@@ -1,4 +1,5 @@
 load("@davros//davros:davros_serdes_library.bzl", "davros_serdes_library")
+load("@phaser//phaser:phaser_library.bzl", "phaser_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -50,6 +51,16 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "phaser_module",
+    hdrs = [
+        "phaser_module.h",
+    ],
+    deps = [
+        ":module",
+    ],
+)
+
 cc_test(
     name = "module_test",
     size = "small",
@@ -86,6 +97,23 @@ cc_test(
     ],
 )
 
+cc_test(
+    name = "phaser_test",
+    size = "small",
+    srcs = ["phaser_test.cc"],
+    deps = [
+        ":phaser_module",
+        ":test_phaser",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_googletest//:gtest",
+        "@coroutines//:co",
+        "@subspace//client:subspace_client",
+        "@subspace//server",
+    ],
+)
 proto_library(
     name = "test_proto",
     srcs = ["testdata/test.proto"],
@@ -101,6 +129,12 @@ davros_serdes_library(
     srcs = [
         "testdata/msg/Test.msg",
     ],
+)
+
+phaser_library(
+    name = "test_phaser",
+    add_namespace = "phaser",
+    deps = ["test_proto"],
 )
 
 cc_binary(

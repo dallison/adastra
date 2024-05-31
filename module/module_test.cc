@@ -26,6 +26,10 @@ void SignalHandler(int sig) { printf("Signal %d", sig); }
 template <typename T> using Message = adastra::module::Message<T>;
 template <typename T>
 using Subscriber = adastra::module::ProtobufSubscriber<T>;
+
+template <typename T>
+using NullSubCreator = adastra::module::NullSubCreator<T>;
+
 template <typename T> using Publisher = adastra::module::ProtobufPublisher<T>;
 using ProtobufModule = adastra::module::ProtobufModule;
 using namespace std::chrono_literals;
@@ -233,7 +237,7 @@ TEST_F(ModuleTest, PubSubZeroCopy) {
   ASSERT_TRUE(mod.ModuleInit().ok());
 
   int count = 0;
-  auto sub = mod.RegisterZeroCopySubscriber<std::byte>(
+  auto sub = mod.RegisterZeroCopySubscriber<std::byte, NullSubCreator<std::byte>>(
       "foobar",
       [&mod, &count](
           std::shared_ptr<adastra::module::ZeroCopySubscriber<std::byte>> sub,
@@ -248,8 +252,13 @@ TEST_F(ModuleTest, PubSubZeroCopy) {
       });
   ASSERT_TRUE(sub.ok());
 
+  struct SpanCreator {
+    absl::Span<std::byte> Invoke(void *buffer, size_t size) {
+      return absl::Span<std::byte>(reinterpret_cast<std::byte *>(buffer), size);
+    }
+  };
   auto p =
-      mod.RegisterZeroCopyPublisher<absl::Span<std::byte>>("foobar", 256, 10);
+      mod.RegisterZeroCopyPublisher<absl::Span<std::byte>, SpanCreator>("foobar", 256, 10);
   ASSERT_TRUE(p.ok());
   auto pub = std::move(*p);
 
@@ -275,7 +284,13 @@ TEST_F(ModuleTest, PubSubZeroCopyStruct) {
     char s[20];
   };
 
-  auto sub = mod.RegisterZeroCopySubscriber<MyMessage>(
+  struct MessagePubCreator {
+    static MyMessage* Invoke(void* buffer, size_t size) {
+      return reinterpret_cast<MyMessage*>(buffer);
+    }
+  };
+
+  auto sub = mod.RegisterZeroCopySubscriber<MyMessage, NullSubCreator<MyMessage>>(
       "foobar",
       [&mod](
           std::shared_ptr<adastra::module::ZeroCopySubscriber<MyMessage>> sub,
@@ -286,7 +301,7 @@ TEST_F(ModuleTest, PubSubZeroCopyStruct) {
       });
   ASSERT_TRUE(sub.ok());
 
-  auto p = mod.RegisterZeroCopyPublisher<MyMessage>("foobar", 256, 10);
+  auto p = mod.RegisterZeroCopyPublisher<MyMessage*, MessagePubCreator>("foobar", 256, 10);
   ASSERT_TRUE(p.ok());
   auto pub = std::move(*p);
 
@@ -311,7 +326,7 @@ TEST_F(ModuleTest, PubSubZeroCopyStructCallback) {
     char s[20];
   };
 
-  auto sub = mod.RegisterZeroCopySubscriber<MyMessage>(
+  auto sub = mod.RegisterZeroCopySubscriber<MyMessage, NullSubCreator<MyMessage>>(
       "foobar",
       [&mod](
           std::shared_ptr<adastra::module::ZeroCopySubscriber<MyMessage>> sub,
@@ -322,12 +337,18 @@ TEST_F(ModuleTest, PubSubZeroCopyStructCallback) {
       });
   ASSERT_TRUE(sub.ok());
 
-  auto p = mod.RegisterZeroCopyPublisher<MyMessage>(
+  struct MessageCreator {
+    static MyMessage* Invoke(void* buffer, size_t size) {
+      return reinterpret_cast<MyMessage*>(buffer);
+    }
+  };
+
+  auto p = mod.RegisterZeroCopyPublisher<MyMessage*, MessageCreator>(
       "foobar", 256, 10,
-      [](std::shared_ptr<adastra::module::ZeroCopyPublisher<MyMessage>> pub,
-         MyMessage &msg, co::Coroutine *c) -> bool {
-        msg.x = 1234;
-        strcpy(msg.s, "foobar");
+      [](std::shared_ptr<adastra::module::ZeroCopyPublisher<MyMessage*, MessageCreator>> pub,
+         MyMessage* &msg, co::Coroutine *c) -> bool {
+        msg->x = 1234;
+        strcpy(msg->s, "foobar");
         return true;
       });
   ASSERT_TRUE(p.ok());

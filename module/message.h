@@ -2,21 +2,36 @@
 #include "absl/types/span.h"
 #include "client/client.h"
 #include "google/protobuf/message.h"
-#include <variant>
+#include <tuple>
 
 namespace adastra::module {
 
-// This is a message received from IPC.  It is either a pointer to
-// a deserialized protobuf message or a pointer to a message held
+// This is a message received from IPC.  It is a pointer to
+// a deserialized protobuf message and/or a pointer to a message held
 // in an IPC slot (as a subspace::shared_ptr).
 template <typename MessageType> class Message {
 public:
   Message() = default;
-  Message(std::shared_ptr<MessageType> msg) : msg_(std::move(msg)) {}
-  Message(subspace::shared_ptr<MessageType> msg) : msg_(std::move(msg)) {}
+  Message(std::shared_ptr<MessageType> msg) {
+    std::get<0>(msg_) = std::move(msg);
+    index_ = 0;
+  }
+  Message(subspace::shared_ptr<MessageType> msg) {
+    std::get<1>(msg_) = std::move(msg);
+    index_ = 1;
+  }
+  // Holds both shared pointers to message.  If the std::shared_ptr
+  // is nullptr we use the subspace::shared_ptr.
+  Message(std::shared_ptr<MessageType> msg,
+          subspace::shared_ptr<MessageType> smsg) {
+    index_ = msg == nullptr ? 1 : 0;
+    std::get<0>(msg_) = std::move(msg);
+    std::get<1>(msg_) = std::move(smsg);
+  }
+
   ~Message() = default;
   MessageType *operator->() const {
-    switch (msg_.index()) {
+    switch (index_) {
     case 0:
       return std::get<0>(msg_).get();
     case 1:
@@ -26,7 +41,7 @@ public:
   }
 
   MessageType *operator->() {
-    switch (msg_.index()) {
+    switch (index_) {
     case 0:
       return std::get<0>(msg_).get();
     case 1:
@@ -37,7 +52,7 @@ public:
 
   MessageType &operator*() const {
     static MessageType empty;
-    switch (msg_.index()) {
+    switch (index_) {
     case 0:
       return *std::get<0>(msg_);
     case 1:
@@ -48,7 +63,7 @@ public:
 
   MessageType &operator*() {
     static MessageType empty;
-    switch (msg_.index()) {
+    switch (index_) {
     case 0:
       return *std::get<0>(msg_);
     case 1:
@@ -58,7 +73,7 @@ public:
   }
 
   MessageType *get() const {
-    switch (msg_.index()) {
+    switch (index_) {
     case 0:
       return std::get<0>(msg_).get();
     case 1:
@@ -68,7 +83,7 @@ public:
   }
 
   operator absl::Span<MessageType>() {
-    if (msg_.index() == 1) {
+    if (index_ == 1) {
       const auto &m = std::get<1>(msg_).GetMessage();
       return absl::Span<MessageType>(reinterpret_cast<MessageType *>(m.buffer),
                                      m.length);
@@ -77,7 +92,7 @@ public:
   }
 
   bool operator==(std::nullptr_t) {
-    switch (msg_.index()) {
+    switch (index_) {
     case 0:
       return std::get<0>(msg_).get() == nullptr;
     case 1:
@@ -89,10 +104,10 @@ public:
   bool operator!=(std::nullptr_t) { return !(*this == nullptr); }
 
   bool operator==(const Message<MessageType> &m) {
-    if (msg_.index() != m.index()) {
+    if (index_ != m.index_) {
       return false;
     }
-    switch (msg_.index()) {
+    switch (index_) {
     case 0:
       return std::get<0>(msg_) == std::get<0>(m);
     case 1:
@@ -104,7 +119,7 @@ public:
   bool operator!=(const Message<MessageType> &m) { return !(*this == m); }
 
   void reset() {
-    switch (msg_.index()) {
+    switch (index_) {
     case 0:
       std::get<0>(msg_).reset();
       break;
@@ -115,7 +130,30 @@ public:
   }
 
 private:
-  std::variant<std::shared_ptr<MessageType>, subspace::shared_ptr<MessageType>>
+  template <typename T> friend class WeakMessage;
+  std::tuple<std::shared_ptr<MessageType>, subspace::shared_ptr<MessageType>>
       msg_;
+  int index_;
 };
+
+// This is a partially weak message.  The front-end message is not weakened but
+// the Subspace shared_ptr is converted to a weak_ptr to allow reuse
+// of the message slot.
+template <typename MessageType> class WeakMessage {
+public:
+  WeakMessage(const Message<MessageType> &msg) : msg_(msg.msg_) {}
+
+  bool expired() const {
+    return std::get<1>(msg_).expired();
+  }
+
+  Message<MessageType> lock() const {
+    return Message<MessageType>(std::move(std::get<0>(msg_)),
+                                std::move(std::get<1>(msg_).lock()));
+  }
+
+private:
+  std::tuple<std::shared_ptr<MessageType>, subspace::weak_ptr<MessageType>> msg_;
+};
+
 } // namespace adastra::module

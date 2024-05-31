@@ -31,7 +31,7 @@ public:
   std::string Name() const { return sub_.Name(); }
 
 protected:
-  template <typename T> friend class ZeroCopySubscriber;
+  template <typename T, typename C> friend class ZeroCopySubscriber;
 
   Module &module_;
   subspace::Subscriber sub_;
@@ -67,17 +67,47 @@ protected:
       callback_;
 };
 
-// A ZeroCopySubscriber calls the callback function with a pointer to the
-// Subspace buffer holding the message data.  The message is not deserialized,
-// but instead a reference to the template typed
-// message is passed intact.  The message is passed as a subspace::shared_ptr
-// and should be converted to a subspace::weak_ptr before being stored if you
-// want to avoid holding onto a message slot, preventing a publisher from using
-// it.
+// Default creator for ZeroCopySubscriber that returns nullptr.  This
+// will make the subscriber see the data directly in the IPC buffer.
 template <typename MessageType>
+struct NullSubCreator {
+    static std::shared_ptr<MessageType> Invoke(const void* buffer, size_t size) {
+      return nullptr;
+    }
+};
+
+// A ZeroCopySubscriber calls the callback function without deserializing
+// the message.  There are two ways of doing this depending on how your
+// zero-copy system works:
+//
+// 1. If you are using a simple byte array or POD struct, the callback will get
+//    a pointer to the data inside the Subspace buffer.
+// 2. If you are using a message system that splits the message between
+//    a front-end and back-end, where the front-end contains information
+//    about the message that is held in the back-end, you will get
+//    a pointer to the front-end message and that will refer to the
+//    back-end in the Subspace buffer.  The subspace buffer is held
+//    as a subspace::shared_ptr which will prevent its reuse until
+//    the callback returns.
+//
+// The configuration of each option is done using the 'Creator' template
+// argument.  By default, this is set up to use option #1, but if you
+// have a more complex system, you can create a custom Creator class that
+// supplies a static function called 'Invoke' that takes a pointer to the
+// buffer and the size of the buffer and returns a shared_ptr to the
+// message.
+//
+// The signature for Invoke is:
+// static std::shared_ptr<const MessageType> Invoke(const void* buffer, size_t size);
+//
+// This returns nullptr for option #1 or a std::shared_ptr to the front-end
+// message for option #1.
+//
+// The default Creator is NullSubCreator which returns nullptr.
+template <typename MessageType, typename Creator = NullSubCreator<MessageType>>
 class ZeroCopySubscriber
     : public SubscriberBase,
-      public std::enable_shared_from_this<ZeroCopySubscriber<MessageType>> {
+      public std::enable_shared_from_this<ZeroCopySubscriber<MessageType, Creator>> {
 public:
   ZeroCopySubscriber(
       Module &module, subspace::Subscriber sub, SubscriberOptions options,

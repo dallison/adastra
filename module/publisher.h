@@ -37,7 +37,7 @@ public:
 protected:
   template <typename T, typename L, typename S>
   friend class SerializingPublisher;
-  template <typename T> friend class ZeroCopyPublisher;
+  template <typename T, typename C> friend class ZeroCopyPublisher;
 
   void BackpressureSubscribers();
   void ReleaseSubscribers();
@@ -104,14 +104,14 @@ private:
 // can also call the GetMessageBuffer and Publish functions to fill in a
 // message outside of the callback.  The message is not protobuf and is not
 // serialized or copied.
-template <typename MessageType> class ZeroCopyPublisher : public PublisherBase {
+template <typename MessageType, typename Creator> class ZeroCopyPublisher : public PublisherBase {
 public:
   ZeroCopyPublisher(Module &module, subspace::Publisher pub,
                     PublisherOptions options,
                     std::function<bool(std::shared_ptr<ZeroCopyPublisher>,
                                        MessageType &, co::Coroutine *)>
                         callback)
-      : ZeroCopyPublisher<MessageType>(module, std::move(pub),
+      : ZeroCopyPublisher<MessageType, Creator>(module, std::move(pub),
                                        std::move(options)) {
     callback_ = std::move(callback);
   }
