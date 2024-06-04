@@ -157,7 +157,7 @@ void Module::RemovePublisher(const std::shared_ptr<PublisherBase> pub) {
   RemovePublisher(*pub);
 }
 
-void Module::RemoveSubscriber(SubscriberBase& sub) {
+void Module::RemoveSubscriber(SubscriberBase &sub) {
   for (auto it = subscribers_.begin(); it != subscribers_.end(); ++it) {
     if (it->get() == &sub) {
       sub.Stop();
@@ -167,7 +167,7 @@ void Module::RemoveSubscriber(SubscriberBase& sub) {
   }
 }
 
-void Module::RemovePublisher(PublisherBase& pub) {
+void Module::RemovePublisher(PublisherBase &pub) {
   for (auto it = publishers_.begin(); it != publishers_.end(); ++it) {
     if (it->get() == &pub) {
       pub.Stop();
@@ -176,7 +176,7 @@ void Module::RemovePublisher(PublisherBase& pub) {
     }
   }
 }
-static co::CoroutineScheduler* g_scheduler;
+static co::CoroutineScheduler *g_scheduler;
 
 static void Signal(int sig) {
   if (sig == SIGQUIT && g_scheduler != nullptr) {

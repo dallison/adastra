@@ -104,15 +104,16 @@ private:
 // can also call the GetMessageBuffer and Publish functions to fill in a
 // message outside of the callback.  The message is not protobuf and is not
 // serialized or copied.
-template <typename MessageType, typename Creator> class ZeroCopyPublisher : public PublisherBase {
+template <typename MessageType, typename Creator>
+class ZeroCopyPublisher : public PublisherBase {
 public:
   ZeroCopyPublisher(Module &module, subspace::Publisher pub,
                     PublisherOptions options,
-                    std::function<bool(std::shared_ptr<ZeroCopyPublisher>,
-                                       MessageType &, co::Coroutine *)>
+                    std::function<size_t(std::shared_ptr<ZeroCopyPublisher>,
+                                         MessageType &, co::Coroutine *)>
                         callback)
       : ZeroCopyPublisher<MessageType, Creator>(module, std::move(pub),
-                                       std::move(options)) {
+                                                std::move(options)) {
     callback_ = std::move(callback);
   }
 
@@ -148,8 +149,9 @@ public:
   void Run();
 
 private:
-  std::function<bool(std::shared_ptr<ZeroCopyPublisher>, MessageType &,
-                     co::Coroutine *)>
+  // The callback returns the message size.
+  std::function<size_t(std::shared_ptr<ZeroCopyPublisher>, MessageType &,
+                       co::Coroutine *)>
       callback_;
 };
 } // namespace adastra::module

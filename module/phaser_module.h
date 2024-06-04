@@ -13,15 +13,34 @@ namespace adastra::module {
 
 // Creator for mutable messages for publishers.
 template <typename MessageType> struct PhaserPubCreator {
-  static MessageType Invoke(void *buffer, size_t size) {
-    return MessageType::CreateMutable(buffer, size);
+  static absl::StatusOr<MessageType> Invoke(subspace::Publisher &pub,
+                                            size_t size) {
+    return MessageType::CreateDynamicMutable(
+        size,
+        // Allocator for initial message.
+        [&pub](size_t size) -> absl::StatusOr<void *> {
+          return pub.GetMessageBuffer(size);
+        },
+        [](void *) {}, // Nothing to free.
+        // Reallocator when we run out of memory in the buffer.
+        [&pub](void *old_buffer, size_t old_size,
+               size_t new_size) -> absl::StatusOr<void *> {
+          absl::StatusOr<void *> buffer = pub.GetMessageBuffer(new_size);
+          if (!buffer.ok()) {
+            return buffer.status();
+          }
+          memcpy(*buffer, old_buffer, old_size);
+          return *buffer;
+        });
   }
 };
 
 // Creator for readonly messages for subscribers.
 template <typename MessageType> struct PhaserSubCreator {
-  static std::shared_ptr<const MessageType> Invoke(const void *buffer, size_t size) {
-    return std::make_shared<MessageType>(MessageType::CreateReadonly(buffer, size));
+  static std::shared_ptr<const MessageType> Invoke(const void *buffer,
+                                                   size_t size) {
+    return std::make_shared<MessageType>(
+        MessageType::CreateReadonly(buffer, size));
   }
 };
 
@@ -64,8 +83,8 @@ public:
   RegisterPublisher(
       const std::string &channel, int slot_size, int num_slots,
       const PublisherOptions &options,
-      std::function<bool(std::shared_ptr<PhaserPublisher<MessageType>>,
-                         MessageType &, co::Coroutine *)>
+      std::function<size_t(std::shared_ptr<PhaserPublisher<MessageType>>,
+                           MessageType &, co::Coroutine *)>
           callback) {
     PublisherOptions opts = options;
     opts.type = absl::StrFormat("phaser/%s", MessageType::FullName());
@@ -77,8 +96,8 @@ public:
   absl::StatusOr<std::shared_ptr<PhaserPublisher<MessageType>>>
   RegisterPublisher(
       const std::string &channel, int slot_size, int num_slots,
-      std::function<bool(std::shared_ptr<PhaserPublisher<MessageType>>,
-                         MessageType &, co::Coroutine *)>
+      std::function<size_t(std::shared_ptr<PhaserPublisher<MessageType>>,
+                           MessageType &, co::Coroutine *)>
           callback) {
     PublisherOptions opts = {
         .type = absl::StrFormat("protobuf/%s", MessageType::FullName())};

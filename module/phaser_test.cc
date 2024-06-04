@@ -115,10 +115,10 @@ TEST_F(ModuleTest, PubSub) {
   auto p = mod.RegisterPublisher<moduletest::phaser::TestMessage>(
       "foobar", 256, 10,
       [](std::shared_ptr<Publisher<moduletest::phaser::TestMessage>> pub,
-         moduletest::phaser::TestMessage &msg, co::Coroutine *c) -> bool {
+         moduletest::phaser::TestMessage &msg, co::Coroutine *c) -> size_t {
         msg.set_x(1234);
         msg.set_s("dave");
-        return true;
+        return msg.Size();
       });
   ASSERT_TRUE(p.ok());
   auto pub = *p;
@@ -147,10 +147,10 @@ TEST_F(ModuleTest, PubSub2) {
   auto p = mod.RegisterPublisher<moduletest::phaser::TestMessage>(
       "foobar", 256, 10,
       [](std::shared_ptr<Publisher<moduletest::phaser::TestMessage>> pub,
-         moduletest::phaser::TestMessage &msg, co::Coroutine *c) -> bool {
+         moduletest::phaser::TestMessage &msg, co::Coroutine *c) -> size_t {
         msg.set_x(1234);
         msg.set_s("dave");
-        return true;
+        return msg.Size();
       });
   ASSERT_TRUE(p.ok());
   auto pub = *p;
@@ -186,10 +186,10 @@ TEST_F(ModuleTest, Weak) {
   auto p = mod.RegisterPublisher<moduletest::phaser::TestMessage>(
       "foobar", 256, 10,
       [](std::shared_ptr<Publisher<moduletest::phaser::TestMessage>> pub,
-         moduletest::phaser::TestMessage &msg, co::Coroutine *c) -> bool {
+         moduletest::phaser::TestMessage &msg, co::Coroutine *c) -> size_t {
         msg.set_x(1234);
         msg.set_s("dave");
-        return true;
+        return msg.Size();
       });
   ASSERT_TRUE(p.ok());
   auto pub = *p;
@@ -227,6 +227,38 @@ TEST_F(ModuleTest, Weak) {
     ASSERT_EQ(1234, msg->x());
     ASSERT_EQ("dave", msg->s());
   }
+}
+
+TEST_F(ModuleTest, Resize) {
+  MyModule mod;
+  ASSERT_TRUE(mod.ModuleInit().ok());
+
+  auto p = mod.RegisterPublisher<moduletest::phaser::TestMessage>(
+      "foobar", 60, 10,
+      [](std::shared_ptr<Publisher<moduletest::phaser::TestMessage>> pub,
+         moduletest::phaser::TestMessage &msg, co::Coroutine *c) -> size_t {
+        msg.set_x(1234);
+        msg.set_s("dave");
+        return msg.Size();
+      });
+  ASSERT_TRUE(p.ok());
+  auto pub = *p;
+
+  auto sub = mod.RegisterSubscriber<moduletest::phaser::TestMessage>(
+      "foobar",
+      [&mod](std::shared_ptr<Subscriber<moduletest::phaser::TestMessage>> sub,
+             Message<const moduletest::phaser::TestMessage> msg,
+             co::Coroutine *c) {
+        std::cout << *msg;
+        msg->DebugDump();
+        ASSERT_EQ(1234, msg->x());
+        ASSERT_EQ("dave", msg->s());
+        mod.Stop();
+      });
+  ASSERT_TRUE(sub.ok());
+
+  mod.RunNow([&pub](co::Coroutine *c) { pub->Publish(); });
+  mod.Run();
 }
 
 int main(int argc, char **argv) {

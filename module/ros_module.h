@@ -4,8 +4,8 @@
 
 #pragma once
 
-#include "module/module.h"
 #include "davros/serdes/runtime.h"
+#include "module/module.h"
 
 // This is a module that uses Davros (custom ROS messages) as a serializer.
 // The Publishers and Subscribers will serialize and deserialize their messages
@@ -15,13 +15,15 @@ namespace adastra::module {
 
 // Template function to calculate the serialized length of a ROS message.
 template <typename MessageType> struct ROSSerializedLength {
-  static uint64_t Invoke(const MessageType &msg) { return uint64_t(msg.SerializedLength()); }
+  static uint64_t Invoke(const MessageType &msg) {
+    return uint64_t(msg.SerializedLength());
+  }
 };
 
 // Template function to serialize a ROS message to an array.
 template <typename MessageType> struct ROSSerialize {
   static bool Invoke(const MessageType &msg, void *buffer, size_t buflen) {
-    return msg.SerializeToArray(reinterpret_cast<char*>(buffer), buflen).ok();
+    return msg.SerializeToArray(reinterpret_cast<char *>(buffer), buflen).ok();
   }
 };
 
@@ -29,7 +31,9 @@ template <typename MessageType> struct ROSSerialize {
 // an array.
 template <typename MessageType> struct ROSDeserialize {
   static bool Invoke(MessageType &msg, const void *buffer, size_t buflen) {
-    return msg.DeserializeFromArray(reinterpret_cast<const char*>(buffer), buflen).ok();
+    return msg
+        .DeserializeFromArray(reinterpret_cast<const char *>(buffer), buflen)
+        .ok();
   }
 };
 
@@ -73,8 +77,7 @@ public:
   }
 
   template <typename MessageType>
-  absl::StatusOr<std::shared_ptr<ROSPublisher<MessageType>>>
-  RegisterPublisher(
+  absl::StatusOr<std::shared_ptr<ROSPublisher<MessageType>>> RegisterPublisher(
       const std::string &channel, int slot_size, int num_slots,
       const PublisherOptions &options,
       std::function<bool(std::shared_ptr<ROSPublisher<MessageType>>,
@@ -87,8 +90,7 @@ public:
   }
 
   template <typename MessageType>
-  absl::StatusOr<std::shared_ptr<ROSPublisher<MessageType>>>
-  RegisterPublisher(
+  absl::StatusOr<std::shared_ptr<ROSPublisher<MessageType>>> RegisterPublisher(
       const std::string &channel, int slot_size, int num_slots,
       std::function<bool(std::shared_ptr<ROSPublisher<MessageType>>,
                          MessageType &, co::Coroutine *)>

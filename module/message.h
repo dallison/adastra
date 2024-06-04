@@ -46,30 +46,29 @@ public:
       return std::get<0>(msg_).get();
     case 1:
       return std::get<1>(msg_).get();
+    default:
+      return nullptr;
     }
-    return nullptr;
   }
 
   MessageType &operator*() const {
-    static MessageType empty;
     switch (index_) {
     case 0:
       return *std::get<0>(msg_);
     case 1:
       return *std::get<1>(msg_);
     }
-    return empty;
   }
 
   MessageType &operator*() {
-    static MessageType empty;
     switch (index_) {
     case 0:
       return *std::get<0>(msg_);
     case 1:
       return *std::get<1>(msg_);
+    default:
+      abort();
     }
-    return empty;
   }
 
   MessageType *get() const {
@@ -143,9 +142,7 @@ template <typename MessageType> class WeakMessage {
 public:
   WeakMessage(const Message<MessageType> &msg) : msg_(msg.msg_) {}
 
-  bool expired() const {
-    return std::get<1>(msg_).expired();
-  }
+  bool expired() const { return std::get<1>(msg_).expired(); }
 
   Message<MessageType> lock() const {
     return Message<MessageType>(std::move(std::get<0>(msg_)),
@@ -153,7 +150,8 @@ public:
   }
 
 private:
-  std::tuple<std::shared_ptr<MessageType>, subspace::weak_ptr<MessageType>> msg_;
+  std::tuple<std::shared_ptr<MessageType>, subspace::weak_ptr<MessageType>>
+      msg_;
 };
 
 } // namespace adastra::module
