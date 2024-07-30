@@ -6,7 +6,8 @@
 #include "absl/flags/parse.h"
 #include "client/client.h"
 #include "module/ros_module.h"
-#include "module/testdata/Test.h"
+#include "module/serdes/testdata/Test.h"
+#include "module/zeros/testdata/Test.h"
 #include "server/server.h"
 #include "toolbelt/hexdump.h"
 #include <gtest/gtest.h>
@@ -24,9 +25,11 @@ using namespace adastra::module::frequency_literals;
 void SignalHandler(int sig) { printf("Signal %d", sig); }
 
 template <typename T> using Message = adastra::module::Message<T>;
+template <typename T> using ROSSubscriber = adastra::module::ROSSubscriber<T>;
+template <typename T> using ROSPublisher = adastra::module::ROSPublisher<T>;
 template <typename T>
-using Subscriber = adastra::module::ROSSubscriber<T>;
-template <typename T> using Publisher = adastra::module::ROSPublisher<T>;
+using ZerosSubscriber = adastra::module::ZerosSubscriber<T>;
+template <typename T> using ZerosPublisher = adastra::module::ZerosPublisher<T>;
 using ROSModule = adastra::module::ROSModule;
 using namespace std::chrono_literals;
 
@@ -102,7 +105,7 @@ std::thread ModuleTest::server_thread_;
 
 class MyModule : public ROSModule {
 public:
-  MyModule() : ROSModule(ModuleTest::Symbols()) {}
+  MyModule() : Module(ModuleTest::Symbols()) {}
 
   absl::Status Init(int argc, char **argv) override { return absl::OkStatus(); }
 };
@@ -112,24 +115,58 @@ TEST_F(ModuleTest, PubSub) {
   MyModule mod;
   ASSERT_TRUE(mod.ModuleInit().ok());
 
-  auto p = mod.RegisterPublisher<testdata::Test>(
+  using M = testdata::Test;
+
+  auto p = mod.RegisterPublisher<M>(
       "foobar", 256, 10,
-      [](std::shared_ptr<Publisher<testdata::Test>> pub,
-         testdata::Test &msg, co::Coroutine *c) -> bool {
-          msg.x = 1234;
-          msg.s = "dave";
-        return true;
+      [](std::shared_ptr<ROSPublisher<M>> pub, M &msg,
+         co::Coroutine *c) -> size_t {
+        msg.x = 1234;
+        msg.s = "dave";
+        return msg.SerializedSize();
       });
   ASSERT_TRUE(p.ok());
   auto pub = *p;
 
-  auto sub = mod.RegisterSubscriber<testdata::Test>(
-      "foobar", [&mod](std::shared_ptr<Subscriber<testdata::Test>> sub,
-                       Message<const testdata::Test> msg,
-                       co::Coroutine *c) { 
-                        ASSERT_EQ(1234, msg->x);
-                        ASSERT_EQ("dave", msg->s);
-                        mod.Stop(); });
+  auto sub = mod.RegisterSubscriber<M>(
+      "foobar", [&mod](std::shared_ptr<ROSSubscriber<M>> sub,
+                       Message<const M> msg, co::Coroutine *c) {
+        ASSERT_EQ(1234, msg->x);
+        ASSERT_EQ("dave", msg->s);
+        mod.Stop();
+      });
+  ASSERT_TRUE(sub.ok());
+
+  pub->Publish();
+  mod.Run();
+}
+
+TEST_F(ModuleTest, PubSubZeroCopy) {
+  MyModule mod;
+  ASSERT_TRUE(mod.ModuleInit().ok());
+
+  using M = testdata::zeros::Test;
+
+  auto p = mod.RegisterPublisher<M>(
+      "foobar", 256, 10,
+      [](std::shared_ptr<ZerosPublisher<M>> pub,
+         M &msg, co::Coroutine *c) -> size_t {
+        msg.x = 1234;
+        msg.s = "dave";
+        return msg.Size();
+      });
+  ASSERT_TRUE(p.ok());
+  auto pub = *p;
+
+  auto sub = mod.RegisterSubscriber<M>(
+      "foobar",
+      [&mod](std::shared_ptr<ZerosSubscriber<M>> sub,
+             Message<const M> msg, co::Coroutine *c) {
+        ASSERT_EQ(1234, msg->x);
+        std::string_view s = msg->s;
+        ASSERT_EQ("dave", s);
+        mod.Stop();
+      });
   ASSERT_TRUE(sub.ok());
 
   pub->Publish();

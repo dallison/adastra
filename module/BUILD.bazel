@@ -1,4 +1,4 @@
-load("@davros//davros:davros_serdes_library.bzl", "davros_serdes_library")
+load("@davros//davros:davros_library.bzl", "davros_serdes_library", "davros_zeros_library")
 load("@phaser//phaser:phaser_library.bzl", "phaser_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -37,6 +37,7 @@ cc_library(
     ],
     deps = [
         ":module",
+        "@phaser//phaser/runtime:phaser_runtime",
     ],
 )
 
@@ -48,6 +49,7 @@ cc_library(
     deps = [
         ":module",
         "@davros//davros:serdes_runtime",
+        "@davros//davros:zeros_runtime",
     ],
 )
 
@@ -68,6 +70,7 @@ cc_test(
     deps = [
         ":protobuf_module",
         ":test_cc_proto",
+        ":test_phaser",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/status",
@@ -86,6 +89,7 @@ cc_test(
     deps = [
         ":ros_module",
         ":test_ros",
+        ":test_zeros",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/status",
@@ -129,6 +133,14 @@ davros_serdes_library(
     srcs = [
         "testdata/msg/Test.msg",
     ],
+)
+
+davros_zeros_library(
+    name = "test_zeros",
+    srcs = [
+        "testdata/msg/Test.msg",
+    ],
+    add_namespace = "zeros",
 )
 
 phaser_library(

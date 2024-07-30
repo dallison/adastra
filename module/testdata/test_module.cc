@@ -3,7 +3,7 @@
 class TestModule : public adastra::module::ProtobufModule {
  public:
   TestModule(std::unique_ptr<adastra::stagezero::SymbolTable> symbols)
-      : ProtobufModule(std::move(symbols)) {}
+      : Module(std::move(symbols)) {}
 
   absl::Status Init(int argc, char** argv) override {
     int count = 0;

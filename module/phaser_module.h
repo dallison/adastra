@@ -53,10 +53,9 @@ template <typename MessageType>
 using PhaserPublisher =
     ZeroCopyPublisher<MessageType, PhaserPubCreator<MessageType>>;
 
-class PhaserModule : public Module {
+class PhaserModule : public virtual Module {
 public:
-  PhaserModule(std::unique_ptr<adastra::stagezero::SymbolTable> symbols)
-      : Module(std::move(symbols)) {}
+  PhaserModule() = default;
 
   template <typename MessageType>
   absl::StatusOr<std::shared_ptr<PhaserSubscriber<MessageType>>>
@@ -100,7 +99,7 @@ public:
                            MessageType &, co::Coroutine *)>
           callback) {
     PublisherOptions opts = {
-        .type = absl::StrFormat("protobuf/%s", MessageType::FullName())};
+        .type = absl::StrFormat("phaser/%s", MessageType::FullName())};
     return RegisterPublisher(channel, slot_size, num_slots, opts, callback);
   }
 

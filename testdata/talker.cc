@@ -12,7 +12,7 @@ template <typename T> using Message = adastra::module::Message<T>;
 class Talker : public adastra::module::ProtobufModule {
 public:
   explicit Talker(std::unique_ptr<adastra::stagezero::SymbolTable> symbols)
-      : ProtobufModule(std::move(symbols)) {}
+      : Module(std::move(symbols)) {}
 
   absl::Status Init(int argc, char **argv) override {
     std::cout << "Running on " << LookupSymbol("compute") << std::endl;

@@ -28,19 +28,19 @@ static inline constexpr char kMapResponseChannel[] = "/map_response";
 class MapServer : public adastra::module::ProtobufModule {
 public:
   explicit MapServer(std::unique_ptr<adastra::stagezero::SymbolTable> symbols)
-      : ProtobufModule(std::move(symbols)) {}
+      : Module(std::move(symbols)) {}
 
   absl::Status Init(int argc, char **argv) override {
     auto resp = RegisterPublisher<robot::MapResponse>(
         kMapResponseChannel, kMaxResponseMessageSize, kNumResponseSlots,
-        {.reliable = true}, [this](auto pub, auto &msg, auto c) -> bool {
+        {.reliable = true}, [this](auto pub, auto &msg, auto c) -> size_t {
           if (pending_responses_.empty()) {
             return false;
           }
           auto resp = pending_responses_.front();
           pending_responses_.pop_front();
           msg = *resp;
-          return true;
+          return msg.ByteSizeLong();
         });
     if (!resp.ok()) {
       return resp.status();
@@ -125,9 +125,9 @@ private:
     auto resp = RegisterPublisher<robot::MapResponse>(
         resp_channel_name, kMaxResponseMessageSize, kNumResponseSlots,
         {.reliable = true},
-        [this, channel_handler](auto pub, auto &msg, auto c) -> bool {
+        [this, channel_handler](auto pub, auto &msg, auto c) -> size_t {
           SendTile(msg, channel_handler);
-          return true;
+          return msg.ByteSizeLong();
         });
 
     if (!resp.ok()) {

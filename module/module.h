@@ -14,7 +14,6 @@
 #include "absl/status/statusor.h"
 #include "absl/strings/str_format.h"
 #include "absl/types/span.h"
-#include "google/protobuf/message.h"
 #include "stagezero/symbols.h"
 
 #include "client/client.h"
@@ -220,7 +219,7 @@ public:
   RegisterSerializingPublisher(
       const std::string &channel, int slot_size, int num_slots,
       const PublisherOptions &options,
-      std::function<bool(std::shared_ptr<SerializingPublisher<
+      std::function<size_t(std::shared_ptr<SerializingPublisher<
                              MessageType, SerializedLength, Serialize>>,
                          MessageType &, co::Coroutine *)>
           callback);
@@ -245,7 +244,7 @@ public:
       SerializingPublisher<MessageType, SerializedLength, Serialize>>>
   RegisterSerializingPublisher(
       const std::string &channel, int slot_size, int num_slots,
-      std::function<bool(std::shared_ptr<SerializingPublisher<
+      std::function<size_t(std::shared_ptr<SerializingPublisher<
                              MessageType, SerializedLength, Serialize>>,
                          MessageType &, co::Coroutine *)>
           callback) {
@@ -566,8 +565,8 @@ template <typename MessageType, typename SerializedLength, typename Serialize>
 inline void
 SerializingPublisher<MessageType, SerializedLength,
                      Serialize>::PublishMessageNow(const MessageType &msg,
+                          size_t length,
                                                    co::Coroutine *c) {
-  int64_t length = SerializedLength::Invoke(msg);
   absl::StatusOr<void *> buffer = GetMessageBuffer(length, c);
   if (!buffer.ok()) {
     std::cerr << "Failed to get buffer: " << buffer.status().ToString()
@@ -634,9 +633,9 @@ SerializingPublisher<MessageType, SerializedLength, Serialize>::Run() {
                 SerializingPublisher<MessageType, SerializedLength, Serialize>>
                 self = std::static_pointer_cast<SerializingPublisher<
                     MessageType, SerializedLength, Serialize>>(pub);
-            bool publish = self->callback_(self, msg, c);
-            if (publish) {
-              self->PublishMessageNow(msg, c);
+            size_t size = self->callback_(self, msg, c);
+            if (size > 0) {
+              self->PublishMessageNow(msg, size, c);
             }
             pub->pending_count_--;
           }
@@ -685,7 +684,7 @@ inline absl::StatusOr<std::shared_ptr<
 Module::RegisterSerializingPublisher(
     const std::string &channel, int slot_size, int num_slots,
     const PublisherOptions &options,
-    std::function<bool(std::shared_ptr<SerializingPublisher<
+    std::function<size_t(std::shared_ptr<SerializingPublisher<
                            MessageType, SerializedLength, Serialize>>,
                        MessageType &, co::Coroutine *)>
         callback) {

@@ -125,18 +125,18 @@ http_archive(
   urls = ["https://github.com/pybind/pybind11/archive/refs/tags/v2.10.0.zip"],
 )
 
-http_archive(
-  name = "subspace",
-  urls = ["https://github.com/dallison/subspace/archive/refs/tags/1.3.5.tar.gz"],
-  strip_prefix = "subspace-1.3.5",
-  sha256 = "d58c11f3dec1eb5680eef0cc054d1a1297ec5ece574d2e6244e1cfb5f061314c"
-)
+# http_archive(
+#   name = "subspace",
+#   urls = ["https://github.com/dallison/subspace/archive/refs/tags/1.3.5.tar.gz"],
+#   strip_prefix = "subspace-1.3.5",
+#   sha256 = "d58c11f3dec1eb5680eef0cc054d1a1297ec5ece574d2e6244e1cfb5f061314c"
+# )
 
 # For local debugging of subspace library.
-# local_repository(
-#     name = "subspace",
-#     path = "../subspace",
-# )
+local_repository(
+    name = "subspace",
+    path = "../subspace",
+)
 
 # For local debugging of retro library.
 # local_repository(
@@ -151,28 +151,29 @@ http_archive(
   # sha256 = "9cc2dfc3f1a5a52ab3c3891167b7f31a041255c9d2ce0c949cea44e0b72ebff1"
 )
 
-http_archive(
-  name = "davros",
-  urls = ["https://github.com/dallison/davros/archive/refs/tags/0.1.0.tar.gz"],
-  strip_prefix = "davros-0.1.0",
-  # sha256 = "9cc2dfc3f1a5a52ab3c3891167b7f31a041255c9d2ce0c949cea44e0b72ebff1"
-)
+# http_archive(
+#   name = "davros",
+#   urls = ["https://github.com/dallison/davros/archive/refs/tags/0.2.0.tar.gz"],
+#   strip_prefix = "davros-0.2.0",
+#   # sha256 = "9cc2dfc3f1a5a52ab3c3891167b7f31a041255c9d2ce0c949cea44e0b72ebff1"
+# )
 
 # For local debugging of davros library.
-# local_repository(
-#     name = "davros",
-#     path = "../davros",
-# )
-
-http_archive(
-  name = "phaser",
-  urls = ["https://github.com/dallison/phaser/archive/refs/tags/1.0.0.tar.gz"],
-  strip_prefix = "phaser-1.0.0",
-  sha256 = "086601a2915e4fdfce8d9ff1a6f765c460f582d739cb954c9a2f5bf4c0fa17f3"
+local_repository(
+    name = "davros",
+    path = "../davros",
 )
 
-# For local debugging of phaser library.
-# local_repository(
-#     name = "phaser",
-#     path = "../phaser",
+# http_archive(
+#   name = "phaser",
+#   urls = ["https://github.com/dallison/phaser/archive/refs/tags/1.0.0.tar.gz"],
+#   strip_prefix = "phaser-1.0.0",
+#   sha256 = "086601a2915e4fdfce8d9ff1a6f765c460f582d739cb954c9a2f5bf4c0fa17f3"
 # )
+
+# For local debugging of phaser library.
+local_repository(
+    name = "phaser",
+    path = "../phaser",
+)
+

@@ -1,5 +1,7 @@
 package(default_visibility = ["//visibility:public"])
 
+load("@phaser//phaser:phaser_library.bzl", "phaser_library")
+
 proto_library(
     name = "header_proto",
     srcs = ["header.proto"],
@@ -21,6 +23,12 @@ proto_library(
 cc_proto_library(
     name = "vision_cc_proto",
     deps = [":vision_proto"],
+)
+
+phaser_library(
+    name = "vision_phaser",
+    deps = [":vision_proto"],
+    add_namespace = "phaser",
 )
 
 proto_library(

@@ -31,11 +31,12 @@ template <typename T>
 using Subscriber = adastra::module::ProtobufSubscriber<T>;
 
 template <typename T> using Message = adastra::module::Message<T>;
+template <typename T> using NullSubCreator = adastra::module::NullSubCreator<T>;
 
 class Logger : public adastra::module::ProtobufModule {
 public:
   explicit Logger(std::unique_ptr<adastra::stagezero::SymbolTable> symbols)
-      : ProtobufModule(std::move(symbols)) {}
+      : Module(std::move(symbols)) {}
 
   absl::Status Init(int argc, char **argv) override {
     // Subscribe to the Subspace channel directory so that we can see
@@ -75,7 +76,8 @@ private:
           std::cerr << status << std::endl;
           return;
         }
-        auto sub = RegisterZeroCopySubscriber<std::byte>(
+        auto sub = RegisterZeroCopySubscriber<std::byte,
+                                            NullSubCreator<std::byte>>(
             name, [this, log_file](auto sub, auto msg, auto c) {
               absl::Span<const std::byte> span = msg;
               if (absl::Status status = WriteLogEntry(*log_file, span);

@@ -9,7 +9,7 @@ cc_binary(
     linkstatic = 0,
     deps = [
         "//module:protobuf_module",
-        "//robot/proto:vision_cc_proto",
+        "//robot/proto:vision_phaser",
         "@com_google_absl//absl/strings:str_format",
         "@toolbelt//toolbelt",
     ],
@@ -24,7 +24,7 @@ cc_binary(
     linkstatic = 0,
     deps = [
         "//module:protobuf_module",
-        "//robot/proto:vision_cc_proto",
+        "//robot/proto:vision_phaser",
         "@com_google_absl//absl/strings:str_format",
         "@toolbelt//toolbelt",
     ],

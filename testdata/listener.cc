@@ -12,7 +12,7 @@ template <typename T> using Message = adastra::module::Message<T>;
 class Listener : public adastra::module::ProtobufModule {
 public:
   explicit Listener(std::unique_ptr<adastra::stagezero::SymbolTable> symbols)
-      : ProtobufModule(std::move(symbols)) {}
+      : Module(std::move(symbols)) {}
 
   absl::Status Init(int argc, char **argv) override {
     auto pub = RegisterPublisher<chat::Answer>("answer", 256, 10);

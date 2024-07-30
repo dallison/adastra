@@ -15,7 +15,7 @@ public:
   Message(std::shared_ptr<MessageType> msg) {
     std::get<0>(msg_) = std::move(msg);
     index_ = 0;
-  }
+ }
   Message(subspace::shared_ptr<MessageType> msg) {
     std::get<1>(msg_) = std::move(msg);
     index_ = 1;
@@ -41,7 +41,7 @@ public:
   }
 
   MessageType *operator->() {
-    switch (index_) {
+   switch (index_) {
     case 0:
       return std::get<0>(msg_).get();
     case 1:
@@ -52,7 +52,7 @@ public:
   }
 
   MessageType &operator*() const {
-    switch (index_) {
+   switch (index_) {
     case 0:
       return *std::get<0>(msg_);
     case 1:
@@ -110,7 +110,7 @@ public:
     case 0:
       return std::get<0>(msg_) == std::get<0>(m);
     case 1:
-      return std::get<1>(msg_) == std::get<0>(m);
+      return std::get<1>(msg_) == std::get<1>(m);
     }
     return false;
   }
@@ -118,21 +118,15 @@ public:
   bool operator!=(const Message<MessageType> &m) { return !(*this == m); }
 
   void reset() {
-    switch (index_) {
-    case 0:
-      std::get<0>(msg_).reset();
-      break;
-    case 1:
-      std::get<1>(msg_).reset();
-      break;
-    }
+    std::get<0>(msg_).reset();
+    std::get<1>(msg_).reset();
   }
 
 private:
   template <typename T> friend class WeakMessage;
   std::tuple<std::shared_ptr<MessageType>, subspace::shared_ptr<MessageType>>
       msg_;
-  int index_;
+  int index_ = -1;
 };
 
 // This is a partially weak message.  The front-end message is not weakened but
@@ -140,18 +134,32 @@ private:
 // of the message slot.
 template <typename MessageType> class WeakMessage {
 public:
-  WeakMessage(const Message<MessageType> &msg) : msg_(msg.msg_) {}
+  WeakMessage() = default;
+  WeakMessage(const Message<MessageType> &msg) : wptr_(std::get<0>(msg.msg_)), wslot_(std::get<1>(msg.msg_)) {
+  }
 
-  bool expired() const { return std::get<1>(msg_).expired(); }
+  bool expired() const { return wslot_.expired(); }
 
   Message<MessageType> lock() const {
-    return Message<MessageType>(std::move(std::get<0>(msg_)),
-                                std::move(std::get<1>(msg_).lock()));
+    return Message<MessageType>(wptr_,
+                                std::move(wslot_.lock()));
+  }
+
+  bool operator==(const WeakMessage<MessageType> &m) {
+    return wptr_ == m.wptr_ &&
+           wslot_ == m.wslot_;
+  }
+
+  bool operator!=(const WeakMessage<MessageType> &m) { return !(*this == m); }
+
+  void reset() {
+    wptr_.reset();
+    wslot_.reset();
   }
 
 private:
-  std::tuple<std::shared_ptr<MessageType>, subspace::weak_ptr<MessageType>>
-      msg_;
+  std::shared_ptr<MessageType> wptr_;
+  subspace::weak_ptr<MessageType> wslot_;
 };
 
 } // namespace adastra::module

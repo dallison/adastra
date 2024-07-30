@@ -102,7 +102,7 @@ std::thread ModuleTest::server_thread_;
 
 class MyModule : public PhaserModule {
 public:
-  MyModule() : PhaserModule(ModuleTest::Symbols()) {}
+  MyModule() : Module(ModuleTest::Symbols()) {}
 
   absl::Status Init(int argc, char **argv) override { return absl::OkStatus(); }
 };

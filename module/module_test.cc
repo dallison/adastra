@@ -7,6 +7,7 @@
 #include "client/client.h"
 #include "module/protobuf_module.h"
 #include "module/testdata/test.pb.h"
+#include "module/testdata/test.phaser.h"
 #include "server/server.h"
 #include "toolbelt/hexdump.h"
 #include <gtest/gtest.h>
@@ -25,10 +26,12 @@ void SignalHandler(int sig) { printf("Signal %d", sig); }
 
 template <typename T> using Message = adastra::module::Message<T>;
 template <typename T> using Subscriber = adastra::module::ProtobufSubscriber<T>;
+template <typename T> using PhaserSubscriber = adastra::module::PhaserSubscriber<T>;
 
 template <typename T> using NullSubCreator = adastra::module::NullSubCreator<T>;
 
 template <typename T> using Publisher = adastra::module::ProtobufPublisher<T>;
+template <typename T> using PhaserPublisher = adastra::module::PhaserPublisher<T>;
 using ProtobufModule = adastra::module::ProtobufModule;
 using namespace std::chrono_literals;
 
@@ -104,7 +107,7 @@ std::thread ModuleTest::server_thread_;
 
 class MyModule : public ProtobufModule {
 public:
-  MyModule() : ProtobufModule(ModuleTest::Symbols()) {}
+  MyModule() : Module(ModuleTest::Symbols()) {}
 
   absl::Status Init(int argc, char **argv) override { return absl::OkStatus(); }
 };
@@ -209,10 +212,10 @@ TEST_F(ModuleTest, PubSub) {
   auto p = mod.RegisterPublisher<moduletest::TestMessage>(
       "foobar", 256, 10,
       [](std::shared_ptr<Publisher<moduletest::TestMessage>> pub,
-         moduletest::TestMessage &msg, co::Coroutine *c) -> bool {
+         moduletest::TestMessage &msg, co::Coroutine *c) -> size_t {
         msg.set_x(1234);
         msg.set_s("dave");
-        return true;
+        return msg.ByteSizeLong();
       });
   ASSERT_TRUE(p.ok());
   auto pub = *p;
@@ -386,10 +389,10 @@ TEST_F(ModuleTest, PublishOnTick) {
   auto p = mod.RegisterPublisher<moduletest::TestMessage>(
       "foobar", 256, 10,
       [](std::shared_ptr<Publisher<moduletest::TestMessage>> pub,
-         moduletest::TestMessage &msg, co::Coroutine *c) -> bool {
+         moduletest::TestMessage &msg, co::Coroutine *c) -> size_t {
         msg.set_x(1234);
         msg.set_s("dave");
-        return true;
+        return msg.ByteSizeLong();
       });
   ASSERT_TRUE(p.ok());
   auto pub = *p;
@@ -420,10 +423,10 @@ TEST_F(ModuleTest, MultipleSubscribers) {
   auto p = mod.RegisterPublisher<moduletest::TestMessage>(
       "foobar", 256, 10,
       [&count](std::shared_ptr<Publisher<moduletest::TestMessage>> pub,
-               moduletest::TestMessage &msg, co::Coroutine *c) -> bool {
+               moduletest::TestMessage &msg, co::Coroutine *c) -> size_t {
         msg.set_x(count++);
         msg.set_s("dave");
-        return true;
+        return msg.ByteSizeLong();
       });
   ASSERT_TRUE(p.ok());
   auto pub = *p;
@@ -480,7 +483,7 @@ TEST_F(ModuleTest, MultiplePublishersAndSubscribers) {
         "foobar", 256, 20,
         [&count,
          pub_name](std::shared_ptr<Publisher<moduletest::TestMessage>> pub,
-                   moduletest::TestMessage &msg, co::Coroutine *c) -> bool {
+                   moduletest::TestMessage &msg, co::Coroutine *c) -> size_t {
           msg.set_x(count++);
           msg.set_s(pub_name);
           return true;
@@ -531,10 +534,10 @@ TEST_F(ModuleTest, ReliablePubSub) {
   int pub_count = 1;
   auto p = mod.RegisterPublisher<moduletest::TestMessage>(
       "foobar", 256, 10, {.reliable = true},
-      [&pub_count](auto pub, auto &msg, auto c) -> bool {
+      [&pub_count](auto pub, auto &msg, auto c) -> size_t {
         msg.set_x(pub_count++);
         msg.set_s("dave");
-        return true;
+        return msg.ByteSizeLong();
       });
   ASSERT_TRUE(p.ok());
   auto pub = *p;
@@ -592,10 +595,10 @@ TEST_F(ModuleTest, ReliablePubSubBackpressure) {
   auto p1 = mod.RegisterPublisher<moduletest::TestMessage>(
       "one", 256, 10, {.reliable = true},
       [&pub_count](std::shared_ptr<Publisher<moduletest::TestMessage>> pub,
-                   moduletest::TestMessage &msg, co::Coroutine *c) -> bool {
+                   moduletest::TestMessage &msg, co::Coroutine *c) -> size_t {
         msg.set_x(pub_count++);
         msg.set_s("dave");
-        return true;
+        return msg.ByteSizeLong();
       });
   ASSERT_TRUE(p1.ok());
   auto pub1 = *p1;
@@ -619,6 +622,37 @@ TEST_F(ModuleTest, ReliablePubSubBackpressure) {
   }
   mod.Run();
 }
+
+TEST_F(ModuleTest, PhaserPubSub) {
+  MyModule mod;
+  ASSERT_TRUE(mod.ModuleInit().ok());
+
+  auto p = mod.RegisterPublisher<moduletest::phaser::TestMessage>(
+      "foobar", 256, 10,
+      [](std::shared_ptr<PhaserPublisher<moduletest::phaser::TestMessage>> pub,
+         moduletest::phaser::TestMessage &msg, co::Coroutine *c) -> size_t {
+        msg.set_x(1234);
+        msg.set_s("dave");
+        return msg.Size();
+      });
+  ASSERT_TRUE(p.ok());
+  auto pub = *p;
+
+  auto sub = mod.RegisterSubscriber<moduletest::phaser::TestMessage>(
+      "foobar",
+      [&mod](std::shared_ptr<PhaserSubscriber<moduletest::phaser::TestMessage>> sub,
+             Message<const moduletest::phaser::TestMessage> msg,
+             co::Coroutine *c) {
+        ASSERT_EQ(1234, msg->x());
+        ASSERT_EQ("dave", msg->s());
+        mod.Stop();
+      });
+  ASSERT_TRUE(sub.ok());
+
+  mod.RunNow([&pub](co::Coroutine *c) { pub->Publish(); });
+  mod.Run();
+}
+
 
 int main(int argc, char **argv) {
   testing::InitGoogleTest(&argc, argv);

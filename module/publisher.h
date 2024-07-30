@@ -61,7 +61,7 @@ class SerializingPublisher : public PublisherBase {
 public:
   SerializingPublisher(Module &module, subspace::Publisher pub,
                        PublisherOptions options,
-                       std::function<bool(std::shared_ptr<SerializingPublisher>,
+                       std::function<size_t(std::shared_ptr<SerializingPublisher>,
                                           MessageType &, co::Coroutine *)>
                            callback)
       : SerializingPublisher<MessageType, SerializedLength, Serialize>(
@@ -84,16 +84,16 @@ public:
   // Publish a message directly.  A callback must not have been set.
   void Publish(const MessageType &msg, co::Coroutine *c) {
     assert(callback_ == nullptr);
-    PublishMessageNow(msg, c);
+    PublishMessageNow(msg, SerializedLength::Invoke(msg), c);
   }
 
   // Run the callback publisher coroutine.
   void Run();
 
 private:
-  void PublishMessageNow(const MessageType &msg, co::Coroutine *c);
+  void PublishMessageNow(const MessageType &msg, size_t length, co::Coroutine *c);
 
-  std::function<bool(std::shared_ptr<SerializingPublisher>, MessageType &,
+  std::function<size_t(std::shared_ptr<SerializingPublisher>, MessageType &,
                      co::Coroutine *)>
       callback_;
 };
