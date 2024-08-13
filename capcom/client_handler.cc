@@ -95,8 +95,9 @@ absl::Status ClientHandler::HandleMessage(const proto::Request &req,
                            resp.mutable_restart_subsystem(), c);
     break;
   case proto::Request::kRestartProcesses:
-        HandleRestartProcesses(req.restart_processes(), resp.mutable_restart_processes(), c);
-        break;
+    HandleRestartProcesses(req.restart_processes(),
+                           resp.mutable_restart_processes(), c);
+    break;
   case proto::Request::kGetSubsystems:
     HandleGetSubsystems(req.get_subsystems(), resp.mutable_get_subsystems(), c);
     break;
@@ -250,9 +251,9 @@ void ClientHandler::HandleAddSubsystem(const proto::AddSubsystemRequest &req,
   case adastra::capcom::proto::AddSubsystemRequest::MANUAL:
     restart_policy = Subsystem::RestartPolicy::kManual;
     break;
-   case proto::AddSubsystemRequest::PROCESS_ONLY:
-        restart_policy = Subsystem::RestartPolicy::kProcessOnly;
-        break;
+  case proto::AddSubsystemRequest::PROCESS_ONLY:
+    restart_policy = Subsystem::RestartPolicy::kProcessOnly;
+    break;
   }
   auto subsystem = std::make_shared<Subsystem>(
       req.name(), capcom_, std::move(vars), std::move(streams),
@@ -275,9 +276,9 @@ void ClientHandler::HandleAddSubsystem(const proto::AddSubsystemRequest &req,
 
     switch (proc.proc_case()) {
     case proto::Process::kStaticProcess:
-      if (absl::Status status =
-              subsystem->AddStaticProcess(proc.static_process(), proc.options(),
-                                          proc.streams(), compute, proc.max_restarts(),c);
+      if (absl::Status status = subsystem->AddStaticProcess(
+              proc.static_process(), proc.options(), proc.streams(), compute,
+              proc.max_restarts(), c);
           !status.ok()) {
         response->set_error(
             absl::StrFormat("Failed to add static process %s: %s",
@@ -287,7 +288,8 @@ void ClientHandler::HandleAddSubsystem(const proto::AddSubsystemRequest &req,
       break;
     case proto::Process::kZygote:
       if (absl::Status status = subsystem->AddZygote(
-              proc.zygote(), proc.options(), proc.streams(), compute, proc.max_restarts(),c);
+              proc.zygote(), proc.options(), proc.streams(), compute,
+              proc.max_restarts(), c);
           !status.ok()) {
         response->set_error(absl::StrFormat("Failed to add zygote %s: %s",
                                             proc.options().name(),
@@ -297,8 +299,8 @@ void ClientHandler::HandleAddSubsystem(const proto::AddSubsystemRequest &req,
       break;
     case proto::Process::kVirtualProcess:
       if (absl::Status status = subsystem->AddVirtualProcess(
-              proc.virtual_process(), proc.options(), proc.streams(), compute,proc.max_restarts(),
-              c);
+              proc.virtual_process(), proc.options(), proc.streams(), compute,
+              proc.max_restarts(), c);
           !status.ok()) {
         response->set_error(
             absl::StrFormat("Failed to add virtual process %s: %s",
@@ -358,12 +360,12 @@ void ClientHandler::HandleStartSubsystem(
     return;
   }
 
-    auto message = std::make_shared<Message>(
-            Message{.code = Message::kChangeAdmin,
-                    .client_id = id_,
-                    .state = {.admin = AdminState::kOnline},
-                    .interactive = req.interactive()});
-  if (message.interactive) {
+  auto message =
+      std::make_shared<Message>(Message{.code = Message::kChangeAdmin,
+                                        .client_id = id_,
+                                        .state = {.admin = AdminState::kOnline},
+                                        .interactive = req.interactive()});
+  if (message->interactive) {
     absl::StatusOr<toolbelt::Pipe> stdout = toolbelt::Pipe::Create();
     if (!stdout.ok()) {
       response->set_error(stdout.status().ToString());
@@ -419,10 +421,10 @@ void ClientHandler::HandleStopSubsystem(const proto::StopSubsystemRequest &req,
         absl::StrFormat("No such subsystem %s", req.subsystem()));
     return;
   }
-   auto message = std::make_shared<Message>(
-            Message{.code = Message::kChangeAdmin,
-                    .client_id = id_,
-                    .state = {.admin = AdminState::kOffline}});
+  auto message = std::make_shared<Message>(
+      Message{.code = Message::kChangeAdmin,
+              .client_id = id_,
+              .state = {.admin = AdminState::kOffline}});
   if (absl::Status status = subsystem->SendMessage(message); !status.ok()) {
     response->set_error(absl::StrFormat("Failed to stop subsystem %s: %s",
                                         req.subsystem(), status.ToString()));
@@ -430,16 +432,17 @@ void ClientHandler::HandleStopSubsystem(const proto::StopSubsystemRequest &req,
   }
 }
 
-void ClientHandler::HandleRestartSubsystem(const proto::RestartSubsystemRequest &req,
-                                        proto::RestartSubsystemResponse *response,
-                                        co::Coroutine *c) {
+void ClientHandler::HandleRestartSubsystem(
+    const proto::RestartSubsystemRequest &req,
+    proto::RestartSubsystemResponse *response, co::Coroutine *c) {
   std::shared_ptr<Subsystem> subsystem = capcom_.FindSubsystem(req.subsystem());
   if (subsystem == nullptr) {
     response->set_error(
         absl::StrFormat("No such subsystem %s", req.subsystem()));
     return;
   }
-    auto message = std::make_shared<Message>(Message{.code = Message::kRestart, .client_id = id_});
+  auto message = std::make_shared<Message>(
+      Message{.code = Message::kRestart, .client_id = id_});
 
   if (absl::Status status = subsystem->SendMessage(message); !status.ok()) {
     response->set_error(absl::StrFormat("Failed to restart subsystem %s: %s",
@@ -449,32 +452,31 @@ void ClientHandler::HandleRestartSubsystem(const proto::RestartSubsystemRequest 
 }
 
 void ClientHandler::HandleRestartProcesses(
-        const proto::RestartProcessesRequest& req,
-        proto::RestartProcessesResponse* response,
-        co::Coroutine* c) {
-    std::shared_ptr<Subsystem> subsystem = capcom_.FindSubsystem(req.subsystem());
-    if (subsystem == nullptr) {
-        response->set_error(absl::StrFormat("No such subsystem %s", req.subsystem()));
-        return;
+    const proto::RestartProcessesRequest &req,
+    proto::RestartProcessesResponse *response, co::Coroutine *c) {
+  std::shared_ptr<Subsystem> subsystem = capcom_.FindSubsystem(req.subsystem());
+  if (subsystem == nullptr) {
+    response->set_error(
+        absl::StrFormat("No such subsystem %s", req.subsystem()));
+    return;
+  }
+  auto message = std::make_shared<Message>(
+      Message{.code = Message::kRestartProcesses, .client_id = id_});
+  for (auto &process : req.processes()) {
+    std::shared_ptr<Process> p = subsystem->FindProcessName(process);
+    if (p == nullptr) {
+      response->set_error(absl::StrFormat("No such process %s in subsystem %s",
+                                          process, req.subsystem()));
+      return;
     }
-    auto message = std::make_shared<Message>(
-            Message{.code = Message::kRestartProcesses, .client_id = id_});
-    for (auto& process : req.processes()) {
-        std::shared_ptr<Process> p = subsystem->FindProcessName(process);
-        if (p == nullptr) {
-            response->set_error(absl::StrFormat(
-                    "No such process %s in subsystem %s", process, req.subsystem()));
-            return;
-        }
-        message->processes.push_back(p);
-    }
-    if (absl::Status status = subsystem->SendMessage(message); !status.ok()) {
-        response->set_error(absl::StrFormat(
-                "Failed to restart processes in subsystem %s: %s",
-                req.subsystem(),
-                status.toString()));
-        return;
-    }
+    message->processes.push_back(p);
+  }
+  if (absl::Status status = subsystem->SendMessage(message); !status.ok()) {
+    response->set_error(
+        absl::StrFormat("Failed to restart processes in subsystem %s: %s",
+                        req.subsystem(), status.ToString()));
+    return;
+  }
 }
 
 void ClientHandler::HandleGetSubsystems(const proto::GetSubsystemsRequest &req,
@@ -564,7 +566,8 @@ void ClientHandler::HandleCloseFd(const proto::CloseFdRequest &req,
 void ClientHandler::HandleFreezeCgroup(const proto::FreezeCgroupRequest &req,
                                        proto::FreezeCgroupResponse *response,
                                        co::Coroutine *c) {
-  if (absl::Status status = capcom_.FreezeCgroup(req.compute(), req.cgroup(), c);
+  if (absl::Status status =
+          capcom_.FreezeCgroup(req.compute(), req.cgroup(), c);
       !status.ok()) {
     response->set_error(absl::StrFormat("Failed to freeze cgroup %s: %s",
                                         req.cgroup(), status.ToString()));

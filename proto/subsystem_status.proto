@@ -48,6 +48,6 @@ message SubsystemStatus {
   AdminState admin_state = 2;
   OperState oper_state = 3;
   repeated Process processes = 4;
-  int32 alarm_count = 5;      // Total subsystem alarms raised.
+  int32 alarm_count = 5; // Total subsystem alarms raised.
   int32 restart_count = 6;
 }

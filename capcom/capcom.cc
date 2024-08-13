@@ -337,9 +337,9 @@ absl::Status Capcom::Abort(const std::string &reason, bool emergency,
     if (subsys->IsCritical()) {
       continue;
     }
-       auto msg = std::make_shared<Message>(
-                Message{.code = Message::Code::kAbort, .emergency_abort = emergency});
-                    if (absl::Status status = subsys->SendMessage(msg); !status.ok()) {
+    auto msg = std::make_shared<Message>(
+        Message{.code = Message::Code::kAbort, .emergency_abort = emergency});
+    if (absl::Status status = subsys->SendMessage(msg); !status.ok()) {
       result = status;
     }
   }
@@ -474,7 +474,8 @@ absl::Status Capcom::RegisterComputeCgroups(stagezero::Client &client,
   return absl::OkStatus();
 }
 
-static const Cgroup *FindCgroup(const Compute &comp, const std::string &cgroup) {
+static const Cgroup *FindCgroup(const Compute &comp,
+                                const std::string &cgroup) {
   for (auto &cg : comp.cgroups) {
     if (cg.name == cgroup) {
       return &cg;

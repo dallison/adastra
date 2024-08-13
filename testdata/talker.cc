@@ -19,11 +19,11 @@ public:
     auto pub = RegisterPublisher<chat::Question>(
         "question", 256, 10,
         [this](std::shared_ptr<Publisher<chat::Question>> pub,
-               chat::Question &msg, co::Coroutine *c) -> bool {
+               chat::Question &msg, co::Coroutine *c) -> size_t {
           msg.set_x(++count_);
           msg.set_y(3);
           msg.set_text(absl::StrFormat("What is %d times %d", count_, 3));
-          return true;
+          return msg.ByteSizeLong();
         });
     if (!pub.ok()) {
       return pub.status();

@@ -668,48 +668,48 @@ TEST_F(CapcomTest, RestartSimpleSubsystem) {
 }
 
 TEST_F(CapcomTest, RecoverSimpleSubsystem) {
-    adastra::capcom::client::Client client(ClientMode::kNonBlocking);
-    InitClient(client, "foobar1");
+  adastra::capcom::client::Client client(ClientMode::kNonBlocking);
+  InitClient(client, "foobar1");
 
-    absl::Status status = client.AddSubsystem(
-            "foobar1",
-            {.static_processes = {{
-                     .name = "loop",
-                     .executable = "cruise/adastra/testdata/loop",
-             }},
-             .max_restarts = 0});
-    ASSERT_TRUE(status.ok());
-    WaitForState(client, "foobar1", AdminState::kOffline, OperState::kOffline);
+  absl::Status status = client.AddSubsystem(
+      "foobar1",
+      {.static_processes = {{
+           .name = "loop", .executable = "${runfiles_dir}/__main__/testdata/loop",
+       }},
+       .max_restarts = 0});
+  ASSERT_TRUE(status.ok());
+  WaitForState(client, "foobar1", AdminState::kOffline, OperState::kOffline);
 
-    status = client.StartSubsystem("foobar1");
-    ASSERT_TRUE(status.ok());
+  status = client.StartSubsystem("foobar1");
+  ASSERT_TRUE(status.ok());
 
-    Event e = WaitForState(client, "foobar1", AdminState::kOnline, OperState::kOnline);
-    sleep(1);
+  Event e =
+      WaitForState(client, "foobar1", AdminState::kOnline, OperState::kOnline);
+  sleep(1);
 
-    // Kill the process.
-    SubsystemStatus s = std::get<0>(e.event);
-    ASSERT_EQ(1, s.processes.size());
-    int pid = s.processes[0].pid;
-    kill(pid, SIGTERM);
+  // Kill the process.
+  SubsystemStatus s = std::get<0>(e.event);
+  ASSERT_EQ(1, s.processes.size());
+  int pid = s.processes[0].pid;
+  kill(pid, SIGTERM);
 
-    // wait for the subsytem to go into broken state.
-    WaitForState(client, "foobar1", AdminState::kOnline, OperState::kBroken);
-    sleep(1);
+  // wait for the subsytem to go into broken state.
+  WaitForState(client, "foobar1", AdminState::kOnline, OperState::kBroken);
+  sleep(1);
 
-    // Now recover the subsystem by restarting it.
-    status = client.RestartSubsystem("foobar1");
-    ASSERT_TRUE(status.ok());
-    WaitForState(client, "foobar1", AdminState::kOnline, OperState::kOnline);
+  // Now recover the subsystem by restarting it.
+  status = client.RestartSubsystem("foobar1");
+  ASSERT_TRUE(status.ok());
+  WaitForState(client, "foobar1", AdminState::kOnline, OperState::kOnline);
 
-    // Stop the subsystem
-    status = client.StopSubsystem("foobar1");
-    ASSERT_TRUE(status.ok());
+  // Stop the subsystem
+  status = client.StopSubsystem("foobar1");
+  ASSERT_TRUE(status.ok());
 
-    WaitForState(client, "foobar1", AdminState::kOffline, OperState::kOffline);
+  WaitForState(client, "foobar1", AdminState::kOffline, OperState::kOffline);
 
-    status = client.RemoveSubsystem("foobar1", false);
-    ASSERT_TRUE(status.ok());
+  status = client.RemoveSubsystem("foobar1", false);
+  ASSERT_TRUE(status.ok());
 }
 
 TEST_F(CapcomTest, RestartSubsystemParentOffline) {
@@ -810,143 +810,142 @@ TEST_F(CapcomTest, StartSimpleSubsystemTree) {
 }
 
 TEST_F(CapcomTest, RestartProcess) {
-    adastra::capcom::client::Client client(ClientMode::kNonBlocking);
-    InitClient(client, "foobar1");
+  adastra::capcom::client::Client client(ClientMode::kNonBlocking);
+  InitClient(client, "foobar1");
 
-    absl::Status status = client.AddSubsystem(
-            "manual",
-            {.static_processes = {{
-                     .name = "loop",
-                     .executable = "cruise/adastra/testdata/loop",
-             }},
-             .restart_policy = adastra::capcom::client::RestartPolicy::kAutomatic});
-    ASSERT_TRUE(status.ok());
-    WaitForState(client, "manual", AdminState::kOffline, OperState::kOffline);
+  absl::Status status = client.AddSubsystem(
+      "manual",
+      {.static_processes = {{
+           .name = "loop", .executable = "${runfiles_dir}/__main__/testdata/loop",
+       }},
+       .restart_policy = adastra::capcom::client::RestartPolicy::kAutomatic});
+  ASSERT_TRUE(status.ok());
+  WaitForState(client, "manual", AdminState::kOffline, OperState::kOffline);
 
-    status = client.StartSubsystem("manual");
-    ASSERT_TRUE(status.ok());
+  status = client.StartSubsystem("manual");
+  ASSERT_TRUE(status.ok());
 
-    WaitForState(client, "manual", AdminState::kOnline, OperState::kOnline);
-    sleep(1);
+  WaitForState(client, "manual", AdminState::kOnline, OperState::kOnline);
+  sleep(1);
 
-    // Restart the process.
-    status = client.RestartProcesses("manual", {"loop"});
-    ASSERT_TRUE(status.ok());
+  // Restart the process.
+  status = client.RestartProcesses("manual", {"loop"});
+  ASSERT_TRUE(status.ok());
 
-    WaitForState(client, "manual", AdminState::kOnline, OperState::kRestartingProcesses);
-    WaitForState(client, "manual", AdminState::kOnline, OperState::kStartingProcesses);
+  WaitForState(client, "manual", AdminState::kOnline,
+               OperState::kRestartingProcesses);
+  WaitForState(client, "manual", AdminState::kOnline,
+               OperState::kStartingProcesses);
 
-    sleep(1);
-    WaitForState(client, "manual", AdminState::kOnline, OperState::kOnline);
+  sleep(1);
+  WaitForState(client, "manual", AdminState::kOnline, OperState::kOnline);
 
-    // Stop the subsystem
-    status = client.StopSubsystem("manual");
-    ASSERT_TRUE(status.ok());
+  // Stop the subsystem
+  status = client.StopSubsystem("manual");
+  ASSERT_TRUE(status.ok());
 
-    WaitForState(client, "manual", AdminState::kOffline, OperState::kOffline);
+  WaitForState(client, "manual", AdminState::kOffline, OperState::kOffline);
 
-    status = client.RemoveSubsystem("manual", false);
-    ASSERT_TRUE(status.ok());
+  status = client.RemoveSubsystem("manual", false);
+  ASSERT_TRUE(status.ok());
 }
 
 // Restart two processes and keep one running.
 TEST_F(CapcomTest, RestartProcess2) {
-    adastra::capcom::client::Client client(ClientMode::kNonBlocking);
-    InitClient(client, "foobar1");
+  adastra::capcom::client::Client client(ClientMode::kNonBlocking);
+  InitClient(client, "foobar1");
 
-    absl::Status status = client.AddSubsystem(
-            "manual",
-            {.static_processes =
-                     {{
-                              .name = "loop1",
-                              .executable = "cruise/adastra/testdata/loop",
-                      },
-                      {
-                              .name = "loop2",
-                              .executable = "cruise/adastra/testdata/loop",
-                      },
-                      {
-                              .name = "loop3",
-                              .executable = "cruise/adastra/testdata/loop",
-                      }},
-             .restart_policy = adastra::capcom::client::RestartPolicy::kAutomatic});
-    ASSERT_TRUE(status.ok());
-    WaitForState(client, "manual", AdminState::kOffline, OperState::kOffline);
+  absl::Status status = client.AddSubsystem(
+      "manual",
+      {.static_processes =
+           {{
+                .name = "loop1", .executable = "${runfiles_dir}/__main__/testdata/loop",
+            },
+            {
+                .name = "loop2", .executable = "${runfiles_dir}/__main__/testdata/loop",
+            },
+            {
+                .name = "loop3", .executable = "${runfiles_dir}/__main__/testdata/loop",
+            }},
+       .restart_policy = adastra::capcom::client::RestartPolicy::kAutomatic});
+  ASSERT_TRUE(status.ok());
+  WaitForState(client, "manual", AdminState::kOffline, OperState::kOffline);
 
-    status = client.StartSubsystem("manual");
-    ASSERT_TRUE(status.ok());
+  status = client.StartSubsystem("manual");
+  ASSERT_TRUE(status.ok());
 
-    WaitForState(client, "manual", AdminState::kOnline, OperState::kOnline);
-    sleep(1);
+  WaitForState(client, "manual", AdminState::kOnline, OperState::kOnline);
+  sleep(1);
 
-    // Restart processes loop1 and loop3, loop2 will not be restarted.
-    status = client.RestartProcesses("manual", {"loop1", "loop3"});
-    ASSERT_TRUE(status.ok());
+  // Restart processes loop1 and loop3, loop2 will not be restarted.
+  status = client.RestartProcesses("manual", {"loop1", "loop3"});
+  ASSERT_TRUE(status.ok());
 
-    WaitForState(client, "manual", AdminState::kOnline, OperState::kRestartingProcesses);
-    WaitForState(client, "manual", AdminState::kOnline, OperState::kStartingProcesses);
+  WaitForState(client, "manual", AdminState::kOnline,
+               OperState::kRestartingProcesses);
+  WaitForState(client, "manual", AdminState::kOnline,
+               OperState::kStartingProcesses);
 
-    sleep(1);
-    WaitForState(client, "manual", AdminState::kOnline, OperState::kOnline);
+  sleep(1);
+  WaitForState(client, "manual", AdminState::kOnline, OperState::kOnline);
 
-    // Stop the subsystem
-    status = client.StopSubsystem("manual");
-    ASSERT_TRUE(status.ok());
+  // Stop the subsystem
+  status = client.StopSubsystem("manual");
+  ASSERT_TRUE(status.ok());
 
-    WaitForState(client, "manual", AdminState::kOffline, OperState::kOffline);
+  WaitForState(client, "manual", AdminState::kOffline, OperState::kOffline);
 
-    status = client.RemoveSubsystem("manual", false);
-    ASSERT_TRUE(status.ok());
+  status = client.RemoveSubsystem("manual", false);
+  ASSERT_TRUE(status.ok());
 }
 
 // Restart all processes.
 TEST_F(CapcomTest, RestartAllProcesses) {
-    adastra::capcom::client::Client client(ClientMode::kNonBlocking);
-    InitClient(client, "foobar1");
+  adastra::capcom::client::Client client(ClientMode::kNonBlocking);
+  InitClient(client, "foobar1");
 
-    absl::Status status = client.AddSubsystem(
-            "manual",
-            {.static_processes =
-                     {{
-                              .name = "loop1",
-                              .executable = "cruise/adastra/testdata/loop",
-                      },
-                      {
-                              .name = "loop2",
-                              .executable = "cruise/adastra/testdata/loop",
-                      },
-                      {
-                              .name = "loop3",
-                              .executable = "cruise/adastra/testdata/loop",
-                      }},
-             .restart_policy = adastra::capcom::client::RestartPolicy::kAutomatic});
-    ASSERT_TRUE(status.ok());
-    WaitForState(client, "manual", AdminState::kOffline, OperState::kOffline);
+  absl::Status status = client.AddSubsystem(
+      "manual",
+      {.static_processes =
+           {{
+                .name = "loop1", .executable = "${runfiles_dir}/__main__/testdata/loop",
+            },
+            {
+                .name = "loop2", .executable = "${runfiles_dir}/__main__/testdata/loop",
+            },
+            {
+                .name = "loop3", .executable = "${runfiles_dir}/__main__/testdata/loop",
+            }},
+       .restart_policy = adastra::capcom::client::RestartPolicy::kAutomatic});
+  ASSERT_TRUE(status.ok());
+  WaitForState(client, "manual", AdminState::kOffline, OperState::kOffline);
 
-    status = client.StartSubsystem("manual");
-    ASSERT_TRUE(status.ok());
+  status = client.StartSubsystem("manual");
+  ASSERT_TRUE(status.ok());
 
-    WaitForState(client, "manual", AdminState::kOnline, OperState::kOnline);
-    sleep(1);
+  WaitForState(client, "manual", AdminState::kOnline, OperState::kOnline);
+  sleep(1);
 
-    // Restart the processes.
-    status = client.RestartProcesses("manual", {});
-    ASSERT_TRUE(status.ok());
+  // Restart the processes.
+  status = client.RestartProcesses("manual", {});
+  ASSERT_TRUE(status.ok());
 
-    WaitForState(client, "manual", AdminState::kOnline, OperState::kRestartingProcesses);
-    WaitForState(client, "manual", AdminState::kOnline, OperState::kStartingProcesses);
+  WaitForState(client, "manual", AdminState::kOnline,
+               OperState::kRestartingProcesses);
+  WaitForState(client, "manual", AdminState::kOnline,
+               OperState::kStartingProcesses);
 
-    sleep(1);
-    WaitForState(client, "manual", AdminState::kOnline, OperState::kOnline);
+  sleep(1);
+  WaitForState(client, "manual", AdminState::kOnline, OperState::kOnline);
 
-    // Stop the subsystem
-    status = client.StopSubsystem("manual");
-    ASSERT_TRUE(status.ok());
+  // Stop the subsystem
+  status = client.StopSubsystem("manual");
+  ASSERT_TRUE(status.ok());
 
-    WaitForState(client, "manual", AdminState::kOffline, OperState::kOffline);
+  WaitForState(client, "manual", AdminState::kOffline, OperState::kOffline);
 
-    status = client.RemoveSubsystem("manual", false);
-    ASSERT_TRUE(status.ok());
+  status = client.RemoveSubsystem("manual", false);
+  ASSERT_TRUE(status.ok());
 }
 
 TEST_F(CapcomTest, ManualRestartSimpleSubsystem) {
@@ -1031,64 +1030,138 @@ TEST_F(CapcomTest, ManualRestartSimpleSubsystemAfterCrash) {
 }
 
 TEST_F(CapcomTest, RestartProcessAfterCrash) {
-    adastra::capcom::client::Client client(ClientMode::kNonBlocking);
-    absl::Status initStatus = client.Init(
-            CapcomAddr(),
-            "restartprocess",
-            adastra::kSubsystemStatusEvents | adastra::kAlarmEvents);
-    ASSERT_TRUE(initStatus.ok());
+  adastra::capcom::client::Client client(ClientMode::kNonBlocking);
+  absl::Status initStatus =
+      client.Init(CapcomAddr(), "restartprocess",
+                  adastra::kSubsystemStatusEvents | adastra::kAlarmEvents);
+  ASSERT_TRUE(initStatus.ok());
 
-    absl::Status status = client.AddSubsystem(
-            "processonly",
-            {.static_processes =
-                     {{
-                              .name = "loop1",
-                              .executable = "cruise/adastra/testdata/loop",
-                      },
-                      {
-                              .name = "loop2",
-                              .executable = "cruise/adastra/testdata/loop",
-                      },
-                      {
-                              .name = "loop3",
-                              .executable = "cruise/adastra/testdata/loop",
-                      }},
-             .restart_policy = adastra::capcom::client::RestartPolicy::kProcessOnly});
-    ASSERT_TRUE(status.ok());
-    WaitForState(client, "processonly", AdminState::kOffline, OperState::kOffline);
+  absl::Status status = client.AddSubsystem(
+      "processonly",
+      {.static_processes =
+           {{
+                .name = "loop1", .executable = "${runfiles_dir}/__main__/testdata/loop",
+            },
+            {
+                .name = "loop2", .executable = "${runfiles_dir}/__main__/testdata/loop",
+            },
+            {
+                .name = "loop3", .executable = "${runfiles_dir}/__main__/testdata/loop",
+            }},
+       .restart_policy = adastra::capcom::client::RestartPolicy::kProcessOnly});
+  ASSERT_TRUE(status.ok());
+  WaitForState(client, "processonly", AdminState::kOffline,
+               OperState::kOffline);
 
-    status = client.StartSubsystem("processonly");
-    ASSERT_TRUE(status.ok());
+  status = client.StartSubsystem("processonly");
+  ASSERT_TRUE(status.ok());
 
-    Event e = WaitForState(client, "processonly", AdminState::kOnline, OperState::kOnline);
-    sleep(1);
+  Event e = WaitForState(client, "processonly", AdminState::kOnline,
+                         OperState::kOnline);
+  sleep(1);
 
+  // Kill loop3
+  SubsystemStatus s = std::get<0>(e.event);
+  ASSERT_EQ(3, s.processes.size());
+  int pid = -1;
+  for (auto &p : s.processes) {
+    if (p.name == "loop3") {
+      pid = p.pid;
+      break;
+    }
+  }
+  ASSERT_NE(-1, pid);
+  kill(pid, SIGTERM);
+
+  // The alarm will arrive before the subsystem goes into restarting.
+  WaitForAlarm(client, adastra::Alarm::Type::kProcess,
+               adastra::Alarm::Severity::kWarning,
+               adastra::Alarm::Reason::kCrashed);
+
+  // The process will be restarted and an alarm will be raised.
+  // Wait for starting-processes state
+  WaitForState(client, "processonly", AdminState::kOnline,
+               OperState::kStartingProcesses);
+
+  // The process will restart and we will be online again.
+  WaitForState(client, "processonly", AdminState::kOnline, OperState::kOnline);
+
+  // The alarm will have been cleared.
+  auto alarms = client.GetAlarms();
+  ASSERT_TRUE(alarms.ok());
+  ASSERT_EQ(0, alarms->size());
+
+  sleep(1);
+
+  // Stop the subsystem
+  status = client.StopSubsystem("processonly");
+  ASSERT_TRUE(status.ok());
+
+  WaitForState(client, "processonly", AdminState::kOffline,
+               OperState::kOffline);
+
+  status = client.RemoveSubsystem("processonly", false);
+  ASSERT_TRUE(status.ok());
+}
+
+TEST_F(CapcomTest, RestartProcessAfterCrashBackoff) {
+  adastra::capcom::client::Client client(ClientMode::kNonBlocking);
+  absl::Status initStatus =
+      client.Init(CapcomAddr(), "restartprocess",
+                  adastra::kSubsystemStatusEvents | adastra::kAlarmEvents);
+  ASSERT_TRUE(initStatus.ok());
+
+  absl::Status status = client.AddSubsystem(
+      "processonly",
+      {.static_processes =
+           {{
+                .name = "loop1", .executable = "${runfiles_dir}/__main__/testdata/loop",
+            },
+            {
+                .name = "loop2", .executable = "${runfiles_dir}/__main__/testdata/loop",
+            },
+            {
+                .name = "loop3", .executable = "${runfiles_dir}/__main__/testdata/loop",
+            }},
+       .restart_policy = adastra::capcom::client::RestartPolicy::kProcessOnly});
+  ASSERT_TRUE(status.ok());
+  WaitForState(client, "processonly", AdminState::kOffline,
+               OperState::kOffline);
+
+  status = client.StartSubsystem("processonly");
+  ASSERT_TRUE(status.ok());
+
+  Event e = WaitForState(client, "processonly", AdminState::kOnline,
+                         OperState::kOnline);
+  sleep(1);
+
+  for (int i = 0; i < 3; i++) {
     // Kill loop3
     SubsystemStatus s = std::get<0>(e.event);
     ASSERT_EQ(3, s.processes.size());
     int pid = -1;
-    for (auto& p : s.processes) {
-        if (p.name == "loop3") {
-            pid = p.pid;
-            break;
-        }
+    for (auto &p : s.processes) {
+      if (p.name == "loop3") {
+        pid = p.pid;
+        break;
+      }
     }
     ASSERT_NE(-1, pid);
     kill(pid, SIGTERM);
 
     // The alarm will arrive before the subsystem goes into restarting.
-    WaitForAlarm(
-            client,
-            adastra::Alarm::Type::kProcess,
-            adastra::Alarm::Severity::kWarning,
-            adastra::Alarm::Reason::kCrashed);
+    WaitForAlarm(client, adastra::Alarm::Type::kProcess,
+                 adastra::Alarm::Severity::kWarning,
+                 adastra::Alarm::Reason::kCrashed);
 
     // The process will be restarted and an alarm will be raised.
     // Wait for starting-processes state
-    WaitForState(client, "processonly", AdminState::kOnline, OperState::kStartingProcesses);
+    WaitForState(client, "processonly", AdminState::kOnline,
+                 OperState::kStartingProcesses);
 
     // The process will restart and we will be online again.
-    WaitForState(client, "processonly", AdminState::kOnline, OperState::kOnline);
+    e = WaitForState(client, "processonly", AdminState::kOnline,
+                     OperState::kOnline);
 
     // The alarm will have been cleared.
     auto alarms = client.GetAlarms();
@@ -1096,286 +1169,206 @@ TEST_F(CapcomTest, RestartProcessAfterCrash) {
     ASSERT_EQ(0, alarms->size());
 
     sleep(1);
+  }
 
-    // Stop the subsystem
-    status = client.StopSubsystem("processonly");
-    ASSERT_TRUE(status.ok());
+  // Stop the subsystem
+  status = client.StopSubsystem("processonly");
+  ASSERT_TRUE(status.ok());
 
-    WaitForState(client, "processonly", AdminState::kOffline, OperState::kOffline);
+  WaitForState(client, "processonly", AdminState::kOffline,
+               OperState::kOffline);
 
-    status = client.RemoveSubsystem("processonly", false);
-    ASSERT_TRUE(status.ok());
-}
-
-TEST_F(CapcomTest, RestartProcessAfterCrashBackoff) {
-    adastra::capcom::client::Client client(ClientMode::kNonBlocking);
-    absl::Status initStatus = client.Init(
-            CapcomAddr(),
-            "restartprocess",
-            adastra::kSubsystemStatusEvents | adastra::kAlarmEvents);
-    ASSERT_TRUE(initStatus.ok());
-
-    absl::Status status = client.AddSubsystem(
-            "processonly",
-            {.static_processes =
-                     {{
-                              .name = "loop1",
-                              .executable = "cruise/adastra/testdata/loop",
-                      },
-                      {
-                              .name = "loop2",
-                              .executable = "cruise/adastra/testdata/loop",
-                      },
-                      {
-                              .name = "loop3",
-                              .executable = "cruise/adastra/testdata/loop",
-                      }},
-             .restart_policy = adastra::capcom::client::RestartPolicy::kProcessOnly});
-    ASSERT_TRUE(status.ok());
-    WaitForState(client, "processonly", AdminState::kOffline, OperState::kOffline);
-
-    status = client.StartSubsystem("processonly");
-    ASSERT_TRUE(status.ok());
-
-    Event e = WaitForState(client, "processonly", AdminState::kOnline, OperState::kOnline);
-    sleep(1);
-
-    for (int i = 0; i < 3; i++) {
-        // Kill loop3
-        SubsystemStatus s = std::get<0>(e.event);
-        ASSERT_EQ(3, s.processes.size());
-        int pid = -1;
-        for (auto& p : s.processes) {
-            if (p.name == "loop3") {
-                pid = p.pid;
-                break;
-            }
-        }
-        ASSERT_NE(-1, pid);
-        kill(pid, SIGTERM);
-
-        // The alarm will arrive before the subsystem goes into restarting.
-        WaitForAlarm(
-                client,
-                adastra::Alarm::Type::kProcess,
-                adastra::Alarm::Severity::kWarning,
-                adastra::Alarm::Reason::kCrashed);
-
-        // The process will be restarted and an alarm will be raised.
-        // Wait for starting-processes state
-        WaitForState(client, "processonly", AdminState::kOnline, OperState::kStartingProcesses);
-
-        // The process will restart and we will be online again.
-        e = WaitForState(client, "processonly", AdminState::kOnline, OperState::kOnline);
-
-        // The alarm will have been cleared.
-        auto alarms = client.GetAlarms();
-        ASSERT_TRUE(alarms.ok());
-        ASSERT_EQ(0, alarms->size());
-
-        sleep(1);
-    }
-
-    // Stop the subsystem
-    status = client.StopSubsystem("processonly");
-    ASSERT_TRUE(status.ok());
-
-    WaitForState(client, "processonly", AdminState::kOffline, OperState::kOffline);
-
-    status = client.RemoveSubsystem("processonly", false);
-    ASSERT_TRUE(status.ok());
+  status = client.RemoveSubsystem("processonly", false);
+  ASSERT_TRUE(status.ok());
 }
 
 TEST_F(CapcomTest, RestartProcessAfterCrashLimit) {
-    adastra::capcom::client::Client client(ClientMode::kNonBlocking);
-    absl::Status initStatus = client.Init(
-            CapcomAddr(),
-            "restartprocess",
-            adastra::kSubsystemStatusEvents | adastra::kAlarmEvents);
-    ASSERT_TRUE(initStatus.ok());
+  adastra::capcom::client::Client client(ClientMode::kNonBlocking);
+  absl::Status initStatus =
+      client.Init(CapcomAddr(), "restartprocess",
+                  adastra::kSubsystemStatusEvents | adastra::kAlarmEvents);
+  ASSERT_TRUE(initStatus.ok());
 
-    absl::Status status = client.AddSubsystem(
-            "processonly",
-            {.static_processes =
-                     {{
-                              .name = "loop1",
-                              .executable = "cruise/adastra/testdata/loop",
-                      },
-                      {
-                              .name = "loop2",
-                              .executable = "cruise/adastra/testdata/loop",
-                      },
-                      {
-                              .name = "loop3",
-                              .executable = "cruise/adastra/testdata/loop",
-                              .max_restarts = 2,
-                      }},
-             .restart_policy = adastra::capcom::client::RestartPolicy::kProcessOnly});
-    ASSERT_TRUE(status.ok());
-    WaitForState(client, "processonly", AdminState::kOffline, OperState::kOffline);
+  absl::Status status = client.AddSubsystem(
+      "processonly",
+      {.static_processes = {{
+                                .name = "loop1",
+                                .executable = "${runfiles_dir}/__main__/testdata/loop",
+                            },
+                            {
+                                .name = "loop2",
+                                .executable = "${runfiles_dir}/__main__/testdata/loop",
+                            },
+                            {
+                                .name = "loop3",
+                                .executable = "${runfiles_dir}/__main__/testdata/loop",
+                                .max_restarts = 2,
+                            }},
+       .restart_policy = adastra::capcom::client::RestartPolicy::kProcessOnly});
+  ASSERT_TRUE(status.ok());
+  WaitForState(client, "processonly", AdminState::kOffline,
+               OperState::kOffline);
 
-    status = client.StartSubsystem("processonly");
-    ASSERT_TRUE(status.ok());
+  status = client.StartSubsystem("processonly");
+  ASSERT_TRUE(status.ok());
 
-    Event e = WaitForState(client, "processonly", AdminState::kOnline, OperState::kOnline);
-    sleep(1);
+  Event e = WaitForState(client, "processonly", AdminState::kOnline,
+                         OperState::kOnline);
+  sleep(1);
 
-    for (int i = 0; i < 3; i++) {
-        // Kill loop3
-        SubsystemStatus s = std::get<0>(e.event);
-        ASSERT_EQ(3, s.processes.size());
-        int pid = -1;
-        for (auto& p : s.processes) {
-            if (p.name == "loop3") {
-                pid = p.pid;
-                break;
-            }
-        }
-        ASSERT_NE(-1, pid);
-        kill(pid, SIGTERM);
-
-        // The alarm will arrive before the subsystem goes into restarting.
-        if (i == 2) {
-            // There is a max of 2 restarts, so this one will not restart and we will get a
-            // different alarm.  The subsystem will go degraded.
-            WaitForAlarm(
-                    client,
-                    adastra::Alarm::Type::kProcess,
-                    adastra::Alarm::Severity::kCritical,
-                    adastra::Alarm::Reason::kCrashed);
-            WaitForState(client, "processonly", AdminState::kOnline, OperState::kDegraded);
-            break;
-        }
-        WaitForAlarm(
-                client,
-                adastra::Alarm::Type::kProcess,
-                adastra::Alarm::Severity::kWarning,
-                adastra::Alarm::Reason::kCrashed);
-
-
-        // The process will be restarted and an alarm will be raised.
-        // Wait for starting-processes state
-        WaitForState(client, "processonly", AdminState::kOnline, OperState::kStartingProcesses);
-
-        // The process will restart and we will be online again.
-        e = WaitForState(client, "processonly", AdminState::kOnline, OperState::kOnline);
-
-        // The alarm will have been cleared.
-        auto alarms = client.GetAlarms();
-        ASSERT_TRUE(alarms.ok());
-        ASSERT_EQ(0, alarms->size());
-
-        sleep(1);
+  for (int i = 0; i < 3; i++) {
+    // Kill loop3
+    SubsystemStatus s = std::get<0>(e.event);
+    ASSERT_EQ(3, s.processes.size());
+    int pid = -1;
+    for (auto &p : s.processes) {
+      if (p.name == "loop3") {
+        pid = p.pid;
+        break;
+      }
     }
+    ASSERT_NE(-1, pid);
+    kill(pid, SIGTERM);
 
-    // Stop the subsystem
-    status = client.StopSubsystem("processonly");
-    ASSERT_TRUE(status.ok());
+    // The alarm will arrive before the subsystem goes into restarting.
+    if (i == 2) {
+      // There is a max of 2 restarts, so this one will not restart and we will
+      // get a different alarm.  The subsystem will go degraded.
+      WaitForAlarm(client, adastra::Alarm::Type::kProcess,
+                   adastra::Alarm::Severity::kCritical,
+                   adastra::Alarm::Reason::kCrashed);
+      WaitForState(client, "processonly", AdminState::kOnline,
+                   OperState::kDegraded);
+      break;
+    }
+    WaitForAlarm(client, adastra::Alarm::Type::kProcess,
+                 adastra::Alarm::Severity::kWarning,
+                 adastra::Alarm::Reason::kCrashed);
 
-    WaitForState(client, "processonly", AdminState::kOffline, OperState::kOffline);
+    // The process will be restarted and an alarm will be raised.
+    // Wait for starting-processes state
+    WaitForState(client, "processonly", AdminState::kOnline,
+                 OperState::kStartingProcesses);
 
-    status = client.RemoveSubsystem("processonly", false);
-    ASSERT_TRUE(status.ok());
+    // The process will restart and we will be online again.
+    e = WaitForState(client, "processonly", AdminState::kOnline,
+                     OperState::kOnline);
+
+    // The alarm will have been cleared.
+    auto alarms = client.GetAlarms();
+    ASSERT_TRUE(alarms.ok());
+    ASSERT_EQ(0, alarms->size());
+
+    sleep(1);
+  }
+
+  // Stop the subsystem
+  status = client.StopSubsystem("processonly");
+  ASSERT_TRUE(status.ok());
+
+  WaitForState(client, "processonly", AdminState::kOffline,
+               OperState::kOffline);
+
+  status = client.RemoveSubsystem("processonly", false);
+  ASSERT_TRUE(status.ok());
 }
 
 TEST_F(CapcomTest, RestartProcessAfterCrashLimitRecover) {
-    adastra::capcom::client::Client client(ClientMode::kNonBlocking);
-    absl::Status initStatus = client.Init(
-            CapcomAddr(),
-            "restartprocess",
-            adastra::kSubsystemStatusEvents | adastra::kAlarmEvents);
-    ASSERT_TRUE(initStatus.ok());
+  adastra::capcom::client::Client client(ClientMode::kNonBlocking);
+  absl::Status initStatus =
+      client.Init(CapcomAddr(), "restartprocess",
+                  adastra::kSubsystemStatusEvents | adastra::kAlarmEvents);
+  ASSERT_TRUE(initStatus.ok());
 
-    absl::Status status = client.AddSubsystem(
-            "processonly",
-            {.static_processes =
-                     {{
-                              .name = "loop1",
-                              .executable = "cruise/adastra/testdata/loop",
-                      },
-                      {
-                              .name = "loop2",
-                              .executable = "cruise/adastra/testdata/loop",
-                      },
-                      {
-                              .name = "loop3",
-                              .executable = "cruise/adastra/testdata/loop",
-                              .max_restarts = 2,
-                      }},
-             .restart_policy = adastra::capcom::client::RestartPolicy::kProcessOnly});
-    ASSERT_TRUE(status.ok());
-    WaitForState(client, "processonly", AdminState::kOffline, OperState::kOffline);
+  absl::Status status = client.AddSubsystem(
+      "processonly",
+      {.static_processes = {{
+                                .name = "loop1",
+                                .executable = "${runfiles_dir}/__main__/testdata/loop",
+                            },
+                            {
+                                .name = "loop2",
+                                .executable = "${runfiles_dir}/__main__/testdata/loop",
+                            },
+                            {
+                                .name = "loop3",
+                                .executable = "${runfiles_dir}/__main__/testdata/loop",
+                                .max_restarts = 2,
+                            }},
+       .restart_policy = adastra::capcom::client::RestartPolicy::kProcessOnly});
+  ASSERT_TRUE(status.ok());
+  WaitForState(client, "processonly", AdminState::kOffline,
+               OperState::kOffline);
 
-    status = client.StartSubsystem("processonly");
-    ASSERT_TRUE(status.ok());
+  status = client.StartSubsystem("processonly");
+  ASSERT_TRUE(status.ok());
 
-    Event e = WaitForState(client, "processonly", AdminState::kOnline, OperState::kOnline);
-    sleep(1);
+  Event e = WaitForState(client, "processonly", AdminState::kOnline,
+                         OperState::kOnline);
+  sleep(1);
 
-    for (int i = 0; i < 3; i++) {
-        // Kill loop3
-        SubsystemStatus s = std::get<0>(e.event);
-        ASSERT_EQ(3, s.processes.size());
-        int pid = -1;
-        for (auto& p : s.processes) {
-            if (p.name == "loop3") {
-                pid = p.pid;
-                break;
-            }
-        }
-        ASSERT_NE(-1, pid);
-        kill(pid, SIGTERM);
-
-        // The alarm will arrive before the subsystem goes into restarting.
-        if (i == 2) {
-            // There is a max of 2 restarts, so this one will not restart and we will get a
-            // different alarm.  The subsystem will go degraded.
-            WaitForAlarm(
-                    client,
-                    adastra::Alarm::Type::kProcess,
-                    adastra::Alarm::Severity::kCritical,
-                    adastra::Alarm::Reason::kCrashed);
-            WaitForState(client, "processonly", AdminState::kOnline, OperState::kDegraded);
-            break;
-        }
-        WaitForAlarm(
-                client,
-                adastra::Alarm::Type::kProcess,
-                adastra::Alarm::Severity::kWarning,
-                adastra::Alarm::Reason::kCrashed);
-
-
-        // The process will be restarted and an alarm will be raised.
-        // Wait for starting-processes state
-        WaitForState(client, "processonly", AdminState::kOnline, OperState::kStartingProcesses);
-
-        // The process will restart and we will be online again.
-        e = WaitForState(client, "processonly", AdminState::kOnline, OperState::kOnline);
-
-        // The alarm will have been cleared.
-        auto alarms = client.GetAlarms();
-        ASSERT_TRUE(alarms.ok());
-        ASSERT_EQ(0, alarms->size());
-
-        sleep(1);
+  for (int i = 0; i < 3; i++) {
+    // Kill loop3
+    SubsystemStatus s = std::get<0>(e.event);
+    ASSERT_EQ(3, s.processes.size());
+    int pid = -1;
+    for (auto &p : s.processes) {
+      if (p.name == "loop3") {
+        pid = p.pid;
+        break;
+      }
     }
+    ASSERT_NE(-1, pid);
+    kill(pid, SIGTERM);
 
-    // Restart the loop3 process in the subsystem.
-    status = client.RestartProcesses("processonly", {"loop3"});
-    ASSERT_TRUE(status.ok());
+    // The alarm will arrive before the subsystem goes into restarting.
+    if (i == 2) {
+      // There is a max of 2 restarts, so this one will not restart and we will
+      // get a different alarm.  The subsystem will go degraded.
+      WaitForAlarm(client, adastra::Alarm::Type::kProcess,
+                   adastra::Alarm::Severity::kCritical,
+                   adastra::Alarm::Reason::kCrashed);
+      WaitForState(client, "processonly", AdminState::kOnline,
+                   OperState::kDegraded);
+      break;
+    }
+    WaitForAlarm(client, adastra::Alarm::Type::kProcess,
+                 adastra::Alarm::Severity::kWarning,
+                 adastra::Alarm::Reason::kCrashed);
 
-    WaitForState(client, "processonly", AdminState::kOnline, OperState::kOnline);
+    // The process will be restarted and an alarm will be raised.
+    // Wait for starting-processes state
+    WaitForState(client, "processonly", AdminState::kOnline,
+                 OperState::kStartingProcesses);
 
-    // Stop the subsystem
-    status = client.StopSubsystem("processonly");
-    ASSERT_TRUE(status.ok());
+    // The process will restart and we will be online again.
+    e = WaitForState(client, "processonly", AdminState::kOnline,
+                     OperState::kOnline);
 
-    WaitForState(client, "processonly", AdminState::kOffline, OperState::kOffline);
+    // The alarm will have been cleared.
+    auto alarms = client.GetAlarms();
+    ASSERT_TRUE(alarms.ok());
+    ASSERT_EQ(0, alarms->size());
 
-    status = client.RemoveSubsystem("processonly", false);
-    ASSERT_TRUE(status.ok());
+    sleep(1);
+  }
+
+  // Restart the loop3 process in the subsystem.
+  status = client.RestartProcesses("processonly", {"loop3"});
+  ASSERT_TRUE(status.ok());
+
+  WaitForState(client, "processonly", AdminState::kOnline, OperState::kOnline);
+
+  // Stop the subsystem
+  status = client.StopSubsystem("processonly");
+  ASSERT_TRUE(status.ok());
+
+  WaitForState(client, "processonly", AdminState::kOffline,
+               OperState::kOffline);
+
+  status = client.RemoveSubsystem("processonly", false);
+  ASSERT_TRUE(status.ok());
 }
-
 
 TEST_F(CapcomTest, Abort) {
   adastra::capcom::client::Client client(ClientMode::kBlocking);

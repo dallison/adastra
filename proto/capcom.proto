@@ -46,16 +46,16 @@ message Process {
   // Stream control.
   repeated stagezero.proto.StreamControl streams = 6;
 
-    // Max restarts for process-only restart policy.
-    int32 max_restarts = 7;
+  // Max restarts for process-only restart policy.
+  int32 max_restarts = 7;
 }
 
 message AddSubsystemRequest {
   enum RestartPolicy {
     AUTOMATIC = 0;
     MANUAL = 1;
-         PROCESS_ONLY = 2;  // Restart a crashed process, not the subsystem.
- }
+    PROCESS_ONLY = 2; // Restart a crashed process, not the subsystem.
+  }
 
   string name = 1;
   repeated Process processes = 2;
@@ -102,15 +102,13 @@ message RestartSubsystemRequest { string subsystem = 1; }
 message RestartSubsystemResponse { string error = 1; }
 
 message RestartProcessesRequest {
-    string subsystem = 1;
-    // If processes is empty, all processes will be restarted, otherwise
-    // only the processes listed will be restarted.
-    repeated string processes = 2;
+  string subsystem = 1;
+  // If processes is empty, all processes will be restarted, otherwise
+  // only the processes listed will be restarted.
+  repeated string processes = 2;
 }
 
-message RestartProcessesResponse {
-    string error = 1;
-}
+message RestartProcessesResponse { string error = 1; }
 
 message StopSubsystemRequest { string subsystem = 1; }
 
@@ -198,8 +196,8 @@ message Request {
     FreezeCgroupRequest freeze_cgroup = 15;
     ThawCgroupRequest thaw_cgroup = 16;
     KillCgroupRequest kill_cgroup = 17;
-        RestartProcessesRequest restart_processes = 19;
- }
+    RestartProcessesRequest restart_processes = 19;
+  }
 }
 
 message Response {
@@ -221,6 +219,6 @@ message Response {
     FreezeCgroupResponse freeze_cgroup = 15;
     ThawCgroupResponse thaw_cgroup = 16;
     KillCgroupResponse kill_cgroup = 17;
-         RestartProcessesResponse restart_processes = 19;
-}
+    RestartProcessesResponse restart_processes = 19;
+  }
 }

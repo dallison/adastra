@@ -48,13 +48,13 @@ void SubsystemsWindow::RunnerCoroutine(co::Coroutine *c) {
       continue;
     }
     // Wait for incoming event.
-    int fd = c->Wait({event_pipe_.ReadFd().Fd(), interrupt.GetPollFd().Fd()}, POLLIN);
+    int fd = c->Wait({event_pipe_.ReadFd().Fd(), interrupt.GetPollFd().Fd()},
+                     POLLIN);
     if (fd == interrupt.GetPollFd().Fd()) {
       interrupt.Clear();
       continue;
     }
-    absl::StatusOr<std::shared_ptr<adastra::Event>> pevent =
-        event_pipe_.Read();
+    absl::StatusOr<std::shared_ptr<adastra::Event>> pevent = event_pipe_.Read();
     if (!pevent.ok()) {
       connected = false;
       continue;

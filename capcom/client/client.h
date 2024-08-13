@@ -6,8 +6,8 @@
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "common/alarm.h"
-#include "common/event.h"
 #include "common/cgroup.h"
+#include "common/event.h"
 #include "common/states.h"
 #include "common/stream.h"
 #include "common/subsystem_status.h"
@@ -26,10 +26,10 @@ enum class ClientMode {
   kNonBlocking,
 };
 
-
 enum class RestartPolicy {
   kAutomatic,
   kManual,
+  kProcessOnly,
 };
 
 static constexpr int kDefaultMaxRestarts = 3;
@@ -113,10 +113,8 @@ struct SubsystemOptions {
 enum class RunMode {
   kNoninteractive,
   kInteractive,
-  kProcessOnly,  // Restart only the process that exited
+  kProcessOnly, // Restart only the process that exited
 };
-
-
 
 class Client : public TCPClient<capcom::proto::Request, capcom::proto::Response,
                                 adastra::proto::Event> {
@@ -128,12 +126,11 @@ public:
   ~Client() = default;
 
   absl::Status Init(toolbelt::InetAddress addr, const std::string &name,
-                    int event_mask,
-                    co::Coroutine *c = nullptr);
+                    int event_mask, co::Coroutine *c = nullptr);
 
   absl::Status AddCompute(const std::string &name,
                           const toolbelt::InetAddress &addr,
-                          const std::vector<Cgroup>& cgroups = {},
+                          const std::vector<Cgroup> &cgroups = {},
                           co::Coroutine *c = nullptr);
 
   absl::Status RemoveCompute(const std::string &name,
@@ -147,19 +144,18 @@ public:
                                co::Coroutine *c = nullptr);
 
   absl::Status StartSubsystem(const std::string &name,
-            RunMode mode = RunMode::kNoninteractive,
-            Terminal* terminal = nullptr,
+                              RunMode mode = RunMode::kNoninteractive,
+                              Terminal *terminal = nullptr,
                               co::Coroutine *c = nullptr);
   absl::Status StopSubsystem(const std::string &name,
                              co::Coroutine *c = nullptr);
 
   absl::Status RestartSubsystem(const std::string &name,
-                             co::Coroutine *c = nullptr);
+                                co::Coroutine *c = nullptr);
 
-  absl::Status RestartProcesses(
-          const std::string& subsystem,
-          const std::vector<std::string>& processes,
-          co::Coroutine *c = nullptr);
+  absl::Status RestartProcesses(const std::string &subsystem,
+                                const std::vector<std::string> &processes,
+                                co::Coroutine *c = nullptr);
 
   absl::Status AddGlobalVariable(const Variable &var,
                                  co::Coroutine *c = nullptr);
@@ -176,7 +172,8 @@ public:
   }
   absl::StatusOr<std::shared_ptr<Event>> ReadEvent(co::Coroutine *c = nullptr);
 
-  absl::Status Abort(const std::string &reason, bool emergency, co::Coroutine *c = nullptr);
+  absl::Status Abort(const std::string &reason, bool emergency,
+                     co::Coroutine *c = nullptr);
 
   absl::Status SendInput(const std::string &subsystem,
                          const std::string &process, int fd,
@@ -185,9 +182,13 @@ public:
   absl::Status CloseFd(const std::string &subsystem, const std::string &process,
                        int fd, co::Coroutine *c = nullptr);
 
-  absl::Status FreezeCgroup(const std::string& compute, const std::string& cgroup, co::Coroutine *co = nullptr);
-  absl::Status ThawCgroup(const std::string& compute, const std::string& cgroup, co::Coroutine *co = nullptr);
-  absl::Status KillCgroup(const std::string& compute, const std::string& cgroup, co::Coroutine *co = nullptr);
+  absl::Status FreezeCgroup(const std::string &compute,
+                            const std::string &cgroup,
+                            co::Coroutine *co = nullptr);
+  absl::Status ThawCgroup(const std::string &compute, const std::string &cgroup,
+                          co::Coroutine *co = nullptr);
+  absl::Status KillCgroup(const std::string &compute, const std::string &cgroup,
+                          co::Coroutine *co = nullptr);
 
 private:
   absl::Status WaitForSubsystemState(const std::string &subsystem,

@@ -160,10 +160,13 @@ private:
   bool IsEmergencyAborting() { return emergency_aborting_; }
   bool TestMode() const { return test_mode_; }
 
-  absl::Status FreezeCgroup(const std::string& compute, const std::string& cgroup, co::Coroutine* c);
-  absl::Status ThawCgroup(const std::string& compute, const std::string& cgroup, co::Coroutine* c);
-  absl::Status KillCgroup(const std::string& compute, const std::string& cgroup, co::Coroutine* c);
-  
+  absl::Status FreezeCgroup(const std::string &compute,
+                            const std::string &cgroup, co::Coroutine *c);
+  absl::Status ThawCgroup(const std::string &compute, const std::string &cgroup,
+                          co::Coroutine *c);
+  absl::Status KillCgroup(const std::string &compute, const std::string &cgroup,
+                          co::Coroutine *c);
+
 private:
   co::CoroutineScheduler &co_scheduler_;
   toolbelt::InetAddress addr_;

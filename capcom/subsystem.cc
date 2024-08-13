@@ -111,27 +111,30 @@ absl::Status Subsystem::Remove(bool recursive) {
 }
 
 absl::Status Subsystem::BuildMessagePipe() {
-    absl::StatusOr<toolbelt::SharedPtrPipe<Message>> p =
-            toolbelt::SharedPtrPipe<Message>::Create();
-    if (!p.ok()) {
-        return p.status();
-    }
-    message_pipe_ = std::move(*p);
-    return absl::OkStatus();
+  absl::StatusOr<toolbelt::SharedPtrPipe<Message>> p =
+      toolbelt::SharedPtrPipe<Message>::Create();
+  if (!p.ok()) {
+    return p.status();
+  }
+  message_pipe_ = std::move(*p);
+  return absl::OkStatus();
 }
 
 absl::Status Subsystem::SendMessage(std::shared_ptr<Message> message) {
-    absl::Status status = message_pipe_.write(message);
-    if (!status.ok()) {
-        return absl::InternalError(absl::StrFormat(
-                "Failed to send message to subsystem %s: %s", name_, status.toString()));
-    }
-    return absl::OkStatus();
+  absl::Status status = message_pipe_.Write(message);
+  if (!status.ok()) {
+    return absl::InternalError(
+        absl::StrFormat("Failed to send message to subsystem %s: %s", name_,
+                        status.ToString()));
+  }
+  return absl::OkStatus();
 }
 
 void Subsystem::NotifyParents() {
-    auto message = std::make_shared<Message>(
-            Message{.code = Message::kReportOper, .sender = this, .state = {.oper = oper_state_}});
+  auto message =
+      std::make_shared<Message>(Message{.code = Message::kReportOper,
+                                        .sender = this,
+                                        .state = {.oper = oper_state_}});
   for (auto &parent : parents_) {
     if (absl::Status status = parent->SendMessage(message); !status.ok()) {
       capcom_.Log(Name(), toolbelt::LogLevel::kError,
@@ -162,11 +165,11 @@ absl::Status Subsystem::CloseFd(const std::string &process, int fd,
 }
 
 void Subsystem::SendToChildren(AdminState state, uint32_t client_id) {
-    auto message = std::make_shared<Message>(
-            Message{.code = Message::kChangeAdmin,
-                    .sender = this,
-                    .client_id = client_id,
-                    .state = {.admin = state}});
+  auto message =
+      std::make_shared<Message>(Message{.code = Message::kChangeAdmin,
+                                        .sender = this,
+                                        .client_id = client_id,
+                                        .state = {.admin = state}});
   for (auto &child : children_) {
     if (absl::Status status = child->SendMessage(message); !status.ok()) {
       capcom_.Log(Name(), toolbelt::LogLevel::kError,
@@ -178,23 +181,22 @@ void Subsystem::SendToChildren(AdminState state, uint32_t client_id) {
   }
 }
 
-absl::StatusOr<Message> Subsystem::ReadMessage() {
-    auto msg_or_status = message_pipe_.read();
-    if (!msg_or_status.ok()) {
-        return absl::InternalError(absl::StrFormat(
-                "Failed to read message in subsystem %s: %s",
-                name_,
-                msg_or_status->ToString()));
-    }
-    return *msg_or_status;
+absl::StatusOr<std::shared_ptr<Message>> Subsystem::ReadMessage() {
+  auto msg_or_status = message_pipe_.Read();
+  if (!msg_or_status.ok()) {
+    return absl::InternalError(
+        absl::StrFormat("Failed to read message in subsystem %s: %s", name_,
+                        msg_or_status.status().ToString()));
+  }
+  return *msg_or_status;
 }
 
 absl::Status Subsystem::LaunchProcesses(co::Coroutine *c) {
   for (auto &proc : processes_) {
-        if (proc->IsRunning()) {
-            continue;
-        }
-           absl::Status status = proc->Launch(this, c);
+    if (proc->IsRunning()) {
+      continue;
+    }
+    absl::Status status = proc->Launch(this, c);
     if (!status.ok()) {
       // A failure to launch one is a failure for all.
       return status;
@@ -206,10 +208,10 @@ absl::Status Subsystem::LaunchProcesses(co::Coroutine *c) {
 
 void Subsystem::StopProcesses(co::Coroutine *c) {
   for (auto &proc : processes_) {
-      if (!proc->IsRunning()) {
-            continue;
-        }
-      absl::Status status = proc->Stop(c);
+    if (!proc->IsRunning()) {
+      continue;
+    }
+    absl::Status status = proc->Stop(c);
     if (!status.ok()) {
       capcom_.Log(Name(), toolbelt::LogLevel::kError,
                   "Failed to stop process %s: %s", proc->Name().c_str(),
@@ -220,50 +222,40 @@ void Subsystem::StopProcesses(co::Coroutine *c) {
 }
 
 void Subsystem::ResetProcessRestarts() {
-    for (auto& proc : processes_) {
-        proc->ResetNumRestarts();
-    }
+  for (auto &proc : processes_) {
+    proc->ResetNumRestarts();
+  }
 }
 
 void Subsystem::RestartProcesses(
-        const std::vector<std::shared_ptr<Process>>& processes,
-        co::Coroutine& c) {
-    processes_to_restart_.clear();
-    if (processes.empty()) {
-        // Restart all processes.
-        processes_to_restart_ = processes_;
-        capcom_.log(
-                Name(),
-                toolbelt::LogLevel::INFO,
-                "Restarting all processes in subsystem %s",
-                Name().c_str());
-        StopProcesses(c);
-        return;
-    }
+    const std::vector<std::shared_ptr<Process>> &processes, co::Coroutine *c) {
+  processes_to_restart_.clear();
+  if (processes.empty()) {
+    // Restart all processes.
+    processes_to_restart_ = processes_;
+    capcom_.Log(Name(), toolbelt::LogLevel::kInfo,
+                "Restarting all processes in subsystem %s", Name().c_str());
+    StopProcesses(c);
+    return;
+  }
 
-    for (auto& proc : processes) {
-        processes_to_restart_.push_back(proc);
-        // Tell the user that we are restarting the process.
-        capcom_.log(
-                Name(),
-                toolbelt::LogLevel::INFO,
-                "Restarting process %s in subsystem %s",
-                proc->Name().c_str(),
+  for (auto &proc : processes) {
+    processes_to_restart_.push_back(proc);
+    // Tell the user that we are restarting the process.
+    capcom_.Log(Name(), toolbelt::LogLevel::kInfo,
+                "Restarting process %s in subsystem %s", proc->Name().c_str(),
                 Name().c_str());
-        if (!proc->IsRunning()) {
-            continue;
-        }
-        absl::Status status = proc->Stop(c);
-        if (!status.ok()) {
-            capcom_.log(
-                    Name(),
-                    toolbelt::LogLevel::ERROR,
-                    "Failed to stop process %s: %s",
-                    proc->Name().c_str(),
-                    status.ToString().c_str());
-            continue;
-        }
+    if (!proc->IsRunning()) {
+      continue;
     }
+    absl::Status status = proc->Stop(c);
+    if (!status.ok()) {
+      capcom_.Log(Name(), toolbelt::LogLevel::kError,
+                  "Failed to stop process %s: %s", proc->Name().c_str(),
+                  status.ToString().c_str());
+      continue;
+    }
+  }
 }
 
 void Subsystem::SendOutput(int fd, const std::string &data, co::Coroutine *c) {
@@ -314,8 +306,8 @@ absl::Status Subsystem::AddStaticProcess(
   auto p = std::make_unique<StaticProcess>(capcom_, options.name(),
                                            compute->name, proc.executable(),
                                            options, streams, *client);
-     p->SetMaxRestarts(max_restarts);
- AddProcess(std::move(p));
+  p->SetMaxRestarts(max_restarts);
+  AddProcess(std::move(p));
 
   return absl::OkStatus();
 }
@@ -346,8 +338,8 @@ absl::Status Subsystem::AddZygote(
   auto p =
       std::make_unique<Zygote>(capcom_, options.name(), compute->name,
                                proc.executable(), options, streams, *client);
-     p->SetMaxRestarts(max_restarts);
- capcom_.AddZygote(options.name(), p.get());
+  p->SetMaxRestarts(max_restarts);
+  capcom_.AddZygote(options.name(), p.get());
 
   AddProcess(std::move(p));
   return absl::OkStatus();
@@ -387,7 +379,7 @@ absl::Status Subsystem::AddVirtualProcess(
   auto p = std::make_unique<VirtualProcess>(
       capcom_, options.name(), compute->name, proc.zygote(), proc.dso(),
       proc.main_func(), options, streams, *client);
-    p->SetMaxRestarts(max_restarts);
+  p->SetMaxRestarts(max_restarts);
   AddProcess(std::move(p));
 
   return absl::OkStatus();
@@ -427,9 +419,9 @@ void Subsystem::BuildStatus(adastra::proto::SubsystemStatus *status) {
   case OperState::kRestarting:
     status->set_oper_state(adastra::proto::OPER_RESTARTING);
     break;
-   case OperState::kRestartingProcesses:
-        status->set_oper_state(adastra::proto::OPER_RESTARTING_PROCESSES);
-        break;
+  case OperState::kRestartingProcesses:
+    status->set_oper_state(adastra::proto::OPER_RESTARTING_PROCESSES);
+    break;
   case OperState::kBroken:
     status->set_oper_state(adastra::proto::OPER_BROKEN);
     break;
@@ -520,8 +512,8 @@ void Process::ParseStreams(
 }
 
 absl::Status Process::Stop(co::Coroutine *c) {
-     num_restarts_ = 0;
- return client_->StopProcess(process_id_, c);
+  num_restarts_ = 0;
+  return client_->StopProcess(process_id_, c);
 }
 
 void Process::RaiseAlarm(Capcom &capcom, const Alarm &alarm) {

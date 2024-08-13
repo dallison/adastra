@@ -23,7 +23,8 @@
 ABSL_FLAG(std::string, hostname, "localhost",
           "Flight Director hostname (or IP address)");
 ABSL_FLAG(int, port, 6524, "Flight Director listening port");
-ABSL_FLAG(std::string, log_level, "debug", "Log level (verbose, debug, info, warning, error)");
+ABSL_FLAG(std::string, log_level, "debug",
+          "Log level (verbose, debug, info, warning, error)");
 
 namespace adastra::flight {
 
@@ -223,14 +224,14 @@ absl::Status LogCommand::Execute(flight::client::Client *client, int argc,
     while (!in.eof()) {
       // Read 8-byte little endian length
       unsigned char length_buf[8];
-      in.read(reinterpret_cast<char*>(length_buf), sizeof(length_buf));
+      in.read(reinterpret_cast<char *>(length_buf), sizeof(length_buf));
       if (in.eof()) {
         break;
       }
       // Convert to little endian value;
       uint64_t length = 0;
       for (int i = 0; i < 8; i++) {
-        length |= length_buf[i] << (i*8);
+        length |= length_buf[i] << (i * 8);
       }
       if (buffer.size() < length) {
         buffer.resize(length);

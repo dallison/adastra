@@ -20,8 +20,8 @@
 #include "proto/stream.pb.h"
 #include "stagezero/client/client.h"
 #include "toolbelt/fd.h"
-#include "toolbelt/pipe.h"
 #include "toolbelt/logging.h"
+#include "toolbelt/pipe.h"
 #include "toolbelt/triggerfd.h"
 
 namespace adastra::capcom {
@@ -40,7 +40,7 @@ struct Message {
   enum Code {
     kChangeAdmin,
     kReportOper,
-    kAbort,     // See emergency_abort.
+    kAbort, // See emergency_abort.
     kRestart,
     kRestartProcesses,
     kRestartCrashedProcesses,
@@ -63,8 +63,8 @@ struct Message {
   int rows;
   std::string term_name;
 
-    // For Code::kRestartProcesses, these processes will be restarted.  If empty, all
-    // processes will be restarted.
+  // For Code::kRestartProcesses, these processes will be restarted.  If empty,
+  // all processes will be restarted.
   std::vector<std::shared_ptr<Process>> processes;
 };
 
@@ -84,7 +84,7 @@ public:
   bool IsRunning() const { return running_; }
 
   const std::string &GetProcessId() const { return process_id_; }
-  const std::string& Compute() const { return compute_; }
+  const std::string &Compute() const { return compute_; }
 
   int GetPid() const { return pid_; }
 
@@ -98,9 +98,7 @@ public:
     return nullptr;
   }
 
-  void ResetAlarmCount() {
-    alarm_count_ = 0;
-  }
+  void ResetAlarmCount() { alarm_count_ = 0; }
 
   virtual bool IsZygote() const { return false; }
   virtual bool IsVirtual() const { return false; }
@@ -114,34 +112,24 @@ public:
 
   int AlarmCount() const { return alarm_count_; }
 
-    int NumRestarts() const {
-        return num_restarts_;
-    }
+  int NumRestarts() const { return num_restarts_; }
 
-    void IncNumRestarts() {
-        num_restarts_++;
-    }
+  void IncNumRestarts() { num_restarts_++; }
 
-    void ResetNumRestarts() {
-        num_restarts_ = 0;
-    }
+  void ResetNumRestarts() { num_restarts_ = 0; }
 
-    void SetMaxRestarts(int max_restarts) {
-        max_restarts_ = max_restarts;
-    }
+  void SetMaxRestarts(int max_restarts) { max_restarts_ = max_restarts; }
 
-    int MaxRestarts() const {
-        return max_restarts_;
-    }
+  int MaxRestarts() const { return max_restarts_; }
 
-    std::chrono::seconds IncRestartDelay() {
-        auto old_delay = restart_delay_;
-        restart_delay_ *= 2;
-        if (restart_delay_ > kMaxRestartDelay) {
-            restart_delay_ = kMaxRestartDelay;
-        }
-        return old_delay;
+  std::chrono::seconds IncRestartDelay() {
+    auto old_delay = restart_delay_;
+    restart_delay_ *= 2;
+    if (restart_delay_ > kMaxRestartDelay) {
+      restart_delay_ = kMaxRestartDelay;
     }
+    return old_delay;
+  }
 
 protected:
   void ParseOptions(const stagezero::config::ProcessOptions &options);
@@ -159,7 +147,7 @@ protected:
   int32_t sigint_shutdown_timeout_secs_;
   int32_t sigterm_shutdown_timeout_secs_;
   bool notify_;
-    int max_restarts_;
+  int max_restarts_;
 
   bool running_ = false;
   std::string process_id_;
@@ -174,19 +162,18 @@ protected:
   std::string group_;
   bool critical_ = false;
   bool oneshot_ = false;
-  std::string cgroup_;
-    std::string cgroup_ = "";
-    int num_restarts_ = 0;
+  std::string cgroup_ = "";
+  int num_restarts_ = 0;
 
-    static constexpr std::chrono::seconds kMaxRestartDelay = 32s;
-    std::chrono::seconds restart_delay_ = 1s;
+  static constexpr std::chrono::seconds kMaxRestartDelay = 32s;
+  std::chrono::seconds restart_delay_ = 1s;
 };
 
 class StaticProcess : public Process {
 public:
   StaticProcess(
-      Capcom &capcom, std::string name, std::string compute, std::string executable,
-      const stagezero::config::ProcessOptions &options,
+      Capcom &capcom, std::string name, std::string compute,
+      std::string executable, const stagezero::config::ProcessOptions &options,
       const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
           &streams,
       std::shared_ptr<stagezero::Client> client);
@@ -199,8 +186,8 @@ protected:
 class Zygote : public StaticProcess {
 public:
   Zygote(
-      Capcom &capcom, std::string name, std::string compute, std::string executable,
-      const stagezero::config::ProcessOptions &options,
+      Capcom &capcom, std::string name, std::string compute,
+      std::string executable, const stagezero::config::ProcessOptions &options,
       const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
           &streams,
       std::shared_ptr<stagezero::Client> client)
@@ -213,8 +200,8 @@ public:
 class VirtualProcess : public Process {
 public:
   VirtualProcess(
-      Capcom &capcom, std::string name, std::string compute, std::string zygote_name,
-      std::string dso, std::string main_func,
+      Capcom &capcom, std::string name, std::string compute,
+      std::string zygote_name, std::string dso, std::string main_func,
       const stagezero::config::ProcessOptions &options,
       const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
           &streams,
@@ -233,11 +220,12 @@ public:
   enum class RestartPolicy {
     kAutomatic,
     kManual,
-    kProcessOnly,  // Restart only the process that exited
- };
+    kProcessOnly, // Restart only the process that exited
+  };
 
   Subsystem(std::string name, Capcom &capcom, std::vector<Variable> vars,
-  std::vector<Stream> streams, int max_restarts, bool critical, RestartPolicy restart_policy);
+            std::vector<Stream> streams, int max_restarts, bool critical,
+            RestartPolicy restart_policy);
   ~Subsystem() {}
 
   absl::Status AddStaticProcess(
@@ -321,7 +309,7 @@ public:
   const std::vector<Variable> &Vars() const { return vars_; }
   const std::vector<Stream> &Streams() const { return streams_; }
 
-  const Terminal& InteractiveTerminal() const { return interactive_terminal_; }
+  const Terminal &InteractiveTerminal() const { return interactive_terminal_; }
 
   bool IsCritical() const { return critical_; }
 
@@ -385,18 +373,17 @@ private:
     }
     return true;
   }
-    bool AllProcessesStopped(const std::vector<std::shared_ptr<Process>>& procs) const {
-        for (auto& p : procs) {
-            if (p->IsRunning()) {
-                return false;
-            }
-        }
-        return true;
+  bool AllProcessesStopped(
+      const std::vector<std::shared_ptr<Process>> &procs) const {
+    for (auto &p : procs) {
+      if (p->IsRunning()) {
+        return false;
+      }
     }
+    return true;
+  }
 
-    bool AllProcessesStopped() const {
-        return AllProcessesStopped(processes_);
-    }
+  bool AllProcessesStopped() const { return AllProcessesStopped(processes_); }
 
   absl::StatusOr<std::shared_ptr<stagezero::Client>>
   ConnectToStageZero(const Compute *compute, co::Coroutine *c);
@@ -411,7 +398,7 @@ private:
                                     std::shared_ptr<stagezero::Client> client,
                                     co::Coroutine *)>
           handler,
-            std::chrono::seconds timeout = 0s);
+      std::chrono::seconds timeout = 0s);
 
   void Offline(uint32_t client_id, co::Coroutine *c);
   void StartingChildren(uint32_t client_id, co::Coroutine *c);
@@ -421,7 +408,7 @@ private:
   void StoppingChildren(uint32_t client_id, co::Coroutine *c);
   void Restarting(uint32_t client_id, co::Coroutine *c);
   void Broken(uint32_t client_id, co::Coroutine *c);
-  void RestartingProcesses(uint32_t client_id, co::Coroutine& c);
+  void RestartingProcesses(uint32_t client_id, co::Coroutine *c);
 
   StateTransition Abort(bool emergency);
 
@@ -429,11 +416,13 @@ private:
 
   absl::Status LaunchProcesses(co::Coroutine *c);
   void StopProcesses(co::Coroutine *c);
-    void ResetProcessRestarts();
+  void ResetProcessRestarts();
 
   StateTransition RestartIfPossibleAfterProcessCrash(std::string process_id,
-                                          uint32_t client_id, bool exited, int signal_or_status,
-                                           co::Coroutine *c);
+                                                     uint32_t client_id,
+                                                     bool exited,
+                                                     int signal_or_status,
+                                                     co::Coroutine *c);
 
   void RestartIfPossible(uint32_t client_id, co::Coroutine *c);
 
@@ -448,8 +437,9 @@ private:
     num_restarts_ = 0;
     restart_delay_ = 1s;
   }
-    void RestartProcesses(const std::vector<std::shared_ptr<Process>>& processes, co::Coroutine* c);
-    void WaitForRestart(co::Coroutine* c);
+  void RestartProcesses(const std::vector<std::shared_ptr<Process>> &processes,
+                        co::Coroutine *c);
+  void WaitForRestart(co::Coroutine *c);
 
   OperState HandleAdminCommand(const Message &message,
                                OperState next_state_no_active_clients,
@@ -478,8 +468,8 @@ private:
   toolbelt::SharedPtrPipe<Message> message_pipe_;
 
   std::vector<std::shared_ptr<Process>> processes_;
-  absl::flat_hash_map<std::string, std::shared_ptr<Process> > process_map_;
-  absl::flat_hash_map<std::string, std::shared_ptr<Process> > process_id_map_;
+  absl::flat_hash_map<std::string, std::shared_ptr<Process>> process_map_;
+  absl::flat_hash_map<std::string, std::shared_ptr<Process>> process_id_map_;
 
   std::list<std::shared_ptr<Subsystem>> children_;
   std::list<std::shared_ptr<Subsystem>> parents_;
@@ -491,8 +481,8 @@ private:
   bool critical_ = false;
   int restart_count_ = 0;
   RestartPolicy restart_policy_ = RestartPolicy::kAutomatic;
-    // When restarting processes, this holds the set of process we are restarting.
-    std::vector<std::shared_ptr<Process>> processes_to_restart_;
+  // When restarting processes, this holds the set of process we are restarting.
+  std::vector<std::shared_ptr<Process>> processes_to_restart_;
 
   Alarm alarm_;
   bool alarm_raised_ = false;
