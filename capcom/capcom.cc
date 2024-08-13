@@ -337,8 +337,9 @@ absl::Status Capcom::Abort(const std::string &reason, bool emergency,
     if (subsys->IsCritical()) {
       continue;
     }
-    Message msg = {.code = Message::Code::kAbort, .emergency_abort = emergency};
-    if (absl::Status status = subsys->SendMessage(msg); !status.ok()) {
+       auto msg = std::make_shared<Message>(
+                Message{.code = Message::Code::kAbort, .emergency_abort = emergency});
+                    if (absl::Status status = subsys->SendMessage(msg); !status.ok()) {
       result = status;
     }
   }

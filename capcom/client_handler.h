@@ -84,6 +84,10 @@ private:
   void HandleRestartSubsystem(const proto::RestartSubsystemRequest &req,
                               proto::RestartSubsystemResponse *response,
                               co::Coroutine *c);
+    void HandleRestartProcesses(
+            const proto::RestartProcessesRequest& req,
+            proto::RestartProcessesResponse* response,
+            co::Coroutine* c);
 
   void HandleGetSubsystems(const proto::GetSubsystemsRequest &req,
                            proto::GetSubsystemsResponse *response,

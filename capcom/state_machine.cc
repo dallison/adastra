@@ -20,7 +20,8 @@ std::function<void(std::shared_ptr<Subsystem>, uint32_t, co::Coroutine *)>
         &Subsystem::StoppingProcesses,
         &Subsystem::StoppingChildren,
         &Subsystem::Restarting,
-        &Subsystem::Broken,
+                  &Subsystem::RestartingProcesses,
+      &Subsystem::Broken,
         &Subsystem::Broken,
 };
 
@@ -46,7 +47,7 @@ void Subsystem::RunSubsystemInState(
     co::Coroutine *c,
     std::function<StateTransition(
         EventSource, std::shared_ptr<stagezero::Client>, co::Coroutine *)>
-        handler) {
+        handler, std::chrono::seconds timeout) {
   auto subsystem = shared_from_this();
 
   std::vector<struct pollfd> fds;
@@ -56,8 +57,15 @@ void Subsystem::RunSubsystemInState(
   fds.push_back({subsystem->interrupt_.GetPollFd().Fd(), POLLIN});
   fds.push_back({subsystem->message_pipe_.ReadFd().Fd(), POLLIN});
 
+  std::chrono::system_clock::duration time_remaining = std::chrono::nanoseconds(timeout);
   while (subsystem->running_) {
-    int fd = c->Wait(fds);
+    auto start = std::chrono::system_clock::now();
+    int fd = time_remaining > 0s ? c->Wait(fds, EPOLLIN, time_remaining) : c->Wait(fds);
+    auto end = std::chrono::system_clock::now();
+    if (fd == -1) {
+      // Timeout.
+      break;
+    }
     if (fd == subsystem->interrupt_.GetPollFd().Fd()) {
       // Interrupt.
       subsystem->interrupt_.Clear();
@@ -136,9 +144,11 @@ void Subsystem::Offline(uint32_t client_id, co::Coroutine *c) {
   capcom_.SendSubsystemStatusEvent(this);
   restart_count_ = 0;
   alarm_count_ = 0;
+  num_restarts_ = 0;  // reset restart counter.
 
   for (auto &proc : processes_) {
     proc->ResetAlarmCount();
+    proc->ResetNumRestarts();
   }
 
   // Only log an info message if the state has changed.  Seeing "Foo is OFFLINE"
@@ -189,12 +199,13 @@ void Subsystem::Offline(uint32_t client_id, co::Coroutine *c) {
 
                case EventSource::kMessage: {
                  // Incoming message.
-                 absl::StatusOr<Message> message = subsystem->ReadMessage();
+                 absl::StatusOr<std::shared_ptr<Message>> msg = subsystem->ReadMessage();
                  if (!message.ok()) {
                    subsystem->capcom_.Log(subsystem->Name(),
                                           toolbelt::LogLevel::kError, "%s",
-                                          message.status().ToString().c_str());
+                                          msg.status().ToString().c_str());
                  }
+                 auto message = *msg;
                  switch (message->code) {
                  case Message::kChangeAdmin:
                    next_state = subsystem->HandleAdminCommand(
@@ -232,6 +243,8 @@ void Subsystem::Offline(uint32_t client_id, co::Coroutine *c) {
                    break;
                  case Message::kAbort:
                  case Message::kRestart:
+                 case Message::kRestartProcesses:
+                 case Message::kRestartCrashedProcesses:
                    break;
                  }
                  break;
@@ -309,12 +322,13 @@ void Subsystem::StartingChildren(uint32_t client_id, co::Coroutine *c) {
             }
             case EventSource::kMessage: {
               // Incoming message.
-              absl::StatusOr<Message> message = subsystem->ReadMessage();
+              absl::StatusOr<std::shared_ptr<Message>> msg = subsystem->ReadMessage();
               if (!message.ok()) {
                 subsystem->capcom_.Log(subsystem->Name(),
-                                       toolbelt::LogLevel::kError, "%s",
-                                       message.status().ToString().c_str());
+                                      toolbelt::LogLevel::kError, "%s",
+                                      msg.status().ToString().c_str());
               }
+              auto message = *msg;
               switch (message->code) {
               case Message::kChangeAdmin:
                 next_state = subsystem->HandleAdminCommand(
@@ -346,7 +360,13 @@ void Subsystem::StartingChildren(uint32_t client_id, co::Coroutine *c) {
               case Message::kRestart:
                 subsystem->EnterState(OperState::kRestarting, client_id);
                 return StateTransition::kLeave;
-              }
+                     case Message::kRestartProcesses:
+                    case Message::kRestartCrashedProcesses:
+                        // We are starting our children and have been asked to restart failed
+                        // proceses. There is nothing to do here since we will go into the starting
+                        // processes state after the children are online.
+                        return StateTransition::kStay;
+             }
               break;
             }
             case EventSource::kUnknown:
@@ -474,13 +494,14 @@ void Subsystem::StartingProcesses(uint32_t client_id, co::Coroutine *c) {
                }
                case EventSource::kMessage: {
                  // Incoming message.
-                 absl::StatusOr<Message> message = subsystem->ReadMessage();
-                 if (!message.ok()) {
-                   subsystem->capcom_.Log(subsystem->Name(),
-                                          toolbelt::LogLevel::kError, "%s",
-                                          message.status().ToString().c_str());
-                 }
-                 switch (message->code) {
+                absl::StatusOr<std::shared_ptr<Message>> msg = subsystem->ReadMessage();
+                if (!message.ok()) {
+                  subsystem->capcom_.Log(subsystem->Name(),
+                                        toolbelt::LogLevel::kError, "%s",
+                                        msg.status().ToString().c_str());
+                }
+                auto message = *msg;
+                switch (message->code) {
                  case Message::kChangeAdmin:
                    next_state = subsystem->HandleAdminCommand(
                        *message, OperState::kOnline,
@@ -503,7 +524,13 @@ void Subsystem::StartingProcesses(uint32_t client_id, co::Coroutine *c) {
                  case Message::kRestart:
                    subsystem->EnterState(OperState::kRestarting, client_id);
                    return StateTransition::kLeave;
-                 }
+                      case Message::kRestartProcesses:
+                    case Message::kRestartCrashedProcesses:
+                        // If we get this event while we are restarting processes we have more
+                        // processes to restart.  Re-enter the state to pick them up.
+                        subsystem->EnterState(OperState::kStartingProcesses, message->client_id);
+                        return StateTransition::kLeave;
+               }
                  break;
                }
                case EventSource::kUnknown:
@@ -611,12 +638,13 @@ void Subsystem::Online(uint32_t client_id, co::Coroutine *c) {
                }
                case EventSource::kMessage: {
                  // Incoming message.
-                 absl::StatusOr<Message> message = subsystem->ReadMessage();
-                 if (!message.ok()) {
-                   subsystem->capcom_.Log(subsystem->Name(),
-                                          toolbelt::LogLevel::kError, "%s",
-                                          message.status().ToString().c_str());
-                 }
+               absl::StatusOr<std::shared_ptr<Message>> msg = subsystem->ReadMessage();
+                if (!message.ok()) {
+                  subsystem->capcom_.Log(subsystem->Name(),
+                                        toolbelt::LogLevel::kError, "%s",
+                                        msg.status().ToString().c_str());
+                }
+                auto message = *msg;
                  switch (message->code) {
                  case Message::kChangeAdmin:
                    if (message->state.admin == AdminState::kOffline) {
@@ -660,7 +688,15 @@ void Subsystem::Online(uint32_t client_id, co::Coroutine *c) {
                  case Message::kRestart:
                    subsystem->EnterState(OperState::kRestarting, client_id);
                    return StateTransition::kLeave;
-                 }
+                    case Message::kRestartProcesses:
+                        // We are online and have been asked to restart a set of processes.
+                        subsystem->RestartProcesses(message->processes, c2);
+                        subsystem->EnterState(OperState::kRestartingProcesses, message->client_id);
+                        return StateTransition::kLeave;
+                    case Message::kRestartCrashedProcesses:
+                        subsystem->EnterState(OperState::kStartingProcesses, message->client_id);
+                        return StateTransition::kLeave;
+                }
                  break;
                }
                case EventSource::kUnknown:
@@ -746,13 +782,14 @@ void Subsystem::StoppingProcesses(uint32_t client_id, co::Coroutine *c) {
                }
                case EventSource::kMessage: {
                  // Incoming message.
-                 absl::StatusOr<Message> message = subsystem->ReadMessage();
-                 if (!message.ok()) {
-                   subsystem->capcom_.Log(subsystem->Name(),
-                                          toolbelt::LogLevel::kError, "%s",
-                                          message.status().ToString().c_str());
-                 }
-                 switch (message->code) {
+                 absl::StatusOr<std::shared_ptr<Message>> msg = subsystem->ReadMessage();
+                if (!message.ok()) {
+                  subsystem->capcom_.Log(subsystem->Name(),
+                                        toolbelt::LogLevel::kError, "%s",
+                                        msg.status().ToString().c_str());
+                }
+                auto message = *msg;
+                switch (message->code) {
                  case Message::kChangeAdmin:
                    next_state = subsystem->HandleAdminCommand(
                        *message, OperState::kStartingProcesses,
@@ -771,6 +808,12 @@ void Subsystem::StoppingProcesses(uint32_t client_id, co::Coroutine *c) {
                  case Message::kRestart:
                    subsystem->EnterState(OperState::kRestarting, client_id);
                    return StateTransition::kLeave;
+                    case Message::kRestartProcesses:
+                    case Message::kRestartCrashedProcesses:
+                        // We are stopping our processes and got an event to restart crashed
+                        // processes. This can happen if a process was in its restart delay and then
+                        // asked to stop. We just ignore the request and continue stopping.
+                        return StateTransition::kStay;
                  }
                  break;
                }
@@ -854,12 +897,13 @@ void Subsystem::StoppingChildren(uint32_t client_id, co::Coroutine *c) {
             }
             case EventSource::kMessage: {
               // Incoming message.
-              absl::StatusOr<Message> message = subsystem->ReadMessage();
-              if (!message.ok()) {
-                subsystem->capcom_.Log(subsystem->Name(),
-                                       toolbelt::LogLevel::kError, "%s",
-                                       message.status().ToString().c_str());
-              }
+                absl::StatusOr<std::shared_ptr<Message>> msg = subsystem->ReadMessage();
+                if (!message.ok()) {
+                  subsystem->capcom_.Log(subsystem->Name(),
+                                        toolbelt::LogLevel::kError, "%s",
+                                        msg.status().ToString().c_str());
+                }
+                auto message = *msg;
               switch (message->code) {
               case Message::kChangeAdmin:
                 next_state = subsystem->HandleAdminCommand(
@@ -899,6 +943,12 @@ void Subsystem::StoppingChildren(uint32_t client_id, co::Coroutine *c) {
               case Message::kRestart:
                 subsystem->EnterState(OperState::kRestarting, client_id);
                 return StateTransition::kLeave;
+                    case Message::kRestartProcesses:
+                    case Message::kRestartCrashedProcesses:
+                        // We are stopping our children and got an event to restart crashed
+                        // processes. This can happen if a process was in its restart delay and then
+                        // asked to stop. We just ignore the request and continue stopping.
+                        return StateTransition::kStay;
               }
               break;
             }
@@ -940,6 +990,108 @@ void Subsystem::StoppingChildren(uint32_t client_id, co::Coroutine *c) {
 
 void Subsystem::RestartNow(uint32_t client_id) {
   EnterState(OperState::kStartingChildren, client_id);
+}
+
+void Subsystem::WaitForRestart(co::Coroutine* c) {
+    auto delay = restart_delay_;
+    restart_delay_ = std::min(kMaxRestartDelay, restart_delay_ * 2);
+    ++num_restarts_;
+
+    // We need to delay before killing all the other processes and restarting them.
+    // If we just sleep here the subsystem will be unresponsive to other messages, especially
+    // incoming admin commands.  Instead we need to process the message pipe with a timeout
+    // and respond to any incoming messages.
+    RunSubsystemInState(
+            c,
+            [subsystem = shared_from_this()](
+                    EventSource event_source,
+                    std::shared_ptr<stagezero::Client> stagezero_client,
+                    co::Coroutine* c2) -> StateTransition {
+                switch (event_source) {
+                case EventSource::kStageZero: {
+                    // Event from stagezero.
+                    absl::StatusOr<std::shared_ptr<adastra::stagezero::control::Event>> e =
+                            stagezero_client->ReadEvent(c2);
+                    if (!e.ok()) {
+                        subsystem->capcom_.log(
+                                subsystem->Name(),
+                                toolbelt::LogLevel::ERROR,
+                                "Failed to read event %s",
+                                e.status().toString().c_str());
+                        return StateTransition::kStay;
+                    }
+                    std::shared_ptr<adastra::stagezero::control::Event> event = *e;
+                    switch (event->event_case()) {
+                    case adastra::stagezero::control::Event::kStart: {
+                        // A new process has started while we are waiting to restart everything.
+                        // This will stopped when we enter the restarting state.
+                        break;
+                    }
+                    case adastra::stagezero::control::Event::kStop: {
+                        // Another process has stopped.  Handle it like we would in the online
+                        // state.
+                        std::shared_ptr<Process> proc =
+                                subsystem->FindProcess(event->stop().process_id());
+                        if (proc != nullptr) {
+                            proc->SetStopped();
+                            subsystem->DeleteProcessId(proc->GetProcessId());
+                        }
+                        break;
+                    }
+                    case adastra::stagezero::control::Event::kOutput:
+                        subsystem->SendOutput(event->output().fd(), event->output().data(), c2);
+                        break;
+                    case adastra::stagezero::control::Event::kLog:
+                        subsystem->capcom_.log(event->log());
+                        break;
+                    case adastra::stagezero::control::Event::EVENT_NOT_SET:
+                        break;
+                    }
+                    break;
+                }
+                case EventSource::kMessage: {
+                    // Incoming message.
+                    absl::StatusOr<std::shared_ptr<Message>> msg = subsystem->ReadMessage();
+                    if (!msg.ok()) {
+                        subsystem->capcom_.log(
+                                subsystem->Name(),
+                                toolbelt::LogLevel::ERROR,
+                                "%s",
+                                msg.status().toString().c_str());
+                    }
+                    auto message = *msg;
+                    switch (message->code) {
+                    case Message::kChangeAdmin:
+                        if (message->state.admin == AdminState::kOnline) {
+                            // We are waiting to restart and have been asked to go online.
+                            // Since we are in a wait state and have received this message
+                            // we know that the client wants us to abort the wait and restart
+                            // now.
+                            return StateTransition::kLeave;
+                        }
+                        break;
+                    case Message::kReportOper:
+                        // Nothing to do when we are waiting to restart.
+                        break;
+                    case Message::kAbort:
+                        return subsystem->Abort(message->emergency_abort);
+                    case Message::kRestart:
+                        return StateTransition::kStay;
+                    case Message::kRestartProcesses:
+                    case Message::kRestartCrashedProcesses:
+                        // We are restarting and got an event to restart crashed
+                        // processes. This can happen if a process was in its restart delay and then
+                        // asked to restart. We just ignore the request and continue stopping.
+                        return StateTransition::kStay;
+                    }
+                    break;
+                }
+                case EventSource::kUnknown:
+                    break;
+                }
+                return StateTransition::kStay;
+            },
+            delay);
 }
 
 Subsystem::StateTransition Subsystem::RestartIfPossibleAfterProcessCrash(
@@ -1036,6 +1188,65 @@ Subsystem::StateTransition Subsystem::RestartIfPossibleAfterProcessCrash(
     return StateTransition::kStay; // Doesn't matter.
   }
 
+   if (restart_policy_ == RestartPolicy::kProcessOnly
+        || oper_state_ == OperState::kRestartingProcesses) {
+        if (proc->NumRestarts() == proc->MaxRestarts()) {
+            // Process has restarted too many times.
+            proc->RaiseAlarm(
+                    capcom_,
+                    {.name = proc->Name(),
+                     .type = Alarm::Type::kProcess,
+                     .severity = Alarm::Severity::kCritical,
+                     .reason = Alarm::Reason::kCrashed,
+                     .status = Alarm::Status::kRaised,
+                     .details = absl::StrFormat(
+                             "Process %s crashed too many times; the subsystem is degraded",
+                             proc->Name())});
+            EnterState(OperState::kDegraded, client_id);
+            return StateTransition::kLeave;
+        }
+
+        // Process restart count is still within limits.  Restart the process.
+        proc->IncNumRestarts();
+
+        // Delay before restarting.
+        auto restart_delay = proc->IncRestartDelay();
+
+        proc->RaiseAlarm(
+                capcom_,
+                {.name = proc->Name(),
+                 .type = Alarm::Type::kProcess,
+                 .severity = Alarm::Severity::kWarning,
+                 .reason = Alarm::Reason::kCrashed,
+                 .status = Alarm::Status::kRaised,
+                 .details = absl::StrFormat(
+                         "Process %s is being restarted after %d second%s delay",
+                         proc->Name(),
+                         restart_delay.count(),
+                         restart_delay.count() == 1 ? "" : "s")});
+
+
+        // Start a coroutine to wait for the restart delay then send a kRestartProcesses
+        // message to the subsystem to restart the process.
+        capcom_.AddCoroutine(std::make_unique<co::Coroutine>(
+                capcom_.co_scheduler_,
+                [subsystem = shared_from_this(), proc, restart_delay](co::Coroutine* c2) {
+                    c2->Sleep(restart_delay.count());
+                    auto message = std::make_shared<Message>(Message{
+                            .code = Message::kRestartCrashedProcesses, .client_id = kNoClient});
+                    if (auto status = subsystem->SendMessage(message); !status.ok()) {
+                        // What do we do here?  If the message fails to send we have a problem with
+                        // the pipe and nothing will work.  Let's just log it and ignore.
+                        subsystem->capcom_.log(
+                                subsystem->Name(),
+                                toolbelt::LogLevel::ERROR,
+                                "Failed to send process restart message %s",
+                                status.ToString().c_str());
+                    }
+                }));
+        return StateTransition::kStay;
+    }
+
   if (restart_policy_ == RestartPolicy::kManual) {
     proc->RaiseAlarm(capcom_, {.name = proc->Name(),
                                .type = Alarm::Type::kProcess,
@@ -1076,9 +1287,8 @@ Subsystem::StateTransition Subsystem::RestartIfPossibleAfterProcessCrash(
                                                proc->Name())});
 
   // Delay before restarting.
-  restart_delay_ = std::min(kMaxRestartDelay, restart_delay_ * 2);
-  ++num_restarts_;
-  c->Sleep(restart_delay_.count());
+  WaitForRestart(c);
+
   EnterState(OperState::kRestarting, client_id);
   return StateTransition::kLeave;
 }
@@ -1177,12 +1387,13 @@ void Subsystem::Restarting(uint32_t client_id, co::Coroutine *c) {
                }
                case EventSource::kMessage: {
                  // Incoming message.
-                 absl::StatusOr<Message> message = subsystem->ReadMessage();
-                 if (!message.ok()) {
-                   subsystem->capcom_.Log(subsystem->Name(),
-                                          toolbelt::LogLevel::kError, "%s",
-                                          message.status().ToString().c_str());
-                 }
+                absl::StatusOr<std::shared_ptr<Message>> msg = subsystem->ReadMessage();
+                if (!message.ok()) {
+                  subsystem->capcom_.Log(subsystem->Name(),
+                                        toolbelt::LogLevel::kError, "%s",
+                                        msg.status().ToString().c_str());
+                }
+                auto message = *msg;
                  switch (message->code) {
                  case Message::kChangeAdmin:
                    if (message->state.admin == AdminState::kOnline) {
@@ -1206,7 +1417,13 @@ void Subsystem::Restarting(uint32_t client_id, co::Coroutine *c) {
                    return subsystem->Abort(message->emergency_abort);
                  case Message::kRestart:
                    return StateTransition::kStay;
-                 }
+                    case Message::kRestartProcesses:
+                    case Message::kRestartCrashedProcesses:
+                        // We are restarting and got an event to restart crashed
+                        // processes. This can happen if a process was in its restart delay and then
+                        // asked to restart. We just ignore the request and continue stopping.
+                        return StateTransition::kStay;
+                }
                  break;
                }
                case EventSource::kUnknown:
@@ -1231,6 +1448,145 @@ void Subsystem::Restarting(uint32_t client_id, co::Coroutine *c) {
              });
 }
 
+void Subsystem::RestartingProcesses(uint32_t client_id, co::Coroutine* c) {
+    restart_count_++;
+    capcom_.SendSubsystemStatusEvent(this);
+    if (AllProcessesStopped(processes_to_restart_)) {
+        if (parents_.empty()) {
+            // We have no parents, restart now.
+            EnterState(OperState::kStartingProcesses, client_id);
+            return;
+        }
+        // Parents exist, notify them of the restart.
+        NotifyParents();
+    }
+
+    // We keep track of processes that start up while in this state.  This is to allow
+    // us to restart those processes that start quickly and then crash again.  Unlikely
+    // to happen and impossible to test, but it's possible that it could happen.
+    absl::flat_hash_set<std::shared_ptr<Process>> started_processes;
+    RunSubsystemInState(
+            c,
+            [subsystem = shared_from_this(), client_id, &started_processes](
+                    EventSource event_source,
+                    std::shared_ptr<stagezero::Client> stagezero_client,
+                    co::Coroutine& c2) -> StateTransition {
+                switch (event_source) {
+                case EventSource::kStageZero: {
+                    // Event from stagezero.
+                    absl::StatusOr<std::shared_ptr<adastra::stagezero::control::Event>> e =
+                            stagezero_client->ReadEvent(c2);
+                    if (!e.ok()) {
+                        subsystem->capcom_.log(
+                                subsystem->Name(),
+                                toolbelt::LogLevel::ERROR,
+                                "Failed to read event %s",
+                                e.status().toString().c_str());
+                        return StateTransition::kStay;
+                    }
+                    std::shared_ptr<adastra::stagezero::control::Event> event = *e;
+                    switch (event->event_case()) {
+                    case adastra::stagezero::control::Event::kStart: {
+                        // If a process starts up very quickly after we've stopped it
+                        // we might get the start event here.
+                        std::shared_ptr<Process> proc =
+                                subsystem->FindProcess(event->start().process_id());
+                        if (proc != nullptr) {
+                            proc->Setrunning();
+                            proc->clearAlarm(subsystem->capcom_);
+                            started_processes.insert(proc);
+                        }
+
+                        break;
+                    }
+                    case adastra::stagezero::control::Event::kStop: {
+                        std::shared_ptr<Process> proc =
+                                subsystem->FindProcess(event->stop().process_id());
+                        if (proc != nullptr) {
+                            if (started_processes.contains(proc)) {
+                                // If the processes started quickly and then died again we need to
+                                // treat it as a crash.  We stay in this state and try to restart
+                                // the process.
+                                started_processes.erase(proc);
+                                return subsystem->RestartIfPossibleAfterProcessCrash(
+                                        proc->GetProcessId(), client_id, /*exited=*/false, 0, c2);
+                            }
+                            proc->SetStopped();
+                            subsystem->DeleteProcessId(proc->GetProcessId());
+                        }
+                        break;
+                    }
+                    case adastra::stagezero::control::Event::kOutput:
+                        subsystem->SendOutput(event->output().fd(), event->output().data(), c2);
+                        break;
+                    case adastra::stagezero::control::Event::kLog:
+                        subsystem->capcom_.log(event->log());
+                        break;
+                    case adastra::stagezero::control::Event::EVENT_NOT_SET:
+                        break;
+                    }
+                    break;
+                }
+                case EventSource::kMessage: {
+                    // Incoming message.
+                    absl::StatusOr<std::shared_ptr<Message>> msg = subsystem->ReadMessage();
+                    if (!msg.ok()) {
+                        subsystem->capcom_.log(
+                                subsystem->Name(),
+                                toolbelt::LogLevel::ERROR,
+                                "%s",
+                                msg.status().toString().c_str());
+                    }
+                    auto message = *msg;
+                    switch (message->code) {
+                    case Message::kChangeAdmin:
+                        if (message->state.admin == AdminState::kOnline) {
+                            // We are restarting processes and have been asked to go online.
+                            subsystem->EnterState(OperState::kStartingProcesses, client_id);
+                            return StateTransition::kLeave;
+                        }
+                        subsystem->NotifyParents();
+                        break;
+                    case Message::kReportOper:
+                        // Notification from a child while in restarting state.  We
+                        // shouldn't get this.
+                        subsystem->capcom_.log(
+                                subsystem->Name(),
+                                toolbelt::LogLevel::ERROR,
+                                "Subsystem %s has reported oper state "
+                                "as %s while in restarting processes state",
+                                message->sender->Name().c_str(),
+                                OperStateName(message->state.oper));
+                        break;
+                    case Message::kAbort:
+                        return subsystem->Abort(message->emergency_abort);
+                    case Message::kRestart:
+                        return StateTransition::kStay;
+                    case Message::kRestartProcesses:
+                        // Ignore as we are already restarting processes.
+                        break;
+                    case Message::kRestartCrashedProcesses:
+                        // We are restarting and got an event to restart crashed
+                        // processes. This can happen if a process was in its restart delay and then
+                        // asked to restart. We just ignore the request and continue stopping.
+                        return StateTransition::kStay;
+                    }
+                    break;
+                }
+                case EventSource::kUnknown:
+                    break;
+                }
+                if (!subsystem->AllProcessesStopped(subsystem->processes_to_restart_)) {
+                    return StateTransition::kStay;
+                }
+
+                // All processes down, bring them back up again.
+                subsystem->EnterState(OperState::kStartingProcesses, client_id);
+                return StateTransition::kLeave;
+            });
+}
+
+
 void Subsystem::Broken(uint32_t client_id, co::Coroutine *c) {
   NotifyParents();
   capcom_.SendSubsystemStatusEvent(this);
@@ -1242,18 +1598,20 @@ void Subsystem::Broken(uint32_t client_id, co::Coroutine *c) {
              ->StateTransition {
                if (event_source == EventSource::kMessage) {
                  // Incoming message.
-                 absl::StatusOr<Message> message = subsystem->ReadMessage();
-                 if (!message.ok()) {
-                   subsystem->capcom_.Log(subsystem->Name(),
-                                          toolbelt::LogLevel::kError, "%s",
-                                          message.status().ToString().c_str());
-                 }
+               absl::StatusOr<std::shared_ptr<Message>> msg = subsystem->ReadMessage();
+                if (!message.ok()) {
+                  subsystem->capcom_.Log(subsystem->Name(),
+                                        toolbelt::LogLevel::kError, "%s",
+                                        msg.status().ToString().c_str());
+                }
+                auto message = *msg;
                  switch (message->code) {
                  case Message::kChangeAdmin:
                  case Message::kRestart:
                    subsystem->num_restarts_ = 0; // Reset restart counter.
                    subsystem->restart_count_ = 0;
-                   if (message->state.admin == AdminState::kOnline ||
+                         subsystem->ResetProcessRestarts();
+                  if (message->state.admin == AdminState::kOnline ||
                        message->code == Message::kRestart) {
                      subsystem->active_clients_.Set(client_id);
                      subsystem->EnterState(OperState::kStartingChildren,
@@ -1277,7 +1635,21 @@ void Subsystem::Broken(uint32_t client_id, co::Coroutine *c) {
                  case Message::kAbort:
                    return subsystem->Abort(message->emergency_abort);
                    break;
-                 }
+                   case Message::kRestartProcesses:
+                        // Restarting processes while in broken state means the user wants to
+                        // recover the subsystem.
+                        subsystem->num_restarts_ = 0;  // reset restart counter.
+                        subsystem->restart_count_ = 0;
+                        subsystem->ResetProcessRestarts();
+                        subsystem->active_clients_.Set(client_id);
+                        subsystem->EnterState(OperState::kStartingProcesses, client_id);
+                        return StateTransition::kLeave;
+
+                    case Message::kRestartCrashedProcesses:
+                        // We are broken and got an event to restart crashed
+                        // processes. This can happen if a process was in its restart delay.
+                        return StateTransition::kStay;
+               }
                }
                return StateTransition::kStay;
              });

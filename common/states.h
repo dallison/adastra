@@ -25,6 +25,7 @@ enum class OperState {
   kStoppingProcesses,
   kStoppingChildren,
   kRestarting,
+  kRestartingProcesses,
   kBroken,
   kDegraded,
 };
@@ -54,6 +55,8 @@ inline const char *OperStateName(OperState s) {
     return "stopping-children";
   case OperState::kRestarting:
     return "restarting";
+  case OperState::kRestartingProcesses:
+    return "restarting-processes";
   case OperState::kBroken:
     return "broken";
   case OperState::kDegraded:

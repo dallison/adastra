@@ -55,6 +55,7 @@ struct StaticProcess {
   bool interactive = false;
   bool oneshot = false;
   std::string cgroup = "";
+  int32_t max_restarts = kDefaultMaxRestarts;
 };
 
 struct Zygote {
@@ -71,6 +72,7 @@ struct Zygote {
   std::string user;
   std::string group;
   std::string cgroup = "";
+  int32_t max_restarts = kDefaultMaxRestarts;
 };
 
 struct VirtualProcess {
@@ -90,6 +92,7 @@ struct VirtualProcess {
   std::string user;
   std::string group;
   std::string cgroup = "";
+  int32_t max_restarts = kDefaultMaxRestarts;
 };
 
 struct SubsystemOptions {
@@ -110,6 +113,7 @@ struct SubsystemOptions {
 enum class RunMode {
   kNoninteractive,
   kInteractive,
+  kProcessOnly,  // Restart only the process that exited
 };
 
 
@@ -151,7 +155,12 @@ public:
 
   absl::Status RestartSubsystem(const std::string &name,
                              co::Coroutine *c = nullptr);
-                             
+
+  absl::Status RestartProcesses(
+          const std::string& subsystem,
+          const std::vector<std::string>& processes,
+          co::Coroutine *c = nullptr);
+
   absl::Status AddGlobalVariable(const Variable &var,
                                  co::Coroutine *c = nullptr);
 
@@ -179,7 +188,7 @@ public:
   absl::Status FreezeCgroup(const std::string& compute, const std::string& cgroup, co::Coroutine *co = nullptr);
   absl::Status ThawCgroup(const std::string& compute, const std::string& cgroup, co::Coroutine *co = nullptr);
   absl::Status KillCgroup(const std::string& compute, const std::string& cgroup, co::Coroutine *co = nullptr);
-  
+
 private:
   absl::Status WaitForSubsystemState(const std::string &subsystem,
                                      AdminState admin_state,

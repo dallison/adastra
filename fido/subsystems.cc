@@ -111,6 +111,7 @@ void SubsystemsWindow::PopulateTable() {
     case adastra::OperState::kRestarting:
     case adastra::OperState::kStartingChildren:
     case adastra::OperState::kStartingProcesses:
+    case adastra::OperState::kRestartingProcesses:
     case adastra::OperState::kStoppingChildren:
     case adastra::OperState::kStoppingProcesses:
       oper_color = retro::kColorPairYellow;

@@ -31,6 +31,7 @@ using namespace std::chrono_literals;
 class Capcom;
 class Subsystem;
 struct Compute;
+class Process;
 
 constexpr uint32_t kNoClient = -1U;
 
@@ -41,6 +42,8 @@ struct Message {
     kReportOper,
     kAbort,     // See emergency_abort.
     kRestart,
+    kRestartProcesses,
+    kRestartCrashedProcesses,
   };
   Code code;
   Subsystem *sender;
@@ -58,7 +61,11 @@ struct Message {
   int output_fd;
   int cols;
   int rows;
-  char term_name[64];
+  std::string term_name;
+
+    // For Code::kRestartProcesses, these processes will be restarted.  If empty, all
+    // processes will be restarted.
+  std::vector<std::shared_ptr<Process>> processes;
 };
 
 class Process {
@@ -107,6 +114,35 @@ public:
 
   int AlarmCount() const { return alarm_count_; }
 
+    int NumRestarts() const {
+        return num_restarts_;
+    }
+
+    void IncNumRestarts() {
+        num_restarts_++;
+    }
+
+    void ResetNumRestarts() {
+        num_restarts_ = 0;
+    }
+
+    void SetMaxRestarts(int max_restarts) {
+        max_restarts_ = max_restarts;
+    }
+
+    int MaxRestarts() const {
+        return max_restarts_;
+    }
+
+    std::chrono::seconds IncRestartDelay() {
+        auto old_delay = restart_delay_;
+        restart_delay_ *= 2;
+        if (restart_delay_ > kMaxRestartDelay) {
+            restart_delay_ = kMaxRestartDelay;
+        }
+        return old_delay;
+    }
+
 protected:
   void ParseOptions(const stagezero::config::ProcessOptions &options);
   void ParseStreams(
@@ -123,6 +159,7 @@ protected:
   int32_t sigint_shutdown_timeout_secs_;
   int32_t sigterm_shutdown_timeout_secs_;
   bool notify_;
+    int max_restarts_;
 
   bool running_ = false;
   std::string process_id_;
@@ -138,6 +175,11 @@ protected:
   bool critical_ = false;
   bool oneshot_ = false;
   std::string cgroup_;
+    std::string cgroup_ = "";
+    int num_restarts_ = 0;
+
+    static constexpr std::chrono::seconds kMaxRestartDelay = 32s;
+    std::chrono::seconds restart_delay_ = 1s;
 };
 
 class StaticProcess : public Process {
@@ -191,7 +233,8 @@ public:
   enum class RestartPolicy {
     kAutomatic,
     kManual,
-  };
+    kProcessOnly,  // Restart only the process that exited
+ };
 
   Subsystem(std::string name, Capcom &capcom, std::vector<Variable> vars,
   std::vector<Stream> streams, int max_restarts, bool critical, RestartPolicy restart_policy);
@@ -202,28 +245,28 @@ public:
       const stagezero::config::ProcessOptions &options,
       const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
           &streams,
-      const Compute *compute, co::Coroutine *c);
+      const Compute *compute, int max_restarts, co::Coroutine *c);
 
   absl::Status AddZygote(
       const stagezero::config::StaticProcess &proc,
       const stagezero::config::ProcessOptions &options,
       const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
           &streams,
-      const Compute *compute, co::Coroutine *c);
+      const Compute *compute, int max_restarts, co::Coroutine *c);
 
   absl::Status AddVirtualProcess(
       const stagezero::config::VirtualProcess &proc,
       const stagezero::config::ProcessOptions &options,
       const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
           &streams,
-      const Compute *compute, co::Coroutine *c);
+      const Compute *compute, int max_restarts, co::Coroutine *c);
 
   void RemoveProcess(const std::string &name);
 
   void Run();
   void Stop();
 
-  absl::Status SendMessage(const Message &message);
+  absl::Status SendMessage(std::shared_ptr<Message> message);
 
   const std::string &Name() const { return name_; }
 
@@ -282,6 +325,14 @@ public:
 
   bool IsCritical() const { return critical_; }
 
+  std::shared_ptr<Process> FindProcessName(const std::string &name) {
+    auto it = process_map_.find(name);
+    if (it == process_map_.end()) {
+      return nullptr;
+    }
+    return it->second;
+  }
+
 private:
   enum class EventSource {
     kUnknown,
@@ -301,7 +352,7 @@ private:
       state_funcs_[];
 
   absl::Status BuildMessagePipe();
-  absl::StatusOr<Message> ReadMessage();
+  absl::StatusOr<std::shared_ptr<Message>> ReadMessage();
 
   // TODO: remove parent function.
 
@@ -324,14 +375,6 @@ private:
     return it->second;
   }
 
-  std::shared_ptr<Process> FindProcessName(const std::string &name) {
-    auto it = process_map_.find(name);
-    if (it == process_map_.end()) {
-      return nullptr;
-    }
-    return it->second;
-  }
-
   Zygote *FindZygote(const std::string &name);
 
   bool AllProcessesRunning() const {
@@ -342,14 +385,18 @@ private:
     }
     return true;
   }
-  bool AllProcessesStopped() const {
-    for (auto &p : processes_) {
-      if (p->IsRunning()) {
-        return false;
-      }
+    bool AllProcessesStopped(const std::vector<std::shared_ptr<Process>>& procs) const {
+        for (auto& p : procs) {
+            if (p->IsRunning()) {
+                return false;
+            }
+        }
+        return true;
     }
-    return true;
-  }
+
+    bool AllProcessesStopped() const {
+        return AllProcessesStopped(processes_);
+    }
 
   absl::StatusOr<std::shared_ptr<stagezero::Client>>
   ConnectToStageZero(const Compute *compute, co::Coroutine *c);
@@ -363,7 +410,8 @@ private:
       std::function<StateTransition(EventSource,
                                     std::shared_ptr<stagezero::Client> client,
                                     co::Coroutine *)>
-          handler);
+          handler,
+            std::chrono::seconds timeout = 0s);
 
   void Offline(uint32_t client_id, co::Coroutine *c);
   void StartingChildren(uint32_t client_id, co::Coroutine *c);
@@ -373,6 +421,7 @@ private:
   void StoppingChildren(uint32_t client_id, co::Coroutine *c);
   void Restarting(uint32_t client_id, co::Coroutine *c);
   void Broken(uint32_t client_id, co::Coroutine *c);
+  void RestartingProcesses(uint32_t client_id, co::Coroutine& c);
 
   StateTransition Abort(bool emergency);
 
@@ -380,6 +429,7 @@ private:
 
   absl::Status LaunchProcesses(co::Coroutine *c);
   void StopProcesses(co::Coroutine *c);
+    void ResetProcessRestarts();
 
   StateTransition RestartIfPossibleAfterProcessCrash(std::string process_id,
                                           uint32_t client_id, bool exited, int signal_or_status,
@@ -398,6 +448,8 @@ private:
     num_restarts_ = 0;
     restart_delay_ = 1s;
   }
+    void RestartProcesses(const std::vector<std::shared_ptr<Process>>& processes, co::Coroutine* c);
+    void WaitForRestart(co::Coroutine* c);
 
   OperState HandleAdminCommand(const Message &message,
                                OperState next_state_no_active_clients,
@@ -423,7 +475,7 @@ private:
   // The command pipe is a pipe connected to this subsystem.
   // Commands are send to the write end and we
   // receive them through the read end.
-  toolbelt::Pipe message_pipe_;
+  toolbelt::SharedPtrPipe<Message> message_pipe_;
 
   std::vector<std::shared_ptr<Process>> processes_;
   absl::flat_hash_map<std::string, std::shared_ptr<Process> > process_map_;
@@ -439,6 +491,8 @@ private:
   bool critical_ = false;
   int restart_count_ = 0;
   RestartPolicy restart_policy_ = RestartPolicy::kAutomatic;
+    // When restarting processes, this holds the set of process we are restarting.
+    std::vector<std::shared_ptr<Process>> processes_to_restart_;
 
   Alarm alarm_;
   bool alarm_raised_ = false;

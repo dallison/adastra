@@ -23,6 +23,7 @@ enum OperState {
   OPER_RESTARTING = 7;
   OPER_BROKEN = 8;
   OPER_DEGRADED = 9;
+  OPER_RESTARTING_PROCESSES = 10;
 }
 
 message SubsystemStatus {

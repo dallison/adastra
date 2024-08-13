@@ -123,6 +123,7 @@ absl::Status Client::AddSubsystem(const std::string &name,
     auto *s = proc->mutable_static_process();
     s->set_executable(sproc.executable);
     proc->set_compute(sproc.compute);
+    proc->set_max_restarts(sproc.max_restarts);
     for (auto &arg : sproc.args) {
       auto *a = opts->add_args();
       *a = arg;
@@ -156,6 +157,7 @@ absl::Status Client::AddSubsystem(const std::string &name,
     auto *s = proc->mutable_zygote();
     s->set_executable(z.executable);
     proc->set_compute(z.compute);
+    proc->set_max_restarts(z.max_restarts);
     for (auto &arg : z.args) {
       auto *a = opts->add_args();
       *a = arg;
@@ -192,6 +194,7 @@ absl::Status Client::AddSubsystem(const std::string &name,
     s->set_dso(vproc.dso);
     s->set_main_func(vproc.main_func);
     proc->set_compute(vproc.compute);
+    proc->set_max_restarts(vproc.max_restarts);
     for (auto &arg : vproc.args) {
       auto *a = opts->add_args();
       *a = arg;
@@ -245,6 +248,9 @@ absl::Status Client::AddSubsystem(const std::string &name,
     add->set_restart_policy(
         adastra::capcom::proto::AddSubsystemRequest::MANUAL);
     break;
+   case RestartPolicy::kProcessOnly:
+        add->set_restart_policy(adastra::capcom::proto::AddSubsystemRequest::PROCESS_ONLY);
+        break;
   }
   adastra::capcom::proto::Response resp;
   absl::Status status = SendRequestReceiveResponse(req, resp, c);
@@ -375,6 +381,37 @@ absl::Status Client::RestartSubsystem(const std::string &name,
                                  c);
   }
   return absl::OkStatus();
+}
+
+absl::Status Client::RestartProcesses(
+        const std::string& subsystem,
+        const std::vector<std::string>& processes,
+        co::Coroutine* c) {
+    if (c == nullptr) {
+        c = co_;
+    }
+    adastra::capcom::proto::Request req;
+    auto restart = req.mutable_restart_processes();
+    restart->set_subsystem(subsystem);
+    for (auto& process : processes) {
+        restart->add_processes(process);
+    }
+    adastra::capcom::proto::Response resp;
+    absl::Status status = SendRequestReceiveResponse(req, resp, c);
+    if (!status.ok()) {
+        return status;
+    }
+
+    auto& restart_resp = resp.restart_processes();
+    if (!restart_resp.error().empty()) {
+        return absl::InternalErrro(
+                absl::StrFormat("Failed to restart processes: %s", restart_resp.error()));
+    }
+
+    if (mode_ == ClientMode::kBlocking) {
+        return WaitForSubsystemState(subsystem, AdminState::kOnline, OperState::kOnline, c);
+    }
+    return absl::OkStatus();
 }
 
 absl::Status Client::WaitForSubsystemState(const std::string &subsystem,
