@@ -122,6 +122,14 @@ public:
 
   int MaxRestarts() const { return max_restarts_; }
 
+  int ExitStatus() const { return exit_status_; }
+  int Exited() const { return exited_; }
+
+  void SetExit(bool exited, int status) {
+      exited_ = exited;
+  exit_status_ = status;
+  }
+
   std::chrono::seconds IncRestartDelay() {
     auto old_delay = restart_delay_;
     restart_delay_ *= 2;
@@ -164,6 +172,8 @@ protected:
   bool oneshot_ = false;
   std::string cgroup_ = "";
   int num_restarts_ = 0;
+  int exited_ = 0;
+  int exit_status_ = 0;
 
   static constexpr std::chrono::seconds kMaxRestartDelay = 32s;
   std::chrono::seconds restart_delay_ = 1s;
@@ -367,6 +377,16 @@ private:
 
   bool AllProcessesRunning() const {
     for (auto &p : processes_) {
+      // Count a oneshot process as running only if it has exited successfully.
+      if (p->IsOneShot()) {
+        if (p->IsRunning()) {
+          return false;
+        }
+        if (p->Exited() == 0 && p->ExitStatus() == 0) {
+          // Onsshot process has exited successfully.
+          continue;
+        }
+      }
       if (!p->IsRunning()) {
         return false;
       }

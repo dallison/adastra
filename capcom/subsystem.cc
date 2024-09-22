@@ -196,6 +196,7 @@ absl::Status Subsystem::LaunchProcesses(co::Coroutine *c) {
     if (proc->IsRunning()) {
       continue;
     }
+    proc->SetExit(false, -1);
     absl::Status status = proc->Launch(this, c);
     if (!status.ok()) {
       // A failure to launch one is a failure for all.

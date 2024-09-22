@@ -7,8 +7,8 @@ build:asan --linkopt -fsanitize=address
 
 # For all builds, use C++17
 build --cxxopt="-std=c++17"
+build --host_cxxopt="-std=c++17"
 build --cxxopt='-Wno-sign-compare'
-build --noenable_bzlmod
 
 # For Apple Silicon
 build:apple_silicon --cpu=darwin_arm64 --host_cpu=darwin_arm64 --host_cxxopt="-std=c++17"

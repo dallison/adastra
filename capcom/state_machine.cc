@@ -475,19 +475,28 @@ void Subsystem::StartingProcesses(uint32_t client_id, co::Coroutine *c) {
                            "Can't find process", stop.process_id().c_str());
                        return StateTransition::kStay;
                      }
+                     int signal_or_status = stop.sig_or_status();
+                     bool exited =
+                         stop.reason() != stagezero::control::StopEvent::SIGNAL;
                      if (!proc->IsOneShot()) {
+                       // A oneshot that exits while in this state is counted as
+                       // a process that is running for the purposes of leaving
+                       // the state.
+                       if (exited) {
+                         proc->SetStopped();
+                         subsystem->DeleteProcessId(proc->GetProcessId());
+                         proc->SetExit(exited, signal_or_status);
+                         break;
+                       }
                        subsystem->capcom_.Log(
                            subsystem->Name(), toolbelt::LogLevel::kError,
                            "Process %s has crashed", stop.process_id().c_str());
                      }
-                     int signal_or_status = stop.sig_or_status();
-                     bool exited =
-                         stop.reason() != stagezero::control::StopEvent::SIGNAL;
                      return subsystem->RestartIfPossibleAfterProcessCrash(
                          stop.process_id(), client_id, exited, signal_or_status,
                          c);
                    }
-                   return StateTransition::kStay;
+                   break;
                  }
                  case adastra::stagezero::control::Event::kOutput:
                    subsystem->SendOutput(event->output().fd(),
@@ -548,7 +557,8 @@ void Subsystem::StartingProcesses(uint32_t client_id, co::Coroutine *c) {
                case EventSource::kUnknown:
                  break;
                }
-               // If all our processes are running we can go online.
+               // If all our processes are running we can go online.  We also
+               // count oneshots that exit successfully.
                if (!subsystem->AllProcessesRunning()) {
                  return StateTransition::kStay;
                }
@@ -1259,7 +1269,8 @@ Subsystem::StateTransition Subsystem::RestartIfPossibleAfterProcessCrash(
             // What do we do here?  If the message fails to send we have a
             // problem with the pipe and nothing will work.  Let's just log it
             // and ignore.
-            subsystem->capcom_.Log(subsystem->Name(), toolbelt::LogLevel::kError,
+            subsystem->capcom_.Log(subsystem->Name(),
+                                   toolbelt::LogLevel::kError,
                                    "Failed to send process restart message %s",
                                    status.ToString().c_str());
           }
