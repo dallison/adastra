@@ -126,8 +126,8 @@ public:
   int Exited() const { return exited_; }
 
   void SetExit(bool exited, int status) {
-      exited_ = exited;
-  exit_status_ = status;
+    exited_ = exited;
+    exit_status_ = status;
   }
 
   std::chrono::seconds IncRestartDelay() {
@@ -378,16 +378,11 @@ private:
   bool AllProcessesRunning() const {
     for (auto &p : processes_) {
       // Count a oneshot process as running only if it has exited successfully.
-      if (p->IsOneShot()) {
-        if (p->IsRunning()) {
-          return false;
-        }
-        if (p->Exited() == 0 && p->ExitStatus() == 0) {
-          // Onsshot process has exited successfully.
+      if (!p->IsRunning()) {
+        if (p->IsOneShot() && p->Exited() == 0 && p->ExitStatus() == 0) {
+          // Oneshot process has exited successfully.
           continue;
         }
-      }
-      if (!p->IsRunning()) {
         return false;
       }
     }

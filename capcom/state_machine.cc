@@ -478,7 +478,7 @@ void Subsystem::StartingProcesses(uint32_t client_id, co::Coroutine *c) {
                      int signal_or_status = stop.sig_or_status();
                      bool exited =
                          stop.reason() != stagezero::control::StopEvent::SIGNAL;
-                     if (!proc->IsOneShot()) {
+                     if (proc->IsOneShot()) {
                        // A oneshot that exits while in this state is counted as
                        // a process that is running for the purposes of leaving
                        // the state.

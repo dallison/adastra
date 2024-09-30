@@ -328,7 +328,7 @@ TEST_F(CapcomTest, SimpleSubsystem) {
   absl::Status status = client.AddSubsystem(
       "foobar", {.static_processes = {{
                      .name = "loop",
-                     .executable = "${runfiles_dir}/__main__/testdata/loop",
+                     .executable = "${runfiles_dir}/_main/testdata/loop",
                  }}});
   std::cerr << status << std::endl;
   ASSERT_TRUE(status.ok());
@@ -348,7 +348,7 @@ TEST_F(CapcomTest, SimpleSubsystemCompute) {
   status = client.AddSubsystem(
       "foobar", {.static_processes = {{
                      .name = "loop",
-                     .executable = "${runfiles_dir}/__main__/testdata/loop",
+                     .executable = "${runfiles_dir}/_main/testdata/loop",
                      .compute = "localhost",
                  }}});
   ASSERT_TRUE(status.ok());
@@ -357,7 +357,7 @@ TEST_F(CapcomTest, SimpleSubsystemCompute) {
   status = client.AddSubsystem(
       "foobar2", {.static_processes = {{
                       .name = "loop",
-                      .executable = "${runfiles_dir}/__main__/testdata/loop",
+                      .executable = "${runfiles_dir}/_main/testdata/loop",
                       .compute = "notknown",
                   }}});
   ASSERT_FALSE(status.ok());
@@ -385,12 +385,12 @@ TEST_F(CapcomTest, SubsystemWithMultipleCompute) {
       "foobar", {.static_processes = {
                      {
                          .name = "loop1",
-                         .executable = "${runfiles_dir}/__main__/testdata/loop",
+                         .executable = "${runfiles_dir}/_main/testdata/loop",
                          .compute = "localhost1",
                      },
                      {
                          .name = "loop2",
-                         .executable = "${runfiles_dir}/__main__/testdata/loop",
+                         .executable = "${runfiles_dir}/_main/testdata/loop",
                          .compute = "localhost2",
                      }}});
   ASSERT_TRUE(status.ok());
@@ -412,7 +412,7 @@ TEST_F(CapcomTest, StartSimpleSubsystem) {
   absl::Status status = client.AddSubsystem(
       "foobar1", {.static_processes = {{
                       .name = "loop",
-                      .executable = "${runfiles_dir}/__main__/testdata/loop",
+                      .executable = "${runfiles_dir}/_main/testdata/loop",
                   }}});
   ASSERT_TRUE(status.ok());
 
@@ -433,7 +433,7 @@ TEST_F(CapcomTest, OneshotOK) {
   absl::Status status = client.AddSubsystem(
       "oneshot", {.static_processes = {{
                       .name = "oneshot",
-                      .executable = "${runfiles_dir}/__main__/testdata/oneshot",
+                      .executable = "${runfiles_dir}/_main/testdata/oneshot",
                       .oneshot = true,
                   }}});
   ASSERT_TRUE(status.ok());
@@ -457,7 +457,7 @@ TEST_F(CapcomTest, OneshotFail) {
   absl::Status status = client.AddSubsystem(
       "oneshot", {.static_processes = {{
                       .name = "oneshot",
-                      .executable = "${runfiles_dir}/__main__/testdata/oneshot",
+                      .executable = "${runfiles_dir}/_main/testdata/oneshot",
                       .args = {"--fail"},
                       .notify = true,
                       .oneshot = true,
@@ -489,7 +489,7 @@ TEST_F(CapcomTest, OneshotSignal) {
   absl::Status status = client.AddSubsystem(
       "oneshot", {.static_processes = {{
                       .name = "oneshot",
-                      .executable = "${runfiles_dir}/__main__/testdata/oneshot",
+                      .executable = "${runfiles_dir}/_main/testdata/oneshot",
                       .args = {"--signal"},
                       .notify = true,
                       .oneshot = true,
@@ -522,7 +522,7 @@ TEST_F(CapcomTest, OneshotKill) {
   absl::Status status = client.AddSubsystem(
       "oneshot", {.static_processes = {{
                       .name = "oneshot",
-                      .executable = "${runfiles_dir}/__main__/testdata/oneshot",
+                      .executable = "${runfiles_dir}/_main/testdata/oneshot",
                       .args = {"--signal"},
                       .notify = true,
                       .oneshot = true,
@@ -566,7 +566,7 @@ TEST_F(CapcomTest, StartSimpleSubsystemCompute) {
   status = client.AddSubsystem(
       "foobar1", {.static_processes = {{
                       .name = "loop",
-                      .executable = "${runfiles_dir}/__main__/testdata/loop",
+                      .executable = "${runfiles_dir}/_main/testdata/loop",
                       .compute = "localhost",
                   }}});
   ASSERT_TRUE(status.ok());
@@ -601,12 +601,12 @@ TEST_F(CapcomTest, StartSimpleSubsystemWithMultipleCompute) {
       {.static_processes = {
            {
                .name = "loop1",
-               .executable = "${runfiles_dir}/__main__/testdata/loop",
+               .executable = "${runfiles_dir}/_main/testdata/loop",
                .compute = "localhost1",
            },
            {
                .name = "loop2",
-               .executable = "${runfiles_dir}/__main__/testdata/loop",
+               .executable = "${runfiles_dir}/_main/testdata/loop",
                .compute = "localhost2",
            },
        }});
@@ -635,7 +635,7 @@ TEST_F(CapcomTest, RestartSimpleSubsystem) {
   absl::Status status = client.AddSubsystem(
       "foobar1", {.static_processes = {{
                       .name = "loop",
-                      .executable = "${runfiles_dir}/__main__/testdata/loop",
+                      .executable = "${runfiles_dir}/_main/testdata/loop",
                   }}});
   ASSERT_TRUE(status.ok());
 
@@ -674,7 +674,7 @@ TEST_F(CapcomTest, RecoverSimpleSubsystem) {
   absl::Status status = client.AddSubsystem(
       "foobar1",
       {.static_processes = {{
-           .name = "loop", .executable = "${runfiles_dir}/__main__/testdata/loop",
+           .name = "loop", .executable = "${runfiles_dir}/_main/testdata/loop",
        }},
        .max_restarts = 0});
   ASSERT_TRUE(status.ok());
@@ -719,7 +719,7 @@ TEST_F(CapcomTest, RestartSubsystemParentOffline) {
   absl::Status status = client.AddSubsystem(
       "foobar1", {.static_processes = {{
                       .name = "loop",
-                      .executable = "${runfiles_dir}/__main__/testdata/loop",
+                      .executable = "${runfiles_dir}/_main/testdata/loop",
                   }}});
   ASSERT_TRUE(status.ok());
 
@@ -729,7 +729,7 @@ TEST_F(CapcomTest, RestartSubsystemParentOffline) {
   status = client.AddSubsystem(
       "foobar2", {.static_processes = {{
                       .name = "loop",
-                      .executable = "${runfiles_dir}/__main__/testdata/loop",
+                      .executable = "${runfiles_dir}/_main/testdata/loop",
                   }},
                   .children = {
                       "foobar1",
@@ -782,14 +782,14 @@ TEST_F(CapcomTest, StartSimpleSubsystemTree) {
   absl::Status status = client.AddSubsystem(
       "child", {.static_processes = {{
                     .name = "loop1",
-                    .executable = "${runfiles_dir}/__main__/testdata/loop",
+                    .executable = "${runfiles_dir}/_main/testdata/loop",
                 }}});
   ASSERT_TRUE(status.ok());
 
   status = client.AddSubsystem(
       "parent", {.static_processes = {{
                      .name = "loop2",
-                     .executable = "${runfiles_dir}/__main__/testdata/loop",
+                     .executable = "${runfiles_dir}/_main/testdata/loop",
                  }},
                  .children = {
                      "child",
@@ -816,7 +816,7 @@ TEST_F(CapcomTest, RestartProcess) {
   absl::Status status = client.AddSubsystem(
       "manual",
       {.static_processes = {{
-           .name = "loop", .executable = "${runfiles_dir}/__main__/testdata/loop",
+           .name = "loop", .executable = "${runfiles_dir}/_main/testdata/loop",
        }},
        .restart_policy = adastra::capcom::client::RestartPolicy::kAutomatic});
   ASSERT_TRUE(status.ok());
@@ -859,13 +859,13 @@ TEST_F(CapcomTest, RestartProcess2) {
       "manual",
       {.static_processes =
            {{
-                .name = "loop1", .executable = "${runfiles_dir}/__main__/testdata/loop",
+                .name = "loop1", .executable = "${runfiles_dir}/_main/testdata/loop",
             },
             {
-                .name = "loop2", .executable = "${runfiles_dir}/__main__/testdata/loop",
+                .name = "loop2", .executable = "${runfiles_dir}/_main/testdata/loop",
             },
             {
-                .name = "loop3", .executable = "${runfiles_dir}/__main__/testdata/loop",
+                .name = "loop3", .executable = "${runfiles_dir}/_main/testdata/loop",
             }},
        .restart_policy = adastra::capcom::client::RestartPolicy::kAutomatic});
   ASSERT_TRUE(status.ok());
@@ -908,13 +908,13 @@ TEST_F(CapcomTest, RestartAllProcesses) {
       "manual",
       {.static_processes =
            {{
-                .name = "loop1", .executable = "${runfiles_dir}/__main__/testdata/loop",
+                .name = "loop1", .executable = "${runfiles_dir}/_main/testdata/loop",
             },
             {
-                .name = "loop2", .executable = "${runfiles_dir}/__main__/testdata/loop",
+                .name = "loop2", .executable = "${runfiles_dir}/_main/testdata/loop",
             },
             {
-                .name = "loop3", .executable = "${runfiles_dir}/__main__/testdata/loop",
+                .name = "loop3", .executable = "${runfiles_dir}/_main/testdata/loop",
             }},
        .restart_policy = adastra::capcom::client::RestartPolicy::kAutomatic});
   ASSERT_TRUE(status.ok());
@@ -956,7 +956,7 @@ TEST_F(CapcomTest, ManualRestartSimpleSubsystem) {
       "manual",
       {.static_processes = {{
            .name = "loop",
-           .executable = "${runfiles_dir}/__main__/testdata/loop",
+           .executable = "${runfiles_dir}/_main/testdata/loop",
        }},
        .restart_policy = adastra::capcom::client::RestartPolicy::kManual});
   ASSERT_TRUE(status.ok());
@@ -992,7 +992,7 @@ TEST_F(CapcomTest, ManualRestartSimpleSubsystemAfterCrash) {
       "manual",
       {.static_processes = {{
            .name = "loop",
-           .executable = "${runfiles_dir}/__main__/testdata/loop",
+           .executable = "${runfiles_dir}/_main/testdata/loop",
        }},
        .restart_policy = adastra::capcom::client::RestartPolicy::kManual});
   ASSERT_TRUE(status.ok());
@@ -1040,13 +1040,13 @@ TEST_F(CapcomTest, RestartProcessAfterCrash) {
       "processonly",
       {.static_processes =
            {{
-                .name = "loop1", .executable = "${runfiles_dir}/__main__/testdata/loop",
+                .name = "loop1", .executable = "${runfiles_dir}/_main/testdata/loop",
             },
             {
-                .name = "loop2", .executable = "${runfiles_dir}/__main__/testdata/loop",
+                .name = "loop2", .executable = "${runfiles_dir}/_main/testdata/loop",
             },
             {
-                .name = "loop3", .executable = "${runfiles_dir}/__main__/testdata/loop",
+                .name = "loop3", .executable = "${runfiles_dir}/_main/testdata/loop",
             }},
        .restart_policy = adastra::capcom::client::RestartPolicy::kProcessOnly});
   ASSERT_TRUE(status.ok());
@@ -1115,13 +1115,13 @@ TEST_F(CapcomTest, RestartProcessAfterCrashBackoff) {
       "processonly",
       {.static_processes =
            {{
-                .name = "loop1", .executable = "${runfiles_dir}/__main__/testdata/loop",
+                .name = "loop1", .executable = "${runfiles_dir}/_main/testdata/loop",
             },
             {
-                .name = "loop2", .executable = "${runfiles_dir}/__main__/testdata/loop",
+                .name = "loop2", .executable = "${runfiles_dir}/_main/testdata/loop",
             },
             {
-                .name = "loop3", .executable = "${runfiles_dir}/__main__/testdata/loop",
+                .name = "loop3", .executable = "${runfiles_dir}/_main/testdata/loop",
             }},
        .restart_policy = adastra::capcom::client::RestartPolicy::kProcessOnly});
   ASSERT_TRUE(status.ok());
@@ -1193,15 +1193,15 @@ TEST_F(CapcomTest, RestartProcessAfterCrashLimit) {
       "processonly",
       {.static_processes = {{
                                 .name = "loop1",
-                                .executable = "${runfiles_dir}/__main__/testdata/loop",
+                                .executable = "${runfiles_dir}/_main/testdata/loop",
                             },
                             {
                                 .name = "loop2",
-                                .executable = "${runfiles_dir}/__main__/testdata/loop",
+                                .executable = "${runfiles_dir}/_main/testdata/loop",
                             },
                             {
                                 .name = "loop3",
-                                .executable = "${runfiles_dir}/__main__/testdata/loop",
+                                .executable = "${runfiles_dir}/_main/testdata/loop",
                                 .max_restarts = 2,
                             }},
        .restart_policy = adastra::capcom::client::RestartPolicy::kProcessOnly});
@@ -1284,15 +1284,15 @@ TEST_F(CapcomTest, RestartProcessAfterCrashLimitRecover) {
       "processonly",
       {.static_processes = {{
                                 .name = "loop1",
-                                .executable = "${runfiles_dir}/__main__/testdata/loop",
+                                .executable = "${runfiles_dir}/_main/testdata/loop",
                             },
                             {
                                 .name = "loop2",
-                                .executable = "${runfiles_dir}/__main__/testdata/loop",
+                                .executable = "${runfiles_dir}/_main/testdata/loop",
                             },
                             {
                                 .name = "loop3",
-                                .executable = "${runfiles_dir}/__main__/testdata/loop",
+                                .executable = "${runfiles_dir}/_main/testdata/loop",
                                 .max_restarts = 2,
                             }},
        .restart_policy = adastra::capcom::client::RestartPolicy::kProcessOnly});
@@ -1377,7 +1377,7 @@ TEST_F(CapcomTest, Abort) {
   absl::Status status = client.AddSubsystem(
       "subsys", {.static_processes = {{
                      .name = "loop",
-                     .executable = "${runfiles_dir}/__main__/testdata/loop",
+                     .executable = "${runfiles_dir}/_main/testdata/loop",
                  }}});
   ASSERT_TRUE(status.ok());
 
@@ -1402,7 +1402,7 @@ TEST_F(CapcomTest, AbortThenGoAgain) {
   absl::Status status = client.AddSubsystem(
       "subsys", {.static_processes = {{
                      .name = "loop",
-                     .executable = "${runfiles_dir}/__main__/testdata/loop",
+                     .executable = "${runfiles_dir}/_main/testdata/loop",
                  }}});
   ASSERT_TRUE(status.ok());
 
@@ -1435,7 +1435,7 @@ TEST_F(CapcomTest, RestartSimpleSubsystemTree) {
   absl::Status status = client.AddSubsystem(
       "child", {.static_processes = {{
                     .name = "loop1",
-                    .executable = "${runfiles_dir}/__main__/testdata/loop",
+                    .executable = "${runfiles_dir}/_main/testdata/loop",
                 }}});
   ASSERT_TRUE(status.ok());
 
@@ -1494,7 +1494,7 @@ TEST_F(CapcomTest, Zygote) {
       {.zygotes = {{
            .name = "loop",
            .executable =
-               "${runfiles_dir}/__main__/stagezero/zygote/standard_zygote",
+               "${runfiles_dir}/_main/stagezero/zygote/standard_zygote",
        }}});
   ASSERT_TRUE(status.ok());
 
@@ -1517,7 +1517,7 @@ TEST_F(CapcomTest, VirtualProcess) {
       {.zygotes = {{
            .name = "zygote1",
            .executable =
-               "${runfiles_dir}/__main__/stagezero/zygote/standard_zygote",
+               "${runfiles_dir}/_main/stagezero/zygote/standard_zygote",
        }}});
   ASSERT_TRUE(status.ok());
 
@@ -1525,7 +1525,7 @@ TEST_F(CapcomTest, VirtualProcess) {
       "virtual", {.virtual_processes = {{
                       .name = "virtual_module",
                       .zygote = "zygote1",
-                      .dso = "${runfiles_dir}/__main__/testdata/module.so",
+                      .dso = "${runfiles_dir}/_main/testdata/module.so",
                       .main_func = "Main",
                       .notify = true,
                   }}});
@@ -1565,7 +1565,7 @@ TEST_F(CapcomTest, AbortVirtual) {
       {.zygotes = {{
            .name = "zygote1",
            .executable =
-               "${runfiles_dir}/__main__/stagezero/zygote/standard_zygote",
+               "${runfiles_dir}/_main/stagezero/zygote/standard_zygote",
        }}});
   std::cerr << status.ToString() << std::endl;
   ASSERT_TRUE(status.ok());
@@ -1574,7 +1574,7 @@ TEST_F(CapcomTest, AbortVirtual) {
       "virtual", {.virtual_processes = {{
                       .name = "virtual_module",
                       .zygote = "zygote1",
-                      .dso = "${runfiles_dir}/__main__/testdata/module.so",
+                      .dso = "${runfiles_dir}/_main/testdata/module.so",
                       .main_func = "Main",
                       .notify = false,
                   }}});
@@ -1617,7 +1617,7 @@ TEST_F(CapcomTest, TalkAndListen) {
       "subspace",
       {.static_processes = {{
            .name = "subspace_server",
-           .executable = "${runfiles_dir}/__main__/external/subspace/server/"
+           .executable = "${runfiles_dir}/_main/external/_main~_repo_rules~subspace/server/"
                          "subspace_server",
            .args = {"--notify_fd=${notify_fd}"},
            .notify = true,
@@ -1625,7 +1625,7 @@ TEST_F(CapcomTest, TalkAndListen) {
        .zygotes = {{
            .name = "standard_zygote",
            .executable =
-               "${runfiles_dir}/__main__/stagezero/zygote/standard_zygote",
+               "${runfiles_dir}/_main/stagezero/zygote/standard_zygote",
 
        }}});
   ASSERT_TRUE(status.ok());
@@ -1635,13 +1635,13 @@ TEST_F(CapcomTest, TalkAndListen) {
                    {{
                         .name = "talker",
                         .zygote = "standard_zygote",
-                        .dso = "${runfiles_dir}/__main__/testdata/talker.so",
+                        .dso = "${runfiles_dir}/_main/testdata/talker.so",
                         .main_func = "ModuleMain",
                     },
                     {
                         .name = "listener",
                         .zygote = "standard_zygote",
-                        .dso = "${runfiles_dir}/__main__/testdata/listener.so",
+                        .dso = "${runfiles_dir}/_main/testdata/listener.so",
                         .main_func = "ModuleMain",
                     }},
                .children = {
@@ -1672,7 +1672,7 @@ TEST_F(CapcomTest, InteractiveEcho) {
       "echo", {
                   .static_processes = {{
                       .name = "echo",
-                      .executable = "${runfiles_dir}/__main__/testdata/echo",
+                      .executable = "${runfiles_dir}/_main/testdata/echo",
                       .notify = true,
                       .interactive = true,
                   }},
@@ -1719,7 +1719,7 @@ TEST_F(CapcomTest, BadStreams) {
       "echo1",
       {.static_processes = {{
            .name = "echo1",
-           .executable = "${runfiles_dir}/__main__/testdata/echo",
+           .executable = "${runfiles_dir}/_main/testdata/echo",
            .notify = true,
            .streams = {{
                            .stream_fd = STDIN_FILENO,
@@ -1747,7 +1747,7 @@ TEST_F(CapcomTest, BadStreams) {
       "echo2",
       {.static_processes = {{
            .name = "echo2",
-           .executable = "${runfiles_dir}/__main__/testdata/echo",
+           .executable = "${runfiles_dir}/_main/testdata/echo",
            .notify = true,
            .streams = {{
                            .stream_fd = STDIN_FILENO,
@@ -1775,7 +1775,7 @@ TEST_F(CapcomTest, BadStreams) {
       "echo3",
       {.static_processes = {{
            .name = "echo3",
-           .executable = "${runfiles_dir}/__main__/testdata/echo",
+           .executable = "${runfiles_dir}/_main/testdata/echo",
            .notify = true,
            .streams = {{
                            .stream_fd = STDIN_FILENO,
@@ -1801,7 +1801,7 @@ TEST_F(CapcomTest, BadStreams) {
       "echo4",
       {.static_processes = {{
            .name = "echo4",
-           .executable = "${runfiles_dir}/__main__/testdata/echo",
+           .executable = "${runfiles_dir}/_main/testdata/echo",
            .notify = true,
            .streams =
                {
