@@ -9,6 +9,7 @@ build:asan --linkopt -fsanitize=address
 build --cxxopt="-std=c++17"
 build --host_cxxopt="-std=c++17"
 build --cxxopt='-Wno-sign-compare'
+build --features=oso_prefix_is_pwd
 
 # For Apple Silicon
 build:apple_silicon --cpu=darwin_arm64 --host_cpu=darwin_arm64 --host_cxxopt="-std=c++17"

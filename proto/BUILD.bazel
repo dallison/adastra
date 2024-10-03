@@ -21,6 +21,7 @@ proto_library(
         ":cgroup_proto",
         ":config_proto",
         ":log_proto",
+        ":parameters_proto",
         ":stream_proto",
     ],
 )
@@ -37,6 +38,7 @@ proto_library(
         ":config_proto",
         ":event_proto",
         ":log_proto",
+        ":parameters_proto",
         ":stream_proto",
         ":subsystem_status_proto",
     ],
@@ -80,6 +82,7 @@ proto_library(
     srcs = ["event.proto"],
     deps = [
         ":log_proto",
+        ":parameters_proto",
         ":subsystem_status_proto",
     ],
 )
@@ -117,4 +120,14 @@ proto_library(
 cc_proto_library(
     name = "subsystem_status_cc_proto",
     deps = [":subsystem_status_proto"],
+)
+
+proto_library(
+    name = "parameters_proto",
+    srcs = ["parameters.proto"],
+)
+
+cc_proto_library(
+    name = "parameters_cc_proto",
+    deps = [":parameters_proto"],
 )

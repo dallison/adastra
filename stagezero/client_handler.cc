@@ -110,6 +110,20 @@ absl::Status ClientHandler::HandleMessage(const control::Request &req,
     HandleKillCgroup(req.kill_cgroup(), resp.mutable_kill_cgroup(), c);
     break;
 
+  case control::Request::kSetParameter:
+    HandleSetParameter(req.set_parameter(), resp.mutable_set_parameter(), c);
+    break;
+
+  case control::Request::kDeleteParameter:
+    HandleDeleteParameter(req.delete_parameter(),
+                          resp.mutable_delete_parameter(), c);
+    break;
+
+  case control::Request::kUploadParameters:
+    HandleUploadParameters(req.upload_parameters(),
+                           resp.mutable_upload_parameters(), c);
+    break;
+
   case control::Request::REQUEST_NOT_SET:
     return absl::InternalError("Protocol error: unknown request");
   }
@@ -280,6 +294,30 @@ absl::Status ClientHandler::SendOutputEvent(const std::string &process_id,
   return QueueEvent(std::move(event));
 }
 
+absl::Status
+ClientHandler::SendParameterUpdateEvent(const std::string &name,
+                                        const parameters::Value &value) {
+  if ((event_mask_ & kParameterEvents) == 0) {
+    return absl::OkStatus();
+  }
+  auto event = std::make_shared<control::Event>();
+  auto p = event->mutable_parameter();
+  auto u = p->mutable_update();
+  u->set_name(name);
+  value.ToProto(u->mutable_value());
+  return QueueEvent(std::move(event));
+}
+
+absl::Status ClientHandler::SendParameterDeleteEvent(const std::string &name) {
+  if ((event_mask_ & kParameterEvents) == 0) {
+    return absl::OkStatus();
+  }
+  auto event = std::make_shared<control::Event>();
+  auto p = event->mutable_parameter();
+  p->set_delete_(name);
+  return QueueEvent(std::move(event));
+}
+
 void ClientHandler::KillAllProcesses() {
   // Copy all processes out of the processes_ map as we will
   // be removing them as they are killed.
@@ -413,4 +451,42 @@ void ClientHandler::HandleKillCgroup(const control::KillCgroupRequest &req,
   }
 }
 
+void ClientHandler::HandleSetParameter(const control::SetParameterRequest &req,
+                                       control::SetParameterResponse *response,
+                                       co::Coroutine *c) {
+  parameters::Value v;
+  v.FromProto(req.value());
+  if (absl::Status status = stagezero_.SetParameter(req.name(), v, c);
+      !status.ok()) {
+    response->set_error(status.ToString());
+  }
+}
+
+void ClientHandler::HandleDeleteParameter(
+    const control::DeleteParameterRequest &req,
+    control::DeleteParameterResponse *response, co::Coroutine *c) {
+  if (absl::Status status = stagezero_.DeleteParameter(req.name(), c);
+      !status.ok()) {
+    response->set_error(status.ToString());
+  }
+}
+
+void ClientHandler::HandleUploadParameters(
+    const control::UploadParametersRequest &req,
+    control::UploadParametersResponse *response, co::Coroutine *c) {
+  std::vector<parameters::Parameter> params;
+
+  std::cerr << req.DebugString() << std::endl;
+  for (auto &p : req.parameters()) {
+    parameters::Value v;
+    v.FromProto(p.value());
+    params.push_back({p.name(), std::move(v)});
+  }
+
+  if (absl::Status status = stagezero_.UploadParameters(params, c);
+      !status.ok()) {
+    response->set_error(status.ToString());
+    return;
+  }
+}
 } // namespace adastra::stagezero

@@ -31,6 +31,10 @@ public:
 
   absl::Status SendSubsystemStatusEvent(Subsystem *subsystem);
   absl::Status SendAlarm(const Alarm &alarm);
+  absl::Status SendParameterUpdateEvent(const std::string &name,
+                                        const parameters::Value &value);
+
+  absl::Status SendParameterDeleteEvent(const std::string &name);
 
   co::CoroutineScheduler &GetScheduler() const override;
 
@@ -114,6 +118,15 @@ private:
                         proto::ThawCgroupResponse *response, co::Coroutine *c);
   void HandleKillCgroup(const proto::KillCgroupRequest &req,
                         proto::KillCgroupResponse *response, co::Coroutine *c);
+  void HandleSetParameter(const proto::SetParameterRequest &req,
+                          proto::SetParameterResponse *response,
+                          co::Coroutine *c);
+  void HandleDeleteParameter(const proto::DeleteParameterRequest &req,
+                             proto::DeleteParameterResponse *response,
+                             co::Coroutine *c);
+  void HandleUploadParameters(const proto::UploadParametersRequest &req,
+                              proto::UploadParametersResponse *response,
+                              co::Coroutine *c);
   Capcom &capcom_;
   uint32_t id_;
 };

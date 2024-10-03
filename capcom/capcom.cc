@@ -299,6 +299,29 @@ void Capcom::SendSubsystemStatusEvent(Subsystem *subsystem) {
   }
 }
 
+void Capcom::SendParameterUpdateEvent(const std::string &name,
+                                      const parameters::Value &value) {
+  for (auto &handler : client_handlers_) {
+    if (absl::Status status = handler->SendParameterUpdateEvent(name, value);
+        !status.ok()) {
+      logger_.Log(toolbelt::LogLevel::kError,
+                  "Failed to send parameter event to client %s: %s",
+                  handler->GetClientName().c_str(), status.ToString().c_str());
+    }
+  }
+}
+
+void Capcom::SendParameterDeleteEvent(const std::string &name) {
+  for (auto &handler : client_handlers_) {
+    if (absl::Status status = handler->SendParameterDeleteEvent(name);
+        !status.ok()) {
+      logger_.Log(toolbelt::LogLevel::kError,
+                  "Failed to send parameter event to client %s: %s",
+                  handler->GetClientName().c_str(), status.ToString().c_str());
+    }
+  }
+}
+
 void Capcom::SendAlarm(const Alarm &alarm) {
   for (auto &handler : client_handlers_) {
     if (absl::Status status = handler->SendAlarm(alarm); !status.ok()) {
@@ -429,9 +452,9 @@ absl::Status Capcom::AddGlobalVariable(const Variable &var, co::Coroutine *c) {
     if (absl::Status status =
             client.Init(compute->addr, "<set global variable>");
         !status.ok()) {
-      result = absl::InternalError(
-          absl::StrFormat("Failed to connect compute for abort%s: %s",
-                          compute->name, status.ToString()));
+      result = absl::InternalError(absl::StrFormat(
+          "Failed to connect compute %s for adding global variable: %s",
+          compute->name, status.ToString()));
       continue;
     }
     absl::Status status =
@@ -443,6 +466,135 @@ absl::Status Capcom::AddGlobalVariable(const Variable &var, co::Coroutine *c) {
     }
   }
   return result;
+}
+
+absl::Status Capcom::PropagateParameterUpdate(const std::string &name,
+                                              parameters::Value &value,
+                                              co::Coroutine *c) {
+  std::vector<Compute *> computes;
+  absl::Status result = absl::OkStatus();
+
+  for (auto & [ name, compute ] : computes_) {
+    computes.push_back(&compute);
+  }
+
+  // If we have no computes (like in testing), add the local compute.
+  if (computes.empty()) {
+    computes.push_back(&local_compute_);
+  }
+
+  for (auto &compute : computes) {
+    stagezero::Client client;
+    if (absl::Status status = client.Init(compute->addr, "<parameter update>");
+        !status.ok()) {
+      result = absl::InternalError(absl::StrFormat(
+          "Failed to connect compute %s for updating parameter: %s",
+          compute->name, status.ToString()));
+      continue;
+    }
+    absl::Status status = client.SetParameter(name, value, c);
+    if (!status.ok()) {
+      result = absl::InternalError(
+          absl::StrFormat("Failed to update parameter %s on compute %s: %s",
+                          name, compute->name, status.ToString()));
+    }
+  }
+  return result;
+}
+
+absl::Status Capcom::PropagateParameterDelete(const std::string &name,
+                                              co::Coroutine *c) {
+  std::vector<Compute *> computes;
+  absl::Status result = absl::OkStatus();
+
+  for (auto & [ name, compute ] : computes_) {
+    computes.push_back(&compute);
+  }
+
+  // If we have no computes (like in testing), add the local compute.
+  if (computes.empty()) {
+    computes.push_back(&local_compute_);
+  }
+
+  for (auto &compute : computes) {
+    stagezero::Client client;
+    if (absl::Status status = client.Init(compute->addr, "<parameter delete>");
+        !status.ok()) {
+      result = absl::InternalError(absl::StrFormat(
+          "Failed to connect compute %s for deleting parameter: %s",
+          compute->name, status.ToString()));
+      continue;
+    }
+    absl::Status status = client.DeleteParameter(name, c);
+    if (!status.ok()) {
+      // This will fail on the stagezero that deleted the parameter.
+    }
+  }
+  return result;
+}
+
+absl::Status Capcom::SetParameter(const std::string &name,
+                                  const parameters::Value &value) {
+  if (absl::Status status = parameters_.SetParameter(name, value);
+      !status.ok()) {
+    return status;
+  }
+  return absl::OkStatus();
+}
+
+absl::Status Capcom::DeleteParameter(const std::string &name) {
+  if (absl::Status status = parameters_.DeleteParameter(name); !status.ok()) {
+    return status;
+  }
+  return absl::OkStatus();
+}
+
+absl::Status
+Capcom::UploadParameters(const std::vector<parameters::Parameter> &params) {
+  for (auto &param : params) {
+    if (absl::Status status =
+            parameters_.SetParameter(param.GetName(), param.GetValue());
+        !status.ok()) {
+      return status;
+    }
+  }
+  return absl::OkStatus();
+}
+
+absl::Status Capcom::HandleParameterEvent(
+    const adastra::proto::parameters::ParameterEvent &event, co::Coroutine *c) {
+  switch (event.event_case()) {
+  case adastra::proto::parameters::ParameterEvent::kUpdate: {
+    parameters::Value value;
+    value.FromProto(event.update().value());
+    if (absl::Status status = SetParameter(event.update().name(), value);
+        !status.ok()) {
+      return status;
+    }
+    if (absl::Status status =
+            PropagateParameterUpdate(event.update().name(), value, c);
+        !status.ok()) {
+      return status;
+    }
+    SendParameterUpdateEvent(event.update().name(), value);
+    break;
+  }
+  case adastra::proto::parameters::ParameterEvent::kDelete: {
+    if (absl::Status status = DeleteParameter(event.delete_()); !status.ok()) {
+      return status;
+    }
+    if (absl::Status status = PropagateParameterDelete(event.delete_(), c);
+        !status.ok()) {
+      return status;
+    }
+    SendParameterDeleteEvent(event.delete_());
+    break;
+  }
+  default:
+    return absl::InternalError(
+        absl::StrFormat("Unknown parameter event type %d", event.event_case()));
+  }
+  return absl::OkStatus();
 }
 
 void Capcom::Log(const std::string &source, toolbelt::LogLevel level,

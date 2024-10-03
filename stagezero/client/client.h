@@ -9,6 +9,7 @@
 #include "common/cgroup.h"
 #include "common/event.h"
 #include "common/namespace.h"
+#include "common/parameters.h"
 #include "common/stream.h"
 #include "common/tcp_client.h"
 #include "common/vars.h"
@@ -128,7 +129,14 @@ public:
                           co::Coroutine *co = nullptr);
   absl::Status KillCgroup(const std::string &cgroup,
                           co::Coroutine *co = nullptr);
+  absl::Status SetParameter(const std::string& name, parameters::Value &v, co::Coroutine *c = nullptr);
 
+  absl::Status DeleteParameter(const std::string &name,
+                               co::Coroutine *c = nullptr);
+
+  absl::Status UploadParameters(const std::vector<std::shared_ptr<parameters::Parameter>> &params,
+                                co::Coroutine *c = nullptr);
+                                
 private:
   absl::StatusOr<std::pair<std::string, int>> LaunchStaticProcessInternal(
       const std::string &name, const std::string &executable,

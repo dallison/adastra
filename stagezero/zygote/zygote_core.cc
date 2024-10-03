@@ -321,6 +321,28 @@ absl::Status ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
                                absl::StrFormat("%d", notify_fd.Fd()), true);
     }
 
+    int parameters_read_fd = -1, parameters_write_fd = -1;
+    if (req.has_parameters_read_fd_index()) {
+      toolbelt::FileDescriptor &parameters_fd =
+          fds[req.parameters_read_fd_index()];
+      parameters_read_fd = parameters_fd.Fd();
+      fds_to_keep_open.insert(parameters_fd.Fd());
+    }
+    if (req.has_parameters_write_fd_index()) {
+      toolbelt::FileDescriptor &parameters_fd =
+          fds[req.parameters_write_fd_index()];
+      parameters_write_fd = parameters_fd.Fd();
+      fds_to_keep_open.insert(parameters_fd.Fd());
+    }
+
+    if (parameters_read_fd != -1 && parameters_write_fd != -1) {
+      unsetenv("STAGEZERO_PARAMETERS_FDS");
+      local_symbols->AddSymbol(
+          "STAGEZERO_PARAMETERS_FDS",
+          absl::StrFormat("%d:%d", parameters_read_fd, parameters_write_fd),
+          true);
+    }
+    
     for (auto &stream : req.streams()) {
       if (stream.has_filename()) {
         // For files, we have deferred the open until we know the pid

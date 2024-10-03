@@ -138,7 +138,7 @@ public:
   void InitClient(adastra::capcom::client::Client &client,
                   const std::string &name,
                   int event_mask = adastra::kSubsystemStatusEvents |
-                                   adastra::kOutputEvents) {
+                                   adastra::kOutputEvents | adastra::kParameterEvents) {
     absl::Status s = client.Init(CapcomAddr(), name, event_mask);
     std::cout << "Init status: " << s << std::endl;
     ASSERT_TRUE(s.ok());
@@ -220,6 +220,49 @@ public:
     FAIL();
   }
 
+  void WaitForParameterUpdate(adastra::capcom::client::Client &client,
+                              const std::string &name, adastra::parameters::Value v) {
+    std::cout << "waiting for parameter update\n";
+    for (int retry = 0; retry < 10; retry++) {
+      absl::StatusOr<std::shared_ptr<adastra::Event>> e = client.WaitForEvent();
+      std::cerr << e.status() << std::endl;
+      ASSERT_TRUE(e.ok());
+
+      std::shared_ptr<adastra::Event> event = *e;
+      std::cerr << "event: " << (int)event->type << std::endl;
+      if (event->type == adastra::EventType::kParameterUpdate) {
+        adastra::parameters::Parameter p = std::get<4>(event->event);
+        std::cerr << "update parameter: " << p.GetName() << " " << p.GetValue() << std::endl;
+        if (p.GetName() == name && p.GetValue() == v) {
+          std::cout << "parameter update received\n";
+          return;
+        }
+      }
+    }
+    FAIL();
+  }
+
+ void WaitForParameterDelete(adastra::capcom::client::Client &client,
+                              const std::string &name) {
+    std::cout << "waiting for parameter delete\n";
+    for (int retry = 0; retry < 10; retry++) {
+      absl::StatusOr<std::shared_ptr<adastra::Event>> e = client.WaitForEvent();
+      std::cerr << e.status() << std::endl;
+      ASSERT_TRUE(e.ok());
+
+      std::shared_ptr<adastra::Event> event = *e;
+      std::cerr << "event: " << (int)event->type << std::endl;
+      if (event->type == adastra::EventType::kParameterDelete) {
+        std::string pname = std::get<5>(event->event);
+        std::cerr << "delete parameter: " << pname << std::endl;
+        if (pname == name) {
+          std::cout << "parameter delete received\n";
+          return;
+        }
+      }
+    }
+    FAIL();
+  }
   void SendInput(adastra::capcom::client::Client &client, std::string subsystem,
                  std::string process, int fd, std::string s) {
     absl::Status status = client.SendInput(subsystem, process, fd, s);
@@ -656,7 +699,7 @@ TEST_F(CapcomTest, RestartSimpleSubsystem) {
   // Wait for the subsytem to go into restarting, then back online.
   WaitForState(client, "foobar1", AdminState::kOnline, OperState::kRestarting);
   WaitForState(client, "foobar1", AdminState::kOnline, OperState::kOnline);
-  sleep(1);
+  sleep(1); 
 
   // Stop the subsystem
   status = client.StopSubsystem("foobar1");
@@ -1512,6 +1555,8 @@ TEST_F(CapcomTest, VirtualProcess) {
   adastra::capcom::client::Client client(ClientMode::kBlocking);
   InitClient(client, "foobar1");
 
+  ASSERT_TRUE(client.SetParameter("/foo/bar", "baz").ok());
+  
   absl::Status status = client.AddSubsystem(
       "zygote1",
       {.zygotes = {{
@@ -1863,6 +1908,42 @@ TEST_F(CapcomTest, CgroupOps) {
   ASSERT_FALSE(status.ok());
 
   status = client.RemoveCompute("compute1");
+  ASSERT_TRUE(status.ok());
+}
+
+
+TEST_F(CapcomTest, Parameters) {
+  adastra::capcom::client::Client client(ClientMode::kBlocking);
+  InitClient(client, "foobar1");
+
+  absl::Status status = client.SetParameter("/foo/bar", "value1");
+  ASSERT_TRUE(status.ok());
+
+  status = client.SetParameter("/foo/baz", "value2");
+  ASSERT_TRUE(status.ok());
+
+  // Add a subsystem that uses the parameters.
+  status = client.AddSubsystem(
+      "param",
+      {.static_processes = {{
+           .name = "param",
+           .executable = "${runfiles_dir}/_main/testdata/loop",
+           .notify = true,
+       }},
+       });
+  // Start the subsystem
+  status = client.StartSubsystem("param");
+  ASSERT_TRUE(status.ok());
+
+  WaitForParameterUpdate(client, "/foo/bar", "foobar");
+  WaitForParameterDelete(client, "/foo/baz");
+  sleep(1);
+  // Stop the subsystem.
+  status = client.StopSubsystem("param");
+  ASSERT_TRUE(status.ok());
+
+  // Remove the subsystem.
+  status = client.RemoveSubsystem("param", false);
   ASSERT_TRUE(status.ok());
 }
 

@@ -3,8 +3,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <iostream>
 #include "absl/debugging/symbolize.h"
 #include "absl/debugging/failure_signal_handler.h"
+#include "stagezero/parameters/parameters.h"
+
 void Signal(int sig) { printf("Signal %d\n", sig); }
 
 int main(int argc, char** argv) {
@@ -28,6 +31,39 @@ int main(int argc, char** argv) {
     int notify_fd = atoi(notify);
     int64_t val = 1;
     (void)write(notify_fd, &val, 8);
+  }
+
+  // If there are parameters, they must be /foo/bar and /foo/baz.
+  stagezero::Parameters params;
+  absl::StatusOr<std::vector<std::string>> list = params.ListParameters();
+  if (!list.ok()) {
+    std::cerr << "Failed to list parameters: " << list.status().message() << std::endl;
+  } else {
+    printf("List of parameters:\n");
+    for (const std::string& name : *list) {
+      absl::StatusOr<adastra::parameters::Value> value = params.GetParameter(name);
+      if (!value.ok()) {
+        std::cerr << "Failed to get parameter " <<  name << value.status().message() << std::endl;;
+      } else {
+        std::cout << name << " = " << *value << std::endl;
+      }
+    }
+    absl::Status s = params.SetParameter("/foo/bar", "foobar");
+    if (!s.ok()) {
+      std::cerr << "Failed to set parameter: " << s.message() << std::endl;
+    } else {
+      // Get the parameter and print it.
+      absl::StatusOr<adastra::parameters::Value> value = params.GetParameter("/foo/bar");
+      if (!value.ok()) {
+        std::cerr << "Failed to get parameter /foo/bar" <<  value.status().message() << std::endl;;
+      } else {
+        std::cout << "/foo/bar = " << *value << std::endl;
+      }
+    }
+    absl::Status s2 = params.DeleteParameter("/foo/baz");
+    if (!s2.ok()) {
+      std::cerr << "Failed to delete parameter: " << s2.message() << std::endl;
+    }
   }
 
   // char buf[256];

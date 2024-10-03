@@ -22,6 +22,8 @@ message StreamControl {
     NOTIFY = 6;   // Special stream for startup notification
     LOGGER = 7;   // Send to client as log message.
     SYSLOG = 8;   // Send to syslog.
+    PARAMETERS_READ = 9; // Read stream for parameters.
+    PARAMETERS_WRITE = 10; // Write stream for parameters.
   };
 
   // Direction is as seen from the point of view of the process.

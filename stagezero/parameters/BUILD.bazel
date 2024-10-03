@@ -1,0 +1,16 @@
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "parameters",
+    srcs = [
+        "parameters.cc",
+    ],
+    hdrs = [
+        "parameters.h",
+    ],
+    deps = [
+        "//proto:parameters_cc_proto",
+        "//common",
+        "@toolbelt//toolbelt",
+    ],
+)

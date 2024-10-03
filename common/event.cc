@@ -31,9 +31,21 @@ void Event::ToProto(proto::Event *dest) const {
     o->set_fd(output.fd);
     break;
   }
-    case EventType::kLog: {
+  case EventType::kLog: {
     LogMessage log = std::get<3>(event);
     log.ToProto(dest->mutable_log());
+    break;
+  }
+  case EventType::kParameterUpdate: {
+    parameters::Parameter p = std::get<4>(event);
+    auto pe = dest->mutable_parameter();
+    p.ToProto(pe->mutable_update());
+    break;
+  }
+  case EventType::kParameterDelete: {
+    const std::string &name = std::get<5>(event);
+    auto pe = dest->mutable_parameter();
+    pe->set_delete_(name);
     break;
   }
   }
@@ -62,8 +74,9 @@ absl::Status Event::FromProto(const proto::Event &src) {
   }
 
   case adastra::proto::Event::kOutput: {
-    Output output = {
-        .process_id = src.output().process_id(), .data = src.output().data(), .fd = src.output().fd()};
+    Output output = {.process_id = src.output().process_id(),
+                     .data = src.output().data(),
+                     .fd = src.output().fd()};
     this->event = output;
     this->type = EventType::kOutput;
     break;
@@ -76,10 +89,30 @@ absl::Status Event::FromProto(const proto::Event &src) {
     this->type = EventType::kLog;
     break;
   }
+  case adastra::proto::Event::kParameter: {
+    switch (src.parameter().event_case()) {
+    case adastra::proto::parameters::ParameterEvent::kUpdate: {
+      parameters::Parameter p;
+      p.FromProto(src.parameter().update());
+      this->event = p;
+      this->type = EventType::kParameterUpdate;
+      break;
+    }
+    case adastra::proto::parameters::ParameterEvent::kDelete:
+      this->event = src.parameter().delete_();
+      this->type = EventType::kParameterDelete;
+      break;
+    default:
+      return absl::InternalError(absl::StrFormat(
+          "Unknown parameter event type %d", src.parameter().event_case()));
+    }
+    break;
+    
   default:
     // Unknown event type.
     return absl::InternalError(
         absl::StrFormat("Unknown event type %d", src.event_case()));
+  }
   }
   return absl::OkStatus();
 }

@@ -4,8 +4,7 @@
 
 template <typename T> using Publisher = adastra::module::ProtobufPublisher<T>;
 
-template <typename T>
-using Subscriber = adastra::module::ProtobufSubscriber<T>;
+template <typename T> using Subscriber = adastra::module::ProtobufSubscriber<T>;
 
 template <typename T> using Message = adastra::module::Message<T>;
 
@@ -16,6 +15,7 @@ public:
 
   absl::Status Init(int argc, char **argv) override {
     std::cout << "Running on " << LookupSymbol("compute") << std::endl;
+ 
     auto pub = RegisterPublisher<chat::Question>(
         "question", 256, 10,
         [this](std::shared_ptr<Publisher<chat::Question>> pub,

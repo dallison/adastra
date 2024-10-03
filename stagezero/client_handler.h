@@ -36,7 +36,9 @@ public:
                                     int exit_status, int term_signal);
   absl::Status SendOutputEvent(const std::string &process_id, int fd,
                                const char *data, size_t len);
-
+  absl::Status SendParameterUpdateEvent(const std::string &name, const parameters::Value &value);
+  absl::Status SendParameterDeleteEvent(const std::string &name);
+  
   toolbelt::Logger &GetLogger() const override;
 
   co::CoroutineScheduler &GetScheduler() const override;
@@ -125,7 +127,15 @@ private:
   void HandleKillCgroup(const control::KillCgroupRequest &req,
                         control::KillCgroupResponse *response,
                         co::Coroutine *c);
-
+  void HandleSetParameter(const control::SetParameterRequest &req,
+                          control::SetParameterResponse *response,
+                          co::Coroutine *c);
+  void HandleDeleteParameter(const control::DeleteParameterRequest &req,
+                             control::DeleteParameterResponse *response,
+                             co::Coroutine *c);
+  void HandleUploadParameters(const control::UploadParametersRequest &req,
+                              control::UploadParametersResponse *response,
+                              co::Coroutine *c);
   void AddProcess(const std::string &id, std::shared_ptr<Process> proc) {
     processes_.emplace(std::make_pair(id, std::move(proc)));
   }

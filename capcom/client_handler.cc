@@ -37,6 +37,30 @@ absl::Status ClientHandler::SendSubsystemStatusEvent(Subsystem *subsystem) {
   return QueueEvent(std::move(event));
 }
 
+absl::Status
+ClientHandler::SendParameterUpdateEvent(const std::string &name,
+                                        const parameters::Value &value) {
+  if ((event_mask_ & kParameterEvents) == 0) {
+    return absl::OkStatus();
+  }
+  auto event = std::make_shared<adastra::proto::Event>();
+  auto p = event->mutable_parameter();
+  auto update = p->mutable_update();
+  update->set_name(name);
+  value.ToProto(update->mutable_value());
+  return QueueEvent(std::move(event));
+}
+
+absl::Status ClientHandler::SendParameterDeleteEvent(const std::string &name) {
+   if ((event_mask_ & kParameterEvents) == 0) {
+    return absl::OkStatus();
+  }
+  auto event = std::make_shared<adastra::proto::Event>();
+  auto p = event->mutable_parameter();
+  p->set_delete_(name);
+  return QueueEvent(std::move(event)); 
+}
+
 absl::Status ClientHandler::SendAlarm(const Alarm &alarm) {
   if ((event_mask_ & kAlarmEvents) == 0) {
     return absl::OkStatus();
@@ -131,6 +155,20 @@ absl::Status ClientHandler::HandleMessage(const proto::Request &req,
 
   case proto::Request::kKillCgroup:
     HandleKillCgroup(req.kill_cgroup(), resp.mutable_kill_cgroup(), c);
+    break;
+
+  case proto::Request::kSetParameter:
+    HandleSetParameter(req.set_parameter(), resp.mutable_set_parameter(), c);
+    break;
+
+  case proto::Request::kDeleteParameter:
+    HandleDeleteParameter(req.delete_parameter(),
+                          resp.mutable_delete_parameter(), c);
+    break;
+
+  case proto::Request::kUploadParameters:
+    HandleUploadParameters(req.upload_parameters(),
+                           resp.mutable_upload_parameters(), c);
     break;
 
   case proto::Request::REQUEST_NOT_SET:
@@ -594,4 +632,40 @@ void ClientHandler::HandleKillCgroup(const proto::KillCgroupRequest &req,
                                         req.cgroup(), status.ToString()));
   }
 }
+
+void ClientHandler::HandleSetParameter(const proto::SetParameterRequest &req,
+                                       proto::SetParameterResponse *response,
+                                       co::Coroutine *c) {
+  parameters::Value v;
+  v.FromProto(req.value());
+  if (absl::Status status = capcom_.SetParameter(req.name(), v); !status.ok()) {
+    response->set_error(status.ToString());
+  }
+}
+
+void ClientHandler::HandleDeleteParameter(
+    const proto::DeleteParameterRequest &req,
+    proto::DeleteParameterResponse *response, co::Coroutine *c) {
+  if (absl::Status status = capcom_.DeleteParameter(req.name()); !status.ok()) {
+    response->set_error(status.ToString());
+  }
+}
+
+void ClientHandler::HandleUploadParameters(
+    const proto::UploadParametersRequest &req,
+    proto::UploadParametersResponse *response, co::Coroutine *c) {
+  std::vector<parameters::Parameter> params;
+
+  for (auto &p : req.parameters()) {
+    parameters::Value v;
+    v.FromProto(p.value());
+    params.push_back({p.name(), std::move(v)});
+  }
+
+  if (absl::Status status = capcom_.UploadParameters(params); !status.ok()) {
+    response->set_error(status.ToString());
+    return;
+  }
+}
+
 } // namespace adastra::capcom

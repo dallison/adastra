@@ -39,6 +39,16 @@ Subsystem::ConnectToStageZero(const Compute *compute, co::Coroutine *c) {
         !status.ok()) {
       return status;
     }
+
+    // Upload all the parameters to stagezero.
+    std::cerr << "Uploading parameters to stagezero" << std::endl;
+    std::vector<std::shared_ptr<parameters::Parameter>> parameters =
+        capcom_.parameters_.GetAllParameters();
+    // Send the parameters to the client.
+    if (absl::Status status = client->UploadParameters(parameters, c);
+        !status.ok()) {
+      return status;
+    }
     sc = std::move(client);
   }
   return sc;

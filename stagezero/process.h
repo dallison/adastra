@@ -88,6 +88,7 @@ public:
   virtual void Notify(int64_t status) {}
 
   const std::shared_ptr<StreamInfo> FindNotifyStream() const;
+  const std::shared_ptr<StreamInfo> FindParametersStream(bool read) const;
 
   const std::vector<std::shared_ptr<StreamInfo>> &GetStreams() const {
     return streams_;
@@ -118,6 +119,8 @@ public:
     ns_ = std::move(ns);
   }
   
+  void RunParameterServer();
+
 protected:
   virtual int Wait() = 0;
   absl::Status BuildStreams(

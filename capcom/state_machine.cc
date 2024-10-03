@@ -197,6 +197,8 @@ void Subsystem::Offline(uint32_t client_id, co::Coroutine *c) {
                  case adastra::stagezero::control::Event::kLog:
                    subsystem->capcom_.Log(event->log());
                    break;
+                 case adastra::stagezero::control::Event::kParameter:
+                   break;
                  case adastra::stagezero::control::Event::EVENT_NOT_SET:
                    break;
                  }
@@ -321,6 +323,8 @@ void Subsystem::StartingChildren(uint32_t client_id, co::Coroutine *c) {
                 break;
               case adastra::stagezero::control::Event::kLog:
                 subsystem->capcom_.Log(event->log());
+                break;
+              case adastra::stagezero::control::Event::kParameter:
                 break;
               case adastra::stagezero::control::Event::EVENT_NOT_SET:
                 break;
@@ -505,6 +509,8 @@ void Subsystem::StartingProcesses(uint32_t client_id, co::Coroutine *c) {
                  case adastra::stagezero::control::Event::kLog:
                    subsystem->capcom_.Log(event->log());
                    break;
+                 case adastra::stagezero::control::Event::kParameter:
+                   break;
                  case adastra::stagezero::control::Event::EVENT_NOT_SET:
                    break;
                  }
@@ -652,6 +658,16 @@ void Subsystem::Online(uint32_t client_id, co::Coroutine *c) {
                    break;
                  case adastra::stagezero::control::Event::kLog:
                    subsystem->capcom_.Log(event->log());
+                   break;
+                 case adastra::stagezero::control::Event::kParameter:
+                   if (absl::Status status =
+                           subsystem->capcom_.HandleParameterEvent(
+                               event->parameter(), c);
+                       !status.ok()) {
+                     subsystem->capcom_.Log(subsystem->Name(),
+                                            toolbelt::LogLevel::kError, "%s",
+                                            status.ToString().c_str());
+                   }
                    break;
                  case adastra::stagezero::control::Event::EVENT_NOT_SET:
                    break;
@@ -801,6 +817,8 @@ void Subsystem::StoppingProcesses(uint32_t client_id, co::Coroutine *c) {
                  case adastra::stagezero::control::Event::kLog:
                    subsystem->capcom_.Log(event->log());
                    break;
+                 case adastra::stagezero::control::Event::kParameter:
+                   break;
                  case adastra::stagezero::control::Event::EVENT_NOT_SET:
                    break;
                  }
@@ -917,6 +935,8 @@ void Subsystem::StoppingChildren(uint32_t client_id, co::Coroutine *c) {
                 break;
               case adastra::stagezero::control::Event::kLog:
                 subsystem->capcom_.Log(event->log());
+                break;
+              case adastra::stagezero::control::Event::kParameter:
                 break;
               case adastra::stagezero::control::Event::EVENT_NOT_SET:
                 break;
@@ -1075,6 +1095,8 @@ void Subsystem::WaitForRestart(co::Coroutine *c) {
                 break;
               case adastra::stagezero::control::Event::kLog:
                 subsystem->capcom_.Log(event->log());
+                break;
+              case adastra::stagezero::control::Event::kParameter:
                 break;
               case adastra::stagezero::control::Event::EVENT_NOT_SET:
                 break;
@@ -1411,6 +1433,8 @@ void Subsystem::Restarting(uint32_t client_id, co::Coroutine *c) {
                  case adastra::stagezero::control::Event::kLog:
                    subsystem->capcom_.Log(event->log());
                    break;
+                 case adastra::stagezero::control::Event::kParameter:
+                   break;
                  case adastra::stagezero::control::Event::EVENT_NOT_SET:
                    break;
                  }
@@ -1557,6 +1581,8 @@ void Subsystem::RestartingProcesses(uint32_t client_id, co::Coroutine *c) {
                    break;
                  case adastra::stagezero::control::Event::kLog:
                    subsystem->capcom_.Log(event->log());
+                   break;
+                 case adastra::stagezero::control::Event::kParameter:
                    break;
                  case adastra::stagezero::control::Event::EVENT_NOT_SET:
                    break;

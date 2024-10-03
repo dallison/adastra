@@ -124,6 +124,18 @@ const std::shared_ptr<StreamInfo> Process::FindNotifyStream() const {
   return nullptr;
 }
 
+const std::shared_ptr<StreamInfo>
+Process::FindParametersStream(bool read) const {
+  for (auto &stream : streams_) {
+    if (stream->disposition == (read
+                                    ? proto::StreamControl::PARAMETERS_READ
+                                    : proto::StreamControl::PARAMETERS_WRITE)) {
+      return stream;
+    }
+  }
+  return nullptr;
+}
+
 StaticProcess::StaticProcess(
     co::CoroutineScheduler &scheduler, StageZero &stagezero,
     std::shared_ptr<ClientHandler> client,
@@ -385,6 +397,31 @@ absl::Status Process::BuildStreams(
     streams_.push_back(stream);
   }
 
+  // Open parameters streams.  These are from the point of view of the process.
+  {
+    auto rstream = std::make_shared<StreamInfo>();
+    rstream->disposition = proto::StreamControl::PARAMETERS_READ;
+    rstream->direction = proto::StreamControl::INPUT;
+    absl::StatusOr<toolbelt::Pipe> rpipe = MakeFileDescriptors(false, nullptr);
+    if (!rpipe.ok()) {
+      return rpipe.status();
+    }
+    rstream->fd = rpipe->ReadFd().Fd();
+    rstream->pipe = std::move(*rpipe);
+    streams_.push_back(rstream);
+
+    auto wstream = std::make_shared<StreamInfo>();
+    wstream->disposition = proto::StreamControl::PARAMETERS_WRITE;
+    wstream->direction = proto::StreamControl::OUTPUT;
+    absl::StatusOr<toolbelt::Pipe> wpipe = MakeFileDescriptors(false, nullptr);
+    if (!wpipe.ok()) {
+      return wpipe.status();
+    }
+    wstream->fd = rpipe->WriteFd().Fd();
+    wstream->pipe = std::move(*wpipe);
+    streams_.push_back(wstream);
+  }
+
   if (interactive_) {
     int this_end, proc_end;
 
@@ -575,6 +612,90 @@ absl::Status Process::BuildStreams(
   return absl::OkStatus();
 }
 
+void Process::RunParameterServer() {
+  std::shared_ptr<StreamInfo> param_read_stream = FindParametersStream(true);
+  std::shared_ptr<StreamInfo> param_write_stream = FindParametersStream(false);
+  assert(param_read_stream != nullptr || param_write_stream != nullptr);
+  client_->AddCoroutine(std::make_unique<co::Coroutine>(scheduler_, [
+    proc = shared_from_this(), param_read_stream, param_write_stream,
+    client = client_
+  ](co::Coroutine * c) {
+    toolbelt::FileDescriptor &rfd = param_write_stream->pipe.ReadFd();
+    toolbelt::FileDescriptor &wfd = param_read_stream->pipe.WriteFd();
+    while (rfd.Valid() && wfd.Valid()) {
+      adastra::proto::parameters::Request req;
+      {
+        uint32_t len;
+        int wait_fd = c->Wait(rfd.Fd(), POLLIN);
+        if (wait_fd != rfd.Fd()) {
+          return;
+        }
+        ssize_t n = ::read(rfd.Fd(), &len, sizeof(len));
+        if (n <= 0) {
+          return;
+        }
+        std::vector<char> buffer(len);
+        char *buf = buffer.data();
+        size_t remaining = len;
+        while (remaining > 0) {
+          int wait_fd = c->Wait(rfd.Fd(), POLLIN);
+          if (wait_fd != rfd.Fd()) {
+            return;
+          }
+          ssize_t n = ::read(rfd.Fd(), buf, remaining);
+          if (n <= 0) {
+            return;
+          }
+          remaining -= n;
+          buf += n;
+        }
+
+        if (!req.ParseFromArray(buffer.data(), buffer.size())) {
+          client->Log(proc->Name(), toolbelt::LogLevel::kError,
+                      "Failed to parse parameter stream message");
+          break;
+        }
+      }
+      adastra::proto::parameters::Response resp;
+      if (absl::Status status =
+              proc->GetStageZero().HandleParameterServerRequest(req, resp,
+                                                                client);
+          !status.ok()) {
+        client->Log(proc->Name(), toolbelt::LogLevel::kError,
+                    "Failed to process parameter request: %s",
+                    status.ToString().c_str());
+        break;
+      }
+      uint64_t len = resp.ByteSizeLong();
+      std::vector<char> resp_buffer(len + sizeof(uint32_t));
+      char *respbuf = resp_buffer.data() + 4;
+      if (!resp.SerializeToArray(respbuf, uint32_t(len))) {
+        client->Log(proc->Name(), toolbelt::LogLevel::kError,
+                    "Failed to serialize parameters response");
+        break;
+      }
+      // Copy length into buffer.
+      memcpy(resp_buffer.data(), &len, sizeof(uint32_t));
+
+      // Write back to pipe in a loop.
+      char *buf = resp_buffer.data();
+      size_t remaining = len + sizeof(uint32_t);
+      while (remaining > 0) {
+        int wait_fd = c->Wait(wfd.Fd(), POLLOUT);
+        if (wait_fd != wfd.Fd()) {
+          return;
+        }
+        ssize_t n = ::write(wfd.Fd(), buf, remaining);
+        if (n <= 0) {
+          return;
+        }
+        remaining -= n;
+        buf += n;
+      }
+    }
+  }));
+}
+
 absl::Status
 StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
   // It is better to detect things like missing files earlier so that we
@@ -621,6 +742,9 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
     }
     gid = g->gr_gid;
   }
+
+  // Run a coroutine to process commands from the parameter stream.
+  RunParameterServer();
 
 #if defined(__linux__)
   // On Linux we can use clone3 instead of fork if we have any namespace
@@ -681,7 +805,9 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
         // the process what it is via an environment variable.
         // For other streams, we redirect to the given file descriptor
         // number and close the duplicated file descriptor.
-        if (stream->disposition != proto::StreamControl::NOTIFY) {
+        if (stream->disposition != proto::StreamControl::NOTIFY &&
+            stream->disposition != proto::StreamControl::PARAMETERS_READ &&
+            stream->disposition != proto::StreamControl::PARAMETERS_WRITE) {
           if (stream->disposition == proto::StreamControl::FILENAME) {
             // For files, we have deferred the open until we know the pid
             // of the process.  This is because it's likely that the
@@ -729,7 +855,9 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
         }
 
         if (stream->disposition == proto::StreamControl::CLIENT ||
-            stream->disposition == proto::StreamControl::NOTIFY) {
+            stream->disposition == proto::StreamControl::NOTIFY ||
+            stream->disposition == proto::StreamControl::PARAMETERS_READ ||
+            stream->disposition == proto::StreamControl::PARAMETERS_WRITE) {
           // Close the duplicated other end of the pipes.
           toolbelt::FileDescriptor &fd =
               stream->direction == proto::StreamControl::OUTPUT
@@ -776,6 +904,22 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
       env_strings.push_back(absl::StrFormat(
           "STAGEZERO_NOTIFY_FD=%d", notify_stream->pipe.WriteFd().Fd()));
     }
+
+    // Tell the process what the parameters stream is.  This is used by the
+    // process to read and modify the global parameters for the system.
+    // Think ROS parameter server.  The directions here are from the point
+    // of view of the process.  So the read stream is the stream the process
+    // reads from.
+    std::shared_ptr<StreamInfo> params_read_stream = FindParametersStream(true);
+    std::shared_ptr<StreamInfo> params_write_stream =
+        FindParametersStream(false);
+    assert(params_read_stream != nullptr);
+    assert(params_write_stream != nullptr);
+    env_strings.push_back(
+        absl::StrFormat("STAGEZERO_PARAMETERS_FDS=%d:%d",
+                        params_read_stream->pipe.ReadFd().Fd(),
+                        params_write_stream->pipe.WriteFd().Fd()));
+
     absl::flat_hash_map<std::string, Symbol *> env_vars =
         local_symbols_.GetEnvironmentSymbols();
     for (auto & [ name, symbol ] : env_vars) {
@@ -1128,6 +1272,14 @@ Zygote::Spawn(const stagezero::control::LaunchVirtualProcessRequest &req,
       fds.push_back(stream->pipe.WriteFd());
       spawn.set_notify_fd_index(fd_index++);
       break;
+    case proto::StreamControl::PARAMETERS_READ:
+      fds.push_back(stream->pipe.ReadFd());
+      spawn.set_parameters_read_fd_index(fd_index++);
+      break;
+    case proto::StreamControl::PARAMETERS_WRITE:
+      fds.push_back(stream->pipe.WriteFd());
+      spawn.set_parameters_write_fd_index(fd_index++);
+      break;
     default:
       if (stream->disposition != proto::StreamControl::STAGEZERO) {
         const toolbelt::FileDescriptor &fd =
@@ -1225,7 +1377,7 @@ Zygote::Spawn(const stagezero::control::LaunchVirtualProcessRequest &req,
 #else
   return std::make_pair(response.pid(), toolbelt::FileDescriptor());
 #endif
-}
+} // namespace adastra::stagezero
 
 VirtualProcess::VirtualProcess(
     co::CoroutineScheduler &scheduler, StageZero &stagezero,
@@ -1321,6 +1473,9 @@ absl::Status VirtualProcess::Start(co::Coroutine *c) {
     }
   }
 
+  // Run a coroutine to process commands from the parameter stream.
+  RunParameterServer();
+  
   client_->AddCoroutine(std::make_unique<co::Coroutine>(scheduler_, [
     proc, vproc, zygote = zygote_, client = client_
   ](co::Coroutine * c2) {

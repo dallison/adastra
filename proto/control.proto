@@ -10,6 +10,7 @@ import "proto/config.proto";
 import "proto/stream.proto";
 import "proto/log.proto";
 import "proto/cgroup.proto";
+import "proto/parameters.proto";
 
 message InitRequest {
   string client_name = 1;
@@ -83,50 +84,44 @@ message GetGlobalVariableResponse {
 
 message AbortRequest {
   string reason = 1;
-  bool emergency = 2;     // Emergency abort, all processes down.
+  bool emergency = 2; // Emergency abort, all processes down.
 }
 
 message AbortResponse { string error = 1; }
 
-message AddCgroupRequest {
-  config.Cgroup cgroup = 1;
+message AddCgroupRequest { config.Cgroup cgroup = 1; }
+
+message AddCgroupResponse { string error = 1; }
+
+message RemoveCgroupRequest { string cgroup = 1; }
+
+message RemoveCgroupResponse { string error = 1; }
+
+message FreezeCgroupRequest { string cgroup = 1; }
+
+message FreezeCgroupResponse { string error = 1; }
+
+message ThawCgroupRequest { string cgroup = 1; }
+
+message ThawCgroupResponse { string error = 1; }
+
+message KillCgroupRequest { string cgroup = 1; }
+
+message KillCgroupResponse { string error = 1; }
+
+message SetParameterRequest {
+  string name = 1;
+  adastra.proto.parameters.Value value = 2;
 }
 
-message AddCgroupResponse {
-  string error = 1;
-}
+message SetParameterResponse { string error = 1; }
 
-message RemoveCgroupRequest {
-  string cgroup = 1;
+message DeleteParameterRequest { string name = 1; }
+message DeleteParameterResponse { string error = 1; }
+message UploadParametersRequest {
+  repeated adastra.proto.parameters.Parameter parameters = 1;
 }
-
-message RemoveCgroupResponse {
-  string error = 1;
-}
-
-message FreezeCgroupRequest {
-  string cgroup = 1;
-}
-
-message FreezeCgroupResponse {
-  string error = 1;
-}
-
-message ThawCgroupRequest {
-  string cgroup = 1;
-}
-
-message ThawCgroupResponse {
-  string error = 1;
-}
-
-message KillCgroupRequest {
-  string cgroup = 1;
-}
-
-message KillCgroupResponse {
-  string error = 1;
-}
+message UploadParametersResponse { string error = 1; }
 
 message Request {
   oneof request {
@@ -145,6 +140,9 @@ message Request {
     FreezeCgroupRequest freeze_cgroup = 13;
     ThawCgroupRequest thaw_cgroup = 14;
     KillCgroupRequest kill_cgroup = 15;
+    SetParameterRequest set_parameter = 16;
+    DeleteParameterRequest delete_parameter = 17;
+    UploadParametersRequest upload_parameters = 18;
   }
 }
 
@@ -162,7 +160,11 @@ message Response {
     RemoveCgroupResponse remove_cgroup = 10;
     FreezeCgroupResponse freeze_cgroup = 11;
     ThawCgroupResponse thaw_cgroup = 12;
-    KillCgroupResponse kill_cgroup = 13;  }
+    KillCgroupResponse kill_cgroup = 13;
+    SetParameterResponse set_parameter = 14;
+    DeleteParameterResponse delete_parameter = 15;
+    UploadParametersResponse upload_parameters = 16;
+  }
 }
 
 message StartEvent { string process_id = 1; }
@@ -174,8 +176,8 @@ message StopEvent {
     SIGNAL = 2;
   }
   string process_id = 1;
-  Reason reason = 2;      // Why process exited.
-  int32 sig_or_status = 3;  // Signal number or exit status.
+  Reason reason = 2;       // Why process exited.
+  int32 sig_or_status = 3; // Signal number or exit status.
 }
 
 message OutputEvent {
@@ -190,6 +192,7 @@ message Event {
     StopEvent stop = 52;
     OutputEvent output = 53;
     adastra.proto.LogMessage log = 54;
+    adastra.proto.parameters.ParameterEvent parameter = 55;
   }
 }
 
@@ -208,8 +211,8 @@ message SpawnRequest {
     optional string filename = 4; // For file streams.
     optional stagezero.proto.StreamControl.Direction direction = 5;
   }
-  string name = 1;    // Process name
-  string dso = 2; // Load this DSO (empty means already linked)
+  string name = 1; // Process name
+  string dso = 2;  // Load this DSO (empty means already linked)
 
   string main_func = 3; // Function to call in child.
 
@@ -220,16 +223,21 @@ message SpawnRequest {
   string user = 8;
   string group = 9;
 
-  optional int32 notify_fd_index = 10;        // Index of notify fd (into fds)
+  optional int32 notify_fd_index = 10; // Index of notify fd (into fds)
 
-  string cgroup = 11;     // Cgroup for process (if supported by OS)
+  string cgroup = 11; // Cgroup for process (if supported by OS)
 
   // Namespaces, only on Linux.
   optional config.Namespace ns = 12;
+  optional int32 parameters_read_fd_index =
+      13; // Index of parameters read fd (into fds)
+  optional int32 parameters_write_fd_index =
+      14; // Index of parameters write fd (into fds)
 }
 
 message SpawnResponse {
   string error = 1;
   int32 pid = 2; // PID of child.
-  int32 pidfd_index = 3;		// On Linux the index into the fds array for the process's pidfd.
+  int32 pidfd_index =
+      3; // On Linux the index into the fds array for the process's pidfd.
 }

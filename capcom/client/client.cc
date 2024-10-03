@@ -667,4 +667,74 @@ absl::Status Client::KillCgroup(const std::string &compute,
   return absl::OkStatus();
 }
 
+absl::Status Client::SetParameter(const std::string& name, const parameters::Value &v,
+                                  co::Coroutine *co) {
+  if (co == nullptr) {
+    co = co_;
+  }
+  adastra::capcom::proto::Request req;
+  auto x = req.mutable_set_parameter();
+  x->set_name(name);
+  v.ToProto(x->mutable_value());
+
+  adastra::capcom::proto::Response resp;
+  if (absl::Status status = SendRequestReceiveResponse(req, resp, co);
+      !status.ok()) {
+    return status;
+  }
+  auto &kill_resp = resp.set_parameter();
+  if (!kill_resp.error().empty()) {
+    return absl::InternalError(
+        absl::StrFormat("Failed to set parameter: %s", kill_resp.error()));
+  }
+  return absl::OkStatus();
+}
+
+absl::Status Client::DeleteParameter(const std::string &name,
+                                     co::Coroutine *co) {
+  if (co == nullptr) {
+    co = co_;
+  }
+  adastra::capcom::proto::Request req;
+  auto x = req.mutable_delete_parameter();
+  x->set_name(name);
+
+  adastra::capcom::proto::Response resp;
+  if (absl::Status status = SendRequestReceiveResponse(req, resp, co);
+      !status.ok()) {
+    return status;
+  }
+  auto &kill_resp = resp.delete_parameter();
+  if (!kill_resp.error().empty()) {
+    return absl::InternalError(
+        absl::StrFormat("Failed to delete parameter: %s", kill_resp.error()));
+  }
+  return absl::OkStatus();
+}
+
+absl::Status
+Client::UploadParameters(const std::vector<parameters::Parameter> &params,
+                         co::Coroutine *co) {
+  if (co == nullptr) {
+    co = co_;
+  }
+  adastra::capcom::proto::Request req;
+  auto x = req.mutable_upload_parameters();
+  for (auto &p : params) {
+    auto *param = x->add_parameters();
+    param->set_name(p.GetName());
+    p.GetValue().ToProto(param->mutable_value());
+  }
+  adastra::capcom::proto::Response resp;
+  if (absl::Status status = SendRequestReceiveResponse(req, resp, co);
+      !status.ok()) {
+    return status;
+  }
+  auto &kill_resp = resp.upload_parameters();
+  if (!kill_resp.error().empty()) {
+    return absl::InternalError(
+        absl::StrFormat("Failed to upload parameter: %s", kill_resp.error()));
+  }
+  return absl::OkStatus();
+}
 } // namespace adastra::capcom::client

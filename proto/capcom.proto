@@ -10,6 +10,7 @@ import "proto/config.proto";
 import "proto/event.proto";
 import "proto/stream.proto";
 import "proto/subsystem_status.proto";
+import "proto/parameters.proto";
 
 message InitRequest {
   string client_name = 1;
@@ -177,6 +178,20 @@ message KillCgroupRequest {
 
 message KillCgroupResponse { string error = 1; }
 
+message SetParameterRequest {
+  string name = 1;
+  adastra.proto.parameters.Value value = 2;
+}
+
+message SetParameterResponse { string error = 1; }
+
+message DeleteParameterRequest { string name = 1; }
+message DeleteParameterResponse { string error = 1; }
+message UploadParametersRequest {
+  repeated adastra.proto.parameters.Parameter parameters = 1;
+}
+message UploadParametersResponse { string error = 1; }
+
 message Request {
   oneof request {
     InitRequest init = 1;
@@ -197,6 +212,9 @@ message Request {
     ThawCgroupRequest thaw_cgroup = 16;
     KillCgroupRequest kill_cgroup = 17;
     RestartProcessesRequest restart_processes = 19;
+    SetParameterRequest set_parameter = 20;
+    DeleteParameterRequest delete_parameter = 21;
+    UploadParametersRequest upload_parameters = 22;
   }
 }
 
@@ -220,5 +238,8 @@ message Response {
     ThawCgroupResponse thaw_cgroup = 16;
     KillCgroupResponse kill_cgroup = 17;
     RestartProcessesResponse restart_processes = 19;
+    SetParameterResponse set_parameter = 20;
+    DeleteParameterResponse delete_parameter = 21;
+    UploadParametersResponse upload_parameters = 22;
   }
 }

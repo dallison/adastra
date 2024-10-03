@@ -1,0 +1,108 @@
+syntax = "proto3";
+package adastra.proto.parameters;
+
+
+message Value {
+  message ListValue {
+    repeated Value values = 1;
+  }
+
+  message MapValue {
+    map<string, Value> values = 1;
+  }
+
+  oneof value {
+    string string_value = 1;
+    int32 int32_value = 2;
+    int64 int64_value = 3;
+    double double_value = 4;
+    bool bool_value = 5;
+    ListValue list_value = 6;
+    MapValue map_value = 7;
+    bytes bytes_value = 8;
+  }
+}
+
+message Parameter {
+  string name = 1;
+  Value value = 3;
+}
+
+message GetAllParametersRequest {
+}
+
+message GetAllParametersResponse {
+  repeated Parameter parameters = 1;
+  string error = 2;
+}
+
+message SetParameterRequest {
+  Parameter parameter = 1;
+}
+
+message SetParameterResponse {
+  string error = 1;
+}
+
+message GetParameterRequest {
+  string name = 1;
+}
+
+message GetParameterResponse {
+  Value value = 1;
+  string error = 2;
+}
+
+message DeleteParameterRequest {
+  string name = 1;
+}
+
+message DeleteParameterResponse {
+  string error = 1;
+}
+
+message HasParameterRequest {
+  string name = 1;
+}
+
+message HasParameterResponse {
+  bool has = 1;
+  string error = 2;
+}
+
+message ListParametersRequest {
+}
+
+message ListParametersResponse {
+  repeated string names = 1;
+  string error = 2;
+}
+
+message Request {
+  oneof req {
+    GetAllParametersRequest get_all_parameters = 1;
+    SetParameterRequest set_parameter = 2;
+    GetParameterRequest get_parameter = 3;
+    DeleteParameterRequest delete_parameter = 4;
+    HasParameterRequest has_parameter = 5;
+    ListParametersRequest list_parameters = 6;
+  }
+}
+
+message Response {
+  oneof resp {
+    GetAllParametersResponse get_all_parameters = 1;
+    SetParameterResponse set_parameter = 2;
+    GetParameterResponse get_parameter = 3;
+    DeleteParameterResponse delete_parameter = 4;
+    HasParameterResponse has_parameter = 5;
+    ListParametersResponse list_parameters = 6;
+  }
+}
+
+message ParameterEvent {
+  oneof event {
+    parameters.Parameter update = 1;
+    string delete = 2;
+  }
+}

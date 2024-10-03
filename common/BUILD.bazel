@@ -7,6 +7,7 @@ cc_library(
         "cgroup.cc",
         "event.cc",
         "namespace.cc",
+        "parameters.cc",
         "stream.cc",
         "subsystem_status.cc",
     ],
@@ -16,6 +17,7 @@ cc_library(
         "event.h",
         "log.h",
         "namespace.h",
+        "parameters.h",
         "states.h",
         "stream.h",
         "subsystem_status.h",
@@ -27,6 +29,7 @@ cc_library(
         "//proto:capcom_cc_proto",
         "//proto:config_cc_proto",
         "//proto:event_cc_proto",
+        "//proto:parameters_cc_proto",
         "//proto:subsystem_status_cc_proto",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
@@ -35,5 +38,17 @@ cc_library(
         "@com_google_absl//absl/strings:str_format",
         "@coroutines//:co",
         "@toolbelt//toolbelt",
+    ],
+)
+
+cc_test(
+    name = "parameters_test",
+    size = "small",
+    srcs = ["parameters_test.cc"],  
+    deps = [
+        ":common",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_googletest//:gtest_main",
     ],
 )

@@ -8,6 +8,7 @@ package adastra.proto;
 
 import "proto/subsystem_status.proto";
 import "proto/log.proto";
+import "proto/parameters.proto";
 
 message Alarm {
   enum Type {
@@ -58,5 +59,6 @@ message Event {
     Alarm alarm = 2;
     OutputEvent output = 3;
     LogMessage log = 4;
+    parameters.ParameterEvent parameter = 5;
   }
 }

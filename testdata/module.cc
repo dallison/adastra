@@ -1,25 +1,27 @@
+#include "absl/debugging/failure_signal_handler.h"
+#include "absl/debugging/symbolize.h"
+#include "stagezero/parameters/parameters.h"
+#include "stagezero/symbols.h"
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 #include <string>
+#include <unistd.h>
 #include <vector>
-#include "stagezero/symbols.h"
-#include "absl/debugging/symbolize.h"
-#include "absl/debugging/failure_signal_handler.h"
 
 void Signal(int sig) { printf("Signal %d\n", sig); }
 
 extern "C" {
 extern char **environ;
 
-int Main(const char *enc_syms, int syms_len, int argc, char **argv, char **envp) {
+int Main(const char *enc_syms, int syms_len, int argc, char **argv,
+         char **envp) {
   write(1, "foo\n", 4);
-   absl::InitializeSymbolizer(argv[0]);
+  absl::InitializeSymbolizer(argv[0]);
 
   absl::InstallFailureSignalHandler({
-    .use_alternate_stack = false,
+      .use_alternate_stack = false,
   });
 
   std::cerr << "module main running\n";
@@ -47,8 +49,9 @@ int Main(const char *enc_syms, int syms_len, int argc, char **argv, char **envp)
 
   // Can do this both with the symbol table or getenv.  Let's do both to
   // make sure it works.
-  char* notify_env = getenv("STAGEZERO_NOTIFY_FD");
-  adastra::stagezero::Symbol* notify = symbols.FindSymbol("STAGEZERO_NOTIFY_FD");
+  char *notify_env = getenv("STAGEZERO_NOTIFY_FD");
+  adastra::stagezero::Symbol *notify =
+      symbols.FindSymbol("STAGEZERO_NOTIFY_FD");
   if (notify != nullptr) {
     std::cerr << "notify symbol ok\n";
     if (notify_env == nullptr) {
@@ -59,6 +62,26 @@ int Main(const char *enc_syms, int syms_len, int argc, char **argv, char **envp)
     (void)write(notify_fd, &val, 8);
   }
 
+  // Print all the parameters.
+  stagezero::Parameters params;
+  absl::StatusOr<std::vector<std::string>> list = params.ListParameters();
+  if (!list.ok()) {
+    std::cerr << "Failed to list parameters: " << list.status().message()
+              << std::endl;
+  } else {
+    printf("List of parameters:\n");
+    for (const std::string &name : *list) {
+      absl::StatusOr<adastra::parameters::Value> value =
+          params.GetParameter(name);
+      if (!value.ok()) {
+        std::cerr << "Failed to get parameter " << name
+                  << value.status().message() << std::endl;
+        ;
+      } else {
+        std::cout << name << " = " << *value << std::endl;
+      }
+    }
+  }
   char **v = envp;
   printf("Env from arg\n");
   while (*v != nullptr) {

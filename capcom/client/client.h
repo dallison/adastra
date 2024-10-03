@@ -8,6 +8,7 @@
 #include "common/alarm.h"
 #include "common/cgroup.h"
 #include "common/event.h"
+#include "common/parameters.h"
 #include "common/states.h"
 #include "common/stream.h"
 #include "common/subsystem_status.h"
@@ -159,6 +160,14 @@ public:
 
   absl::Status AddGlobalVariable(const Variable &var,
                                  co::Coroutine *c = nullptr);
+
+  absl::Status SetParameter(const std::string& name, const parameters::Value &v, co::Coroutine *c = nullptr);
+
+  absl::Status DeleteParameter(const std::string &name,
+                               co::Coroutine *c = nullptr);
+
+  absl::Status UploadParameters(const std::vector<parameters::Parameter> &params,
+                                co::Coroutine *c = nullptr);
 
   absl::StatusOr<std::vector<SubsystemStatus>>
   GetSubsystems(co::Coroutine *c = nullptr);

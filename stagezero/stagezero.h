@@ -11,6 +11,7 @@
 #include "toolbelt/logging.h"
 #include "toolbelt/sockets.h"
 #include "common/cgroup.h"
+#include "common/parameters.h"
 
 #include <memory>
 #include <string>
@@ -178,6 +179,16 @@ private:
   absl::Status SendProcessStartEvent(const std::string &process_id);
   absl::Status SendProcessStopEvent(const std::string &process_id, bool exited,
                                     int exit_status, int term_signal);
+
+
+  absl::Status SetParameter(const std::string& name, const parameters::Value &value, co::Coroutine *c);
+  absl::Status DeleteParameter(const std::string &name, co::Coroutine *c);
+  absl::Status UploadParameters(const std::vector<parameters::Parameter> &params, co::Coroutine *c);
+
+  absl::Status HandleParameterServerRequest(const adastra::proto::parameters::Request &req,
+                                         adastra::proto::parameters::Response &resp, std::shared_ptr<ClientHandler> client);
+
+
   co::CoroutineScheduler &co_scheduler_;
   toolbelt::InetAddress addr_;
   std::string runfiles_dir_;
@@ -198,6 +209,8 @@ private:
   absl::flat_hash_map<std::string, Cgroup> cgroups_;
 
   SymbolTable global_symbols_;
+
+  parameters::ParameterServer parameters_;
 }; // namespace adastra::stagezero
 
 } // namespace adastra::stagezero
