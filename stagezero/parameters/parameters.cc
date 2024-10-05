@@ -2,7 +2,7 @@
 #include "toolbelt/hexdump.h"
 
 namespace stagezero {
-Parameters::Parameters(bool events) {
+Parameters::Parameters(bool events, co::Coroutine *c) {
   // Look for the STAGEZERO_PARAMETERS_FD environment variable.
   const char *env = getenv("STAGEZERO_PARAMETERS_FDS");
   if (env == nullptr) {
@@ -19,7 +19,7 @@ Parameters::Parameters(bool events) {
   adastra::proto::parameters::Request req;
   adastra::proto::parameters::Response resp;
   req.mutable_init()->set_events(events);
-  if (absl::Status status = SendRequestReceiveResponse(req, resp);
+  if (absl::Status status = SendRequestReceiveResponse(req, resp, c);
       !status.ok()) {
     read_fd_.Close();
     write_fd_.Close();
@@ -28,7 +28,7 @@ Parameters::Parameters(bool events) {
 }
 
 absl::Status Parameters::SetParameter(const std::string &name,
-                                      adastra::parameters::Value value) {
+                                      adastra::parameters::Value value, co::Coroutine *c) {
   if (!IsOpen()) {
     return absl::InternalError("No parameters stream");
   }
@@ -37,7 +37,7 @@ absl::Status Parameters::SetParameter(const std::string &name,
   value.ToProto(
       req.mutable_set_parameter()->mutable_parameter()->mutable_value());
   adastra::proto::parameters::Response resp;
-  if (absl::Status status = SendRequestReceiveResponse(req, resp);
+  if (absl::Status status = SendRequestReceiveResponse(req, resp, c);
       !status.ok()) {
     return status;
   }
@@ -49,14 +49,14 @@ absl::Status Parameters::SetParameter(const std::string &name,
   return absl::OkStatus();
 }
 
-absl::Status Parameters::DeleteParameter(const std::string &name) {
+absl::Status Parameters::DeleteParameter(const std::string &name, co::Coroutine *c) {
   if (!IsOpen()) {
     return absl::InternalError("No parameters stream");
   }
   adastra::proto::parameters::Request req;
   req.mutable_delete_parameter()->set_name(name);
   adastra::proto::parameters::Response resp;
-  if (absl::Status status = SendRequestReceiveResponse(req, resp);
+  if (absl::Status status = SendRequestReceiveResponse(req, resp, c);
       !status.ok()) {
     return status;
   }
@@ -68,14 +68,14 @@ absl::Status Parameters::DeleteParameter(const std::string &name) {
   return absl::OkStatus();
 }
 
-absl::StatusOr<std::vector<std::string>> Parameters::ListParameters() {
+absl::StatusOr<std::vector<std::string>> Parameters::ListParameters(co::Coroutine *c) {
   if (!IsOpen()) {
     return absl::InternalError("No parameters stream");
   }
   adastra::proto::parameters::Request req;
   req.mutable_list_parameters();
   adastra::proto::parameters::Response resp;
-  if (absl::Status status = SendRequestReceiveResponse(req, resp);
+  if (absl::Status status = SendRequestReceiveResponse(req, resp, c);
       !status.ok()) {
     return status;
   }
@@ -92,14 +92,14 @@ absl::StatusOr<std::vector<std::string>> Parameters::ListParameters() {
 }
 
 absl::StatusOr<std::vector<std::shared_ptr<adastra::parameters::ParameterNode>>>
-Parameters::GetAllParameters() {
+Parameters::GetAllParameters(co::Coroutine *c) {
   if (!IsOpen()) {
     return absl::InternalError("No parameters stream");
   }
   adastra::proto::parameters::Request req;
   req.mutable_get_all_parameters();
   adastra::proto::parameters::Response resp;
-  if (absl::Status status = SendRequestReceiveResponse(req, resp);
+  if (absl::Status status = SendRequestReceiveResponse(req, resp, c);
       !status.ok()) {
     return status;
   }
@@ -118,14 +118,14 @@ Parameters::GetAllParameters() {
 }
 
 absl::StatusOr<adastra::parameters::Value>
-Parameters::GetParameter(const std::string &name) {
+Parameters::GetParameter(const std::string &name, co::Coroutine *c) {
   if (!IsOpen()) {
     return absl::InternalError("No parameters stream");
   }
   adastra::proto::parameters::Request req;
   req.mutable_get_parameter()->set_name(name);
   adastra::proto::parameters::Response resp;
-  if (absl::Status status = SendRequestReceiveResponse(req, resp);
+  if (absl::Status status = SendRequestReceiveResponse(req, resp, c);
       !status.ok()) {
     return status;
   }
@@ -139,14 +139,14 @@ Parameters::GetParameter(const std::string &name) {
   return value;
 }
 
-absl::StatusOr<bool> Parameters::HasParameter(const std::string &name) {
+absl::StatusOr<bool> Parameters::HasParameter(const std::string &name, co::Coroutine *c) {
   if (!IsOpen()) {
     return absl::InternalError("No parameters stream");
   }
   adastra::proto::parameters::Request req;
   req.mutable_has_parameter()->set_name(name);
   adastra::proto::parameters::Response resp;
-  if (absl::Status status = SendRequestReceiveResponse(req, resp);
+  if (absl::Status status = SendRequestReceiveResponse(req, resp, c);
       !status.ok()) {
     return status;
   }
@@ -159,13 +159,16 @@ absl::StatusOr<bool> Parameters::HasParameter(const std::string &name) {
 }
 
 std::unique_ptr<adastra::parameters::ParameterEvent>
-Parameters::GetEvent() const {
+Parameters::GetEvent(co::Coroutine *c) const {
   std::unique_ptr<adastra::parameters::ParameterEvent> event;
 
   if (!event_fd_.Valid()) {
     return event;
   }
   uint32_t len;
+  if (c != nullptr) {
+    c->Wait(event_fd_.Fd(), POLLIN);
+  }
   ssize_t n = ::read(event_fd_.Fd(), &len, sizeof(len));
   if (n <= 0) {
     return event;
@@ -175,6 +178,9 @@ Parameters::GetEvent() const {
   char *buf = buffer.data();
   size_t remaining = len;
   while (remaining > 0) {
+    if (c != nullptr) {
+      c->Wait(event_fd_.Fd(), POLLIN);
+    }
     ssize_t n = ::read(event_fd_.Fd(), buf, remaining);
     if (n <= 0) {
       return event;
@@ -209,7 +215,7 @@ Parameters::GetEvent() const {
 
 absl::Status Parameters::SendRequestReceiveResponse(
     const adastra::proto::parameters::Request &req,
-    adastra::proto::parameters::Response &resp) {
+    adastra::proto::parameters::Response &resp, co::Coroutine *c) {
   {
     uint64_t len = req.ByteSizeLong();
     std::vector<char> buffer(len + sizeof(uint32_t));
@@ -224,6 +230,9 @@ absl::Status Parameters::SendRequestReceiveResponse(
     char *sbuf = buffer.data();
     size_t remaining = len + sizeof(uint32_t);
     while (remaining > 0) {
+      if (c != nullptr) {
+        c->Wait(write_fd_.Fd(), POLLOUT);
+      }
       ssize_t n = ::write(write_fd_.Fd(), sbuf, remaining);
       if (n <= 0) {
         return absl::InternalError("Failed to write to parameters pipe");
@@ -234,6 +243,9 @@ absl::Status Parameters::SendRequestReceiveResponse(
   }
   // Read length.
   uint32_t len;
+  if (c != nullptr) {
+    c->Wait(read_fd_.Fd(), POLLIN);
+  }
   ssize_t n = ::read(read_fd_.Fd(), &len, sizeof(len));
   if (n <= 0) {
     return absl::InternalError("Failed to read from parameters pipe: " +
@@ -243,6 +255,9 @@ absl::Status Parameters::SendRequestReceiveResponse(
   char *buf = buffer.data();
   size_t remaining = len;
   while (remaining > 0) {
+    if (c != nullptr) {
+      c->Wait(read_fd_.Fd(), POLLIN);
+    }
     ssize_t n = ::read(read_fd_.Fd(), buf, remaining);
     if (n <= 0) {
       return absl::InternalError("Failed to read from parameters pipe");

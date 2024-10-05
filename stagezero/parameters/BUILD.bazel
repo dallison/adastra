@@ -12,5 +12,6 @@ cc_library(
         "//proto:parameters_cc_proto",
         "//common",
         "@toolbelt//toolbelt",
+        "@coroutines//:co",
     ],
 )
