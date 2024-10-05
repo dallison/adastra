@@ -31,6 +31,7 @@ struct ProcessOptions {
   std::vector<adastra::Variable> vars;
   std::vector<std::string> args;
   std::vector<adastra::Stream> streams;
+  std::vector<parameters::Parameter> parameters;
   int32_t startup_timeout_secs = kDefaultStartupTimeout;
   int32_t sigint_shutdown_timeout_secs = kDefaultSigIntShutdownTimeout;
   int32_t sigterm_shutdown_timeout_secs = kDefaultSigTermShutdownTimeout;
@@ -129,14 +130,16 @@ public:
                           co::Coroutine *co = nullptr);
   absl::Status KillCgroup(const std::string &cgroup,
                           co::Coroutine *co = nullptr);
-  absl::Status SetParameter(const std::string& name, parameters::Value &v, co::Coroutine *c = nullptr);
+  absl::Status SetParameter(const std::string &name, parameters::Value &v,
+                            co::Coroutine *c = nullptr);
 
   absl::Status DeleteParameter(const std::string &name,
                                co::Coroutine *c = nullptr);
 
-  absl::Status UploadParameters(const std::vector<std::shared_ptr<parameters::Parameter>> &params,
-                                co::Coroutine *c = nullptr);
-                                
+  absl::Status
+  UploadParameters(const std::vector<parameters::Parameter> &params,
+                   co::Coroutine *c = nullptr);
+
 private:
   absl::StatusOr<std::pair<std::string, int>> LaunchStaticProcessInternal(
       const std::string &name, const std::string &executable,

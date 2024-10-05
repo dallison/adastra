@@ -6,12 +6,12 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
+#include "common/cgroup.h"
+#include "common/parameters.h"
 #include "stagezero/process.h"
 #include "stagezero/symbols.h"
 #include "toolbelt/logging.h"
 #include "toolbelt/sockets.h"
-#include "common/cgroup.h"
-#include "common/parameters.h"
 
 #include <memory>
 #include <string>
@@ -26,9 +26,9 @@ class ClientHandler;
 class StageZero {
 public:
   StageZero(co::CoroutineScheduler &scheduler, toolbelt::InetAddress addr,
-            bool log_to_output, const std::string &logdir, const std::string& log_level = "debug", 
-            const std::string& runfiles_dir = "",
-            int notify_fd = -1);
+            bool log_to_output, const std::string &logdir,
+            const std::string &log_level = "debug",
+            const std::string &runfiles_dir = "", int notify_fd = -1);
   ~StageZero();
   absl::Status Run();
   void Stop();
@@ -42,7 +42,7 @@ private:
   friend class Process;
   friend class StaticProcess;
   friend class Zygote;
-  
+
   absl::Status HandleIncomingConnection(toolbelt::TCPSocket &listen_socket,
                                         co::Coroutine *c);
 
@@ -153,7 +153,7 @@ private:
     return inserted;
   }
 
-  absl::Status RemoveCgroup(const std::string& cgroup) {
+  absl::Status RemoveCgroup(const std::string &cgroup) {
     auto it = cgroups_.find(cgroup);
     if (it == cgroups_.end()) {
       return absl::InternalError(absl::StrFormat("No such cgroup %s", cgroup));
@@ -162,7 +162,7 @@ private:
     return absl::OkStatus();
   }
 
-  Cgroup* FindCgroup(const std::string &name) {
+  Cgroup *FindCgroup(const std::string &name) {
     auto it = cgroups_.find(name);
     if (it == cgroups_.end()) {
       return nullptr;
@@ -173,21 +173,25 @@ private:
   void KillAllProcesses();
   void KillAllProcesses(bool emergency, co::Coroutine *c);
 
-  absl::Status RegisterCgroup(const Cgroup& cgroup);
-  absl::Status UnregisterCgroup(const std::string& cgroup);
+  absl::Status RegisterCgroup(const Cgroup &cgroup);
+  absl::Status UnregisterCgroup(const std::string &cgroup);
 
   absl::Status SendProcessStartEvent(const std::string &process_id);
   absl::Status SendProcessStopEvent(const std::string &process_id, bool exited,
                                     int exit_status, int term_signal);
 
-
-  absl::Status SetParameter(const std::string& name, const parameters::Value &value, co::Coroutine *c);
+  absl::Status SetParameter(const std::string &name,
+                            const parameters::Value &value, co::Coroutine *c);
   absl::Status DeleteParameter(const std::string &name, co::Coroutine *c);
-  absl::Status UploadParameters(const std::vector<parameters::Parameter> &params, co::Coroutine *c);
+  absl::Status
+  UploadParameters(const std::vector<parameters::Parameter> &params,
+                   co::Coroutine *c);
 
-  absl::Status HandleParameterServerRequest(const adastra::proto::parameters::Request &req,
-                                         adastra::proto::parameters::Response &resp, std::shared_ptr<ClientHandler> client);
-
+  void
+  HandleParameterServerRequest(std::shared_ptr<Process> proc,
+                               const adastra::proto::parameters::Request &req,
+                               adastra::proto::parameters::Response &resp,
+                               std::shared_ptr<ClientHandler> client);
 
   co::CoroutineScheduler &co_scheduler_;
   toolbelt::InetAddress addr_;

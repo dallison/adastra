@@ -476,7 +476,6 @@ void ClientHandler::HandleUploadParameters(
     control::UploadParametersResponse *response, co::Coroutine *c) {
   std::vector<parameters::Parameter> params;
 
-  std::cerr << req.DebugString() << std::endl;
   for (auto &p : req.parameters()) {
     parameters::Value v;
     v.FromProto(p.value());

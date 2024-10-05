@@ -55,7 +55,8 @@ namespace adastra::stagezero {
 Process::Process(co::CoroutineScheduler &scheduler, StageZero &stagezero,
                  std::shared_ptr<ClientHandler> client, std::string name)
     : scheduler_(scheduler), stagezero_(stagezero), client_(std::move(client)),
-      name_(std::move(name)), local_symbols_(client_->GetGlobalSymbols()) {
+      name_(std::move(name)), local_symbols_(client_->GetGlobalSymbols()),
+      local_parameters_(true) {
   // Add a locall symbol "name" for the process name.
   local_symbols_.AddSymbol("name", name_, false);
 }
@@ -144,6 +145,17 @@ StaticProcess::StaticProcess(
       req_(std::move(req)) {
   for (auto &var : req.opts().vars()) {
     local_symbols_.AddSymbol(var.name(), var.value(), var.exported());
+  }
+  for (auto &parameter : req.opts().parameters()) {
+    parameters::Value v;
+    v.FromProto(parameter.value());
+    if (absl::Status status =
+            local_parameters_.SetParameter(parameter.name(), v);
+        !status.ok()) {
+      client_->Log(Name(), toolbelt::LogLevel::kError,
+                   "Failed to set local parameter %s: %s",
+                   parameter.name().c_str(), status.ToString().c_str());
+    }
   }
   SetSignalTimeouts(req.opts().sigint_shutdown_timeout_secs(),
                     req.opts().sigterm_shutdown_timeout_secs());
@@ -657,15 +669,10 @@ void Process::RunParameterServer() {
         }
       }
       adastra::proto::parameters::Response resp;
-      if (absl::Status status =
-              proc->GetStageZero().HandleParameterServerRequest(req, resp,
-                                                                client);
-          !status.ok()) {
-        client->Log(proc->Name(), toolbelt::LogLevel::kError,
-                    "Failed to process parameter request: %s",
-                    status.ToString().c_str());
-        break;
-      }
+
+      proc->GetStageZero().HandleParameterServerRequest(proc, req, resp,
+                                                        client);
+
       uint64_t len = resp.ByteSizeLong();
       std::vector<char> resp_buffer(len + sizeof(uint32_t));
       char *respbuf = resp_buffer.data() + 4;
@@ -1475,7 +1482,7 @@ absl::Status VirtualProcess::Start(co::Coroutine *c) {
 
   // Run a coroutine to process commands from the parameter stream.
   RunParameterServer();
-  
+
   client_->AddCoroutine(std::make_unique<co::Coroutine>(scheduler_, [
     proc, vproc, zygote = zygote_, client = client_
   ](co::Coroutine * c2) {

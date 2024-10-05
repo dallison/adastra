@@ -552,8 +552,7 @@ absl::Status Capcom::DeleteParameter(const std::string &name) {
 absl::Status
 Capcom::UploadParameters(const std::vector<parameters::Parameter> &params) {
   for (auto &param : params) {
-    if (absl::Status status =
-            parameters_.SetParameter(param.GetName(), param.GetValue());
+    if (absl::Status status = parameters_.SetParameter(param.name, param.value);
         !status.ok()) {
       return status;
     }

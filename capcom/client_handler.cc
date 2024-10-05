@@ -52,13 +52,13 @@ ClientHandler::SendParameterUpdateEvent(const std::string &name,
 }
 
 absl::Status ClientHandler::SendParameterDeleteEvent(const std::string &name) {
-   if ((event_mask_ & kParameterEvents) == 0) {
+  if ((event_mask_ & kParameterEvents) == 0) {
     return absl::OkStatus();
   }
   auto event = std::make_shared<adastra::proto::Event>();
   auto p = event->mutable_parameter();
   p->set_delete_(name);
-  return QueueEvent(std::move(event)); 
+  return QueueEvent(std::move(event));
 }
 
 absl::Status ClientHandler::SendAlarm(const Alarm &alarm) {

@@ -45,6 +45,7 @@ struct StaticProcess {
   std::string executable;
   std::string compute; // Where to run.  Empty is localhost.
   std::vector<Variable> vars;
+  std::vector<parameters::Parameter> parameters;
   std::vector<std::string> args;
   int32_t startup_timeout_secs = kDefaultStartupTimeout;
   int32_t sigint_shutdown_timeout_secs = kDefaultSigIntShutdownTimeout;
@@ -84,6 +85,7 @@ struct VirtualProcess {
   std::string main_func;
   std::string compute; // Where to run.  Empty is localhost.
   std::vector<Variable> vars;
+  std::vector<parameters::Parameter> parameters;
   std::vector<std::string> args;
   int32_t startup_timeout_secs = kDefaultStartupTimeout;
   int32_t sigint_shutdown_timeout_secs = kDefaultSigIntShutdownTimeout;
@@ -161,13 +163,15 @@ public:
   absl::Status AddGlobalVariable(const Variable &var,
                                  co::Coroutine *c = nullptr);
 
-  absl::Status SetParameter(const std::string& name, const parameters::Value &v, co::Coroutine *c = nullptr);
+  absl::Status SetParameter(const std::string &name, const parameters::Value &v,
+                            co::Coroutine *c = nullptr);
 
   absl::Status DeleteParameter(const std::string &name,
                                co::Coroutine *c = nullptr);
 
-  absl::Status UploadParameters(const std::vector<parameters::Parameter> &params,
-                                co::Coroutine *c = nullptr);
+  absl::Status
+  UploadParameters(const std::vector<parameters::Parameter> &params,
+                   co::Coroutine *c = nullptr);
 
   absl::StatusOr<std::vector<SubsystemStatus>>
   GetSubsystems(co::Coroutine *c = nullptr);

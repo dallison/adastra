@@ -22,7 +22,8 @@ public:
   absl::StatusOr<std::vector<std::string>> ListParameters();
 
   // Get the names and values of all parameters, not in any particular order.
-  absl::StatusOr<std::vector<std::shared_ptr<adastra::parameters::Parameter>>>
+  absl::StatusOr<
+      std::vector<std::shared_ptr<adastra::parameters::ParameterNode>>>
   GetAllParameters();
 
   // Get the value of a parameter.  Error if it doesn't exist

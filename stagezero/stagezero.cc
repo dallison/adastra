@@ -290,7 +290,6 @@ absl::Status StageZero::SendProcessStopEvent(const std::string &process_id,
 absl::Status StageZero::SetParameter(const std::string &name,
                                      const parameters::Value &value,
                                      co::Coroutine *c) {
-  std::cerr << "setting parameter " << name << std::endl;
   if (absl::Status status = parameters_.SetParameter(name, value);
       !status.ok()) {
     return status;
@@ -310,8 +309,7 @@ absl::Status
 StageZero::UploadParameters(const std::vector<parameters::Parameter> &params,
                             co::Coroutine *c) {
   for (auto &param : params) {
-    if (absl::Status status =
-            parameters_.SetParameter(param.GetName(), param.GetValue());
+    if (absl::Status status = parameters_.SetParameter(param.name, param.value);
         !status.ok()) {
       return status;
     }
@@ -319,7 +317,8 @@ StageZero::UploadParameters(const std::vector<parameters::Parameter> &params,
   return absl::OkStatus();
 }
 
-absl::Status StageZero::HandleParameterServerRequest(
+void StageZero::HandleParameterServerRequest(
+    std::shared_ptr<Process> process,
     const adastra::proto::parameters::Request &req,
     adastra::proto::parameters::Response &resp,
     std::shared_ptr<ClientHandler> client) {
@@ -327,36 +326,69 @@ absl::Status StageZero::HandleParameterServerRequest(
   case adastra::proto::parameters::Request::kSetParameter: {
     parameters::Value value;
     value.FromProto(req.set_parameter().parameter().value());
+    if (req.set_parameter().parameter().name()[0] != '/') {
+      // Local parameter
+      if (absl::Status status = process->Parameters().SetParameter(
+              req.set_parameter().parameter().name(), value);
+          !status.ok()) {
+        resp.mutable_set_parameter()->set_error(status.ToString());
+      }
+      break;
+    }
     if (absl::Status status = parameters_.SetParameter(
             req.set_parameter().parameter().name(), value);
         !status.ok()) {
-      return status;
+      resp.mutable_set_parameter()->set_error(status.ToString());
+      break;
     }
     if (absl::Status status = client->SendParameterUpdateEvent(
             req.set_parameter().parameter().name(), value);
         !status.ok()) {
-      return status;
+      resp.mutable_set_parameter()->set_error(status.ToString());
+      break;
     }
     break;
   }
   case adastra::proto::parameters::Request::kDeleteParameter:
+    if (req.delete_parameter().name()[0] != '/') {
+      // Local parameter
+      if (absl::Status status = process->Parameters().DeleteParameter(
+              req.delete_parameter().name());
+          !status.ok()) {
+        resp.mutable_delete_parameter()->set_error(status.ToString());
+        break;
+      }
+      break;
+    }
     if (absl::Status status =
             parameters_.DeleteParameter(req.delete_parameter().name());
         !status.ok()) {
-      return status;
+      resp.mutable_delete_parameter()->set_error(status.ToString());
+      break;
     }
     if (absl::Status status =
             client->SendParameterDeleteEvent(req.delete_parameter().name());
         !status.ok()) {
-      return status;
+      resp.mutable_delete_parameter()->set_error(status.ToString());
     }
     break;
 
   case adastra::proto::parameters::Request::kListParameters: {
+    absl::StatusOr<std::vector<std::string>> local_para_names =
+        process->Parameters().ListParameters();
+    if (!local_para_names.ok()) {
+      resp.mutable_list_parameters()->set_error(
+          local_para_names.status().ToString());
+      break;
+    }
+    for (auto &name : *local_para_names) {
+      resp.mutable_list_parameters()->add_names(name);
+    }
     absl::StatusOr<std::vector<std::string>> para_names =
         parameters_.ListParameters();
     if (!para_names.ok()) {
-      return para_names.status();
+      resp.mutable_list_parameters()->set_error(para_names.status().ToString());
+      break;
     }
     for (auto &name : *para_names) {
       resp.mutable_list_parameters()->add_names(name);
@@ -365,31 +397,63 @@ absl::Status StageZero::HandleParameterServerRequest(
   }
 
   case adastra::proto::parameters::Request::kGetAllParameters: {
-    absl::StatusOr<std::vector<std::shared_ptr<parameters::Parameter>>> paras =
+    absl::StatusOr<std::vector<parameters::Parameter>> local_paras =
+        process->Parameters().GetAllParameters();
+    if (!local_paras.ok()) {
+      resp.mutable_get_all_parameters()->set_error(
+          local_paras.status().ToString());
+      break;
+    }
+    for (auto &p : *local_paras) {
+      p.ToProto(resp.mutable_get_all_parameters()->add_parameters());
+    }
+    absl::StatusOr<std::vector<parameters::Parameter>> paras =
         parameters_.GetAllParameters();
     if (!paras.ok()) {
-      return paras.status();
+      resp.mutable_get_all_parameters()->set_error(paras.status().ToString());
+      break;
     }
     for (auto &p : *paras) {
-      p->ToProto(resp.mutable_get_all_parameters()->add_parameters());
+      p.ToProto(resp.mutable_get_all_parameters()->add_parameters());
     }
     break;
   }
   case adastra::proto::parameters::Request::kGetParameter: {
+    if (req.get_parameter().name()[0] != '/') {
+      // Local parameter
+      absl::StatusOr<parameters::Value> value =
+          process->Parameters().GetParameter(req.get_parameter().name());
+      if (!value.ok()) {
+        resp.mutable_get_parameter()->set_error(value.status().ToString());
+        break;
+      }
+      value->ToProto(resp.mutable_get_parameter()->mutable_value());
+      break;
+    }
     absl::StatusOr<parameters::Value> value =
         parameters_.GetParameter(req.get_parameter().name());
+    if (!value.ok()) {
+      resp.mutable_get_parameter()->set_error(value.status().ToString());
+      break;
+    }
     value->ToProto(resp.mutable_get_parameter()->mutable_value());
     break;
   }
   case adastra::proto::parameters::Request::kHasParameter:
+    if (req.get_parameter().name()[0] != '/') {
+      // Local parameter
+      resp.mutable_has_parameter()->set_has(
+          process->Parameters().HasParameter(req.has_parameter().name()));
+      break;
+    }
+
     resp.mutable_has_parameter()->set_has(
         parameters_.HasParameter(req.has_parameter().name()));
     break;
 
   default:
-    return absl::InvalidArgumentError("Unknown parameter request");
+    resp.set_general_error("Unknown parameter request");
   }
-  return absl::OkStatus();
 }
 
 } // namespace adastra::stagezero

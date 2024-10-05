@@ -41,8 +41,7 @@ Subsystem::ConnectToStageZero(const Compute *compute, co::Coroutine *c) {
     }
 
     // Upload all the parameters to stagezero.
-    std::cerr << "Uploading parameters to stagezero" << std::endl;
-    std::vector<std::shared_ptr<parameters::Parameter>> parameters =
+    std::vector<parameters::Parameter> parameters =
         capcom_.parameters_.GetAllParameters();
     // Send the parameters to the client.
     if (absl::Status status = client->UploadParameters(parameters, c);
@@ -495,6 +494,17 @@ void Process::ParseOptions(const stagezero::config::ProcessOptions &options) {
   for (auto &var : options.vars()) {
     vars_.push_back({var.name(), var.value(), var.exported()});
   }
+  // Local parameters.
+  for (auto &param : options.parameters()) {
+    parameters::Value v;
+    v.FromProto(param.value());
+    if (absl::Status status = local_parameters_.SetParameter(param.name(), v);
+        !status.ok()) {
+      capcom_.Log(Name(), toolbelt::LogLevel::kError,
+                  "Failed to set local parameter %s: %s", param.name().c_str(),
+                  status.ToString().c_str());
+    }
+  }
   startup_timeout_secs_ = options.startup_timeout_secs();
   sigint_shutdown_timeout_secs_ = options.sigint_shutdown_timeout_secs();
   sigterm_shutdown_timeout_secs_ = options.sigterm_shutdown_timeout_secs();
@@ -578,6 +588,11 @@ absl::Status StaticProcess::Launch(Subsystem *subsystem, co::Coroutine *c) {
   // Process variables, can override subsystem vars.
   for (auto &var : vars_) {
     options.vars.push_back({var.name, var.value, var.exported});
+  }
+
+  // Local parameters.
+  for (auto &param : local_parameters_.GetAllParameters()) {
+    options.parameters.push_back({param.name, param.value});
   }
 
   options.streams = subsystem->Streams();
@@ -672,6 +687,11 @@ absl::Status VirtualProcess::Launch(Subsystem *subsystem, co::Coroutine *c) {
   options.streams = subsystem->Streams();
   for (auto &stream : streams_) {
     AddStream(options.streams, stream);
+  }
+
+  // Local parameters.
+  for (auto &param : local_parameters_.GetAllParameters()) {
+    options.parameters.push_back({param.name, param.value});
   }
 
   absl::StatusOr<std::pair<std::string, int>> s = client_->LaunchVirtualProcess(

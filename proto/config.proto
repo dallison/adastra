@@ -8,6 +8,7 @@ package adastra.stagezero.config;
 
 import "proto/stream.proto";
 import "proto/cgroup.proto";
+import "proto/parameters.proto";
 
 message Compute {
   string name = 1;
@@ -90,6 +91,9 @@ message ProcessOptions {
 
   // Namespaces to assign to (only on Linux).
   optional Namespace ns = 17;
+
+  // Local parameters for the process.
+  repeated adastra.proto.parameters.Parameter parameters = 18;
 }
 
 message StaticProcess { string executable = 1; }

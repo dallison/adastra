@@ -26,10 +26,10 @@ std::vector<std::string> ParameterServer::ParseParameterName(std::string name) {
   return parts;
 }
 
-std::shared_ptr<Parameter>
+std::shared_ptr<ParameterNode>
 ParameterServer::FindParameter(const std::string &name) {
   std::vector<std::string> parts = ParseParameterName(name);
-  std::shared_ptr<Parameter> node = nodes_[parts[0]];
+  std::shared_ptr<ParameterNode> node = nodes_[parts[0]];
   if (node == nullptr) {
     return nullptr;
   }
@@ -48,18 +48,26 @@ absl::StatusOr<std::vector<std::string>> ParameterServer::ListParameters() {
     if (node == nullptr) {
       continue;
     }
-    node->FlattenNames("/" + name, names);
+    if (is_local_) {
+      node->FlattenNames(name, names);
+    } else {
+      node->FlattenNames("/" + name, names);
+    }
   }
   return names;
 }
 
-std::vector<std::shared_ptr<Parameter>> ParameterServer::GetAllParameters() {
-  std::vector<std::shared_ptr<Parameter>> params;
+std::vector<Parameter> ParameterServer::GetAllParameters() {
+  std::vector<Parameter> params;
   for (auto & [ name, node ] : nodes_) {
     if (node == nullptr) {
       continue;
     }
-    node->Flatten("/" + name, params);
+    if (is_local_) {
+      node->Flatten(name, params);
+    } else {
+      node->Flatten("/" + name, params);
+    }
   }
   return params;
 }
@@ -70,9 +78,9 @@ absl::Status ParameterServer::SetParameter(const std::string &name,
   if (parts.empty()) {
     return absl::InvalidArgumentError("Invalid parameter name");
   }
-  std::shared_ptr<Parameter> &node = nodes_[parts[0]];
+  std::shared_ptr<ParameterNode> &node = nodes_[parts[0]];
   if (node == nullptr) {
-    auto child = std::make_shared<Parameter>(parts[0]);
+    auto child = std::make_shared<ParameterNode>(parts[0]);
     child->parent_ = node.get();
     node = child;
   }
@@ -87,19 +95,19 @@ absl::Status ParameterServer::SetParameter(const std::string &name,
   }
 
   // Add all intermediate children nodes.  Leave the last one off.
-  std::shared_ptr<Parameter> parent = node;
+  std::shared_ptr<ParameterNode> parent = node;
   for (size_t i = 1; i < parts.size() - 1; i++) {
-    std::shared_ptr<Parameter> &child = parent->children_[parts[i]];
+    std::shared_ptr<ParameterNode> &child = parent->children_[parts[i]];
     if (child == nullptr) {
-      child = std::make_shared<Parameter>(parts[i]);
+      child = std::make_shared<ParameterNode>(parts[i]);
       child->parent_ = parent.get();
     }
     parent = child;
   }
   // Add the leaf node and set its value.
-  std::shared_ptr<Parameter> &last_node = parent->children_[parts.back()];
+  std::shared_ptr<ParameterNode> &last_node = parent->children_[parts.back()];
   if (last_node == nullptr) {
-    last_node = std::make_shared<Parameter>(parts.back());
+    last_node = std::make_shared<ParameterNode>(parts.back());
     last_node->parent_ = parent.get();
   }
   if (value.GetType() == Type::kMap) {
@@ -115,14 +123,15 @@ absl::StatusOr<Value> ParameterServer::GetParameter(const std::string &name) {
   if (parts.empty()) {
     return absl::InvalidArgumentError("Invalid parameter name");
   }
-  std::shared_ptr<Parameter> node = nodes_[parts[0]];
+  std::shared_ptr<ParameterNode> node = nodes_[parts[0]];
   if (node == nullptr) {
-    return absl::NotFoundError("Parameter not found");
+    return absl::NotFoundError(absl::StrFormat("Parameter %s not found", name));
   }
   for (size_t i = 1; i < parts.size(); i++) {
     node = node->children_[parts[i]];
     if (node == nullptr) {
-      return absl::NotFoundError("Parameter not found");
+      return absl::NotFoundError(
+          absl::StrFormat("Parameter %s not found", name));
     }
   }
   if (node->children_.empty()) {
@@ -137,7 +146,7 @@ bool ParameterServer::HasParameter(const std::string &name) {
   if (parts.empty()) {
     return false;
   }
-  std::shared_ptr<Parameter> node = nodes_[parts[0]];
+  std::shared_ptr<ParameterNode> node = nodes_[parts[0]];
   if (node == nullptr) {
     return false;
   }
@@ -151,15 +160,17 @@ bool ParameterServer::HasParameter(const std::string &name) {
 }
 
 absl::Status ParameterServer::DeleteParameter(const std::string &name) {
+  std::cerr << "Deleting parameter " << name << std::endl;
   std::vector<std::string> parts = ParseParameterName(name);
   if (parts.empty()) {
     return absl::InvalidArgumentError("Invalid parameter name");
   }
   auto it = nodes_.find(parts[0]);
   if (it == nodes_.end()) {
-    return absl::NotFoundError("Parameter not found");
-  } 
-  std::shared_ptr<Parameter> node = it->second;
+    return absl::NotFoundError(
+        absl::StrFormat("Parameter %s not found for deletion", name));
+  }
+  std::shared_ptr<ParameterNode> node = it->second;
   if (parts.size() == 1) {
     auto it = nodes_.find(parts[0]);
     if (it != nodes_.end()) {
@@ -167,23 +178,25 @@ absl::Status ParameterServer::DeleteParameter(const std::string &name) {
     }
     return absl::OkStatus();
   }
-  for (size_t i = 1; i < parts.size()-1; i++) {
+  for (size_t i = 1; i < parts.size() - 1; i++) {
     auto it = node->children_.find(parts[i]);
     if (it == node->children_.end()) {
-      return absl::NotFoundError("Parameter not found");
+      return absl::NotFoundError(
+          absl::StrFormat("Parameter %s not found for deletion", name));
     }
     node = it->second;
   }
   it = node->children_.find(parts.back());
   if (it == node->children_.end()) {
-    return absl::NotFoundError("Parameter not found");
+    return absl::NotFoundError(
+        absl::StrFormat("Parameter %s not found for deletion", name));
   }
   node->children_.erase(it);
   return absl::OkStatus();
 }
 
 std::map<std::string, Value>
-ParameterServer::MakeMap(const std::shared_ptr<Parameter> &node) {
+ParameterServer::MakeMap(const std::shared_ptr<ParameterNode> &node) {
   std::map<std::string, Value> map;
   for (auto & [ name, child ] : node->children_) {
     if (child->children_.empty()) {
@@ -196,11 +209,11 @@ ParameterServer::MakeMap(const std::shared_ptr<Parameter> &node) {
 }
 
 void ParameterServer::ExpandMap(const std::map<std::string, Value> &map,
-                                std::shared_ptr<Parameter> parent) {
+                                std::shared_ptr<ParameterNode> parent) {
   for (auto & [ name, value ] : map) {
-    std::shared_ptr<Parameter> &node = parent->children_[name];
+    std::shared_ptr<ParameterNode> &node = parent->children_[name];
     if (node == nullptr) {
-      node = std::make_shared<Parameter>(name);
+      node = std::make_shared<ParameterNode>(name);
       node->parent_ = parent.get();
     }
     if (value.GetType() == Type::kMap) {
@@ -211,24 +224,24 @@ void ParameterServer::ExpandMap(const std::map<std::string, Value> &map,
   }
 }
 
-  void ParameterServer::Dump(std::ostream& os) {
-    for (auto & [ name, node ] : nodes_) {
-      if (node == nullptr) {
-        continue;
-      }
-      node->Dump(os);
+void ParameterServer::Dump(std::ostream &os) {
+  for (auto & [ name, node ] : nodes_) {
+    if (node == nullptr) {
+      continue;
     }
+    node->Dump(os);
   }
+}
 
-  void Parameter::Dump(std::ostream& os) {
-    os << name_ << ": " << value_ << std::endl;
-    for (auto & [ name, child ] : children_) {
-      child->Dump(os);
-    }
+void ParameterNode::Dump(std::ostream &os) {
+  os << name_ << ": " << value_ << std::endl;
+  for (auto & [ name, child ] : children_) {
+    child->Dump(os);
   }
+}
 
-void Parameter::FlattenNames(std::string prefix,
-                             std::vector<std::string> &names) {
+void ParameterNode::FlattenNames(std::string prefix,
+                                 std::vector<std::string> &names) {
   if (children_.empty()) {
     names.push_back(prefix);
     return;
@@ -241,10 +254,10 @@ void Parameter::FlattenNames(std::string prefix,
   }
 }
 
-void Parameter::Flatten(std::string prefix,
-                        std::vector<std::shared_ptr<Parameter>> &params) {
+void ParameterNode::Flatten(std::string prefix,
+                            std::vector<Parameter> &params) {
   if (children_.empty()) {
-    params.push_back(shared_from_this());
+    params.push_back({.name = GetFullName(), .value = GetValue()});
     return;
   }
   for (auto & [ name, child ] : children_) {
@@ -275,6 +288,10 @@ void Value::ToProto(adastra::proto::parameters::Value *dest) const {
     break;
   case Type::kBytes:
     dest->set_bytes_value(GetBytes().data(), GetBytes().size());
+    break;
+  case Type::kTime:
+    dest->mutable_time_value()->set_seconds(GetTime().tv_sec);
+    dest->mutable_time_value()->set_nanos(GetTime().tv_nsec);
     break;
   case Type::kList: {
     auto list = dest->mutable_list_value();
@@ -316,6 +333,13 @@ void Value::FromProto(const adastra::proto::parameters::Value &proto) {
   case adastra::proto::parameters::Value::kBytesValue:
     *this = proto.bytes_value();
     break;
+  case adastra::proto::parameters::Value::kTimeValue: {
+    struct timespec ts;
+    ts.tv_sec = proto.time_value().seconds();
+    ts.tv_nsec = proto.time_value().nanos();
+    *this = ts;
+    break;
+  }
   case adastra::proto::parameters::Value::kListValue: {
     std::vector<Value> list;
     for (const auto &v : proto.list_value().values()) {
@@ -341,15 +365,26 @@ void Value::FromProto(const adastra::proto::parameters::Value &proto) {
   }
 }
 
-void Parameter::ToProto(adastra::proto::parameters::Parameter *dest) const {
+void ParameterNode::ToProto(adastra::proto::parameters::Parameter *dest) const {
   dest->set_name(name_);
   auto value = dest->mutable_value();
   value_.ToProto(value);
 }
 
-void Parameter::FromProto(const adastra::proto::parameters::Parameter &proto) {
+void ParameterNode::FromProto(
+    const adastra::proto::parameters::Parameter &proto) {
   name_ = proto.name();
   value_.FromProto(proto.value());
 }
 
+void Parameter::ToProto(adastra::proto::parameters::Parameter *dest) const {
+  dest->set_name(name);
+  auto v = dest->mutable_value();
+  value.ToProto(v);
+}
+
+void Parameter::FromProto(const adastra::proto::parameters::Parameter &proto) {
+  name = proto.name();
+  value.FromProto(proto.value());
+}
 } // namespace adastra::parameters

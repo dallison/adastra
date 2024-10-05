@@ -78,7 +78,7 @@ absl::StatusOr<std::vector<std::string>> Parameters::ListParameters() {
   return names;
 }
 
-absl::StatusOr<std::vector<std::shared_ptr<adastra::parameters::Parameter>>>
+absl::StatusOr<std::vector<std::shared_ptr<adastra::parameters::ParameterNode>>>
 Parameters::GetAllParameters() {
   if (!IsOpen()) {
     return absl::InternalError("No parameters stream");
@@ -95,9 +95,9 @@ Parameters::GetAllParameters() {
     return absl::InternalError("Failed to get all parameters: " +
                                resp.get_all_parameters().error());
   }
-  std::vector<std::shared_ptr<adastra::parameters::Parameter>> params;
+  std::vector<std::shared_ptr<adastra::parameters::ParameterNode>> params;
   for (const auto &param : resp.get_all_parameters().parameters()) {
-    auto p = std::make_shared<adastra::parameters::Parameter>();
+    auto p = std::make_shared<adastra::parameters::ParameterNode>();
     p->FromProto(param);
     params.push_back(p);
   }

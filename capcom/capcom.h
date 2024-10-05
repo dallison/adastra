@@ -11,8 +11,8 @@
 #include "capcom/subsystem.h"
 #include "common/cgroup.h"
 #include "common/event.h"
-#include "common/vars.h"
 #include "common/parameters.h"
+#include "common/vars.h"
 #include "proto/log.pb.h"
 #include "stagezero/client/client.h"
 #include "toolbelt/logging.h"
@@ -145,7 +145,7 @@ private:
   void SendParameterUpdateEvent(const std::string &name,
                                 const parameters::Value &value);
   void SendParameterDeleteEvent(const std::string &name);
-  
+
   void SendAlarm(const Alarm &alarm);
 
   std::vector<Subsystem *> GetSubsystems() const;
@@ -161,8 +161,8 @@ private:
   absl::Status PropagateParameterUpdate(const std::string &name,
                                         parameters::Value &value,
                                         co::Coroutine *c);
-     absl::Status PropagateParameterDelete(const std::string &name,
-                                        co::Coroutine *c);      
+  absl::Status PropagateParameterDelete(const std::string &name,
+                                        co::Coroutine *c);
 
   void Log(const std::string &source, toolbelt::LogLevel level, const char *fmt,
            ...);
@@ -177,11 +177,15 @@ private:
   absl::Status KillCgroup(const std::string &compute, const std::string &cgroup,
                           co::Coroutine *c);
 
-  absl::Status SetParameter(const std::string& name, const parameters::Value &value);
+  absl::Status SetParameter(const std::string &name,
+                            const parameters::Value &value);
   absl::Status DeleteParameter(const std::string &name);
-  absl::Status UploadParameters(const std::vector<parameters::Parameter> &params);
+  absl::Status
+  UploadParameters(const std::vector<parameters::Parameter> &params);
 
-  absl::Status HandleParameterEvent(const adastra::proto::parameters::ParameterEvent &event, co::Coroutine* c);
+  absl::Status
+  HandleParameterEvent(const adastra::proto::parameters::ParameterEvent &event,
+                       co::Coroutine *c);
 
 private:
   co::CoroutineScheduler &co_scheduler_;

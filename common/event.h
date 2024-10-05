@@ -45,7 +45,7 @@ struct Output {
 
 struct Event {
   EventType type;
-  std::variant<SubsystemStatus, Alarm, Output, LogMessage, parameters::Parameter, std::string> event;
+  std::variant<SubsystemStatus, Alarm, Output, LogMessage, parameters::ParameterNode, std::string> event;
 
   void ToProto(proto::Event *dest) const;
   absl::Status FromProto(const proto::Event &src);

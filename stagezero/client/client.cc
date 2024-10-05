@@ -106,6 +106,11 @@ void Client::BuildProcessOptions(
     svar->set_value(var.value);
     svar->set_exported(var.exported);
   }
+  for (auto &param : opts.parameters) {
+    auto sparam = options->add_parameters();
+    sparam->set_name(param.name);
+    param.value.ToProto(sparam->mutable_value());
+  }
   for (auto &arg : opts.args) {
     *options->add_args() = arg;
   }
@@ -124,7 +129,7 @@ void Client::BuildProcessOptions(
   options->set_cgroup(opts.cgroup);
   options->set_detached(opts.detached);
   if (opts.ns.has_value()) {
-    auto* n = options->mutable_ns();
+    auto *n = options->mutable_ns();
     opts.ns->ToProto(n);
   }
 }
@@ -341,7 +346,7 @@ absl::Status Client::KillCgroup(const std::string &cgroup, co::Coroutine *co) {
   }
   return absl::OkStatus();
 }
-absl::Status Client::SetParameter(const std::string& name, parameters::Value &v,
+absl::Status Client::SetParameter(const std::string &name, parameters::Value &v,
                                   co::Coroutine *co) {
   if (co == nullptr) {
     co = co_;
@@ -387,7 +392,7 @@ absl::Status Client::DeleteParameter(const std::string &name,
 }
 
 absl::Status
-Client::UploadParameters(const std::vector<std::shared_ptr<parameters::Parameter>> &params,
+Client::UploadParameters(const std::vector<parameters::Parameter> &params,
                          co::Coroutine *co) {
   if (co == nullptr) {
     co = co_;
@@ -396,8 +401,8 @@ Client::UploadParameters(const std::vector<std::shared_ptr<parameters::Parameter
   auto x = req.mutable_upload_parameters();
   for (auto &p : params) {
     auto *param = x->add_parameters();
-    param->set_name(p->GetFullName());
-    p->GetValue().ToProto(param->mutable_value());
+    param->set_name(p.name);
+    p.value.ToProto(param->mutable_value());
   }
   adastra::stagezero::control::Response resp;
   if (absl::Status status = SendRequestReceiveResponse(req, resp, co);

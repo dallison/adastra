@@ -7,8 +7,9 @@
 #include "absl/container/flat_hash_set.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
-#include "common/stream.h"
 #include "common/namespace.h"
+#include "common/parameters.h"
+#include "common/stream.h"
 #include "coroutine.h"
 #include "proto/config.pb.h"
 #include "proto/control.pb.h"
@@ -50,8 +51,7 @@ class VirtualProcess;
 // StageZero map and all coroutines have finished running.
 class Process : public std::enable_shared_from_this<Process> {
 public:
-  Process(co::CoroutineScheduler &scheduler,
-          StageZero& stagezero,
+  Process(co::CoroutineScheduler &scheduler, StageZero &stagezero,
           std::shared_ptr<ClientHandler> client, std::string name);
   virtual ~Process() {}
 
@@ -75,7 +75,7 @@ public:
   bool IsRunning() const { return running_; }
   int GetPid() const { return pid_; }
 #ifdef __linux__
-  toolbelt::FileDescriptor& GetPidFd() { return pid_fd_; }
+  toolbelt::FileDescriptor &GetPidFd() { return pid_fd_; }
   void SetPidFd(toolbelt::FileDescriptor pidfd) { pid_fd_ = std::move(pidfd); }
 #endif
   void SetPid(int pid) { pid_ = pid; }
@@ -113,13 +113,13 @@ public:
 
   bool IsDetached() const { return detached_; }
 
-  StageZero& GetStageZero() { return stagezero_; }
+  StageZero &GetStageZero() { return stagezero_; }
 
-  void SetNamespace(Namespace ns) {
-    ns_ = std::move(ns);
-  }
-  
+  void SetNamespace(Namespace ns) { ns_ = std::move(ns); }
+
   void RunParameterServer();
+
+  parameters::ParameterServer &Parameters() { return local_parameters_; }
 
 protected:
   virtual int Wait() = 0;
@@ -135,7 +135,7 @@ protected:
   }
 
   co::CoroutineScheduler &scheduler_;
-  StageZero& stagezero_;
+  StageZero &stagezero_;
   std::shared_ptr<ClientHandler> client_;
   std::string name_;
   int pid_ = 0;
@@ -148,6 +148,7 @@ protected:
   std::string process_id_;
   std::vector<std::shared_ptr<StreamInfo>> streams_;
   SymbolTable local_symbols_;
+  parameters::ParameterServer local_parameters_;
   int sigint_timeout_secs_ = 0;
   int sigterm_timeout_secs_ = 0;
   std::string user_;
@@ -157,7 +158,7 @@ protected:
   toolbelt::FileDescriptor interactive_this_end_;
   toolbelt::FileDescriptor interactive_proc_end_;
   std::string cgroup_;
-  bool detached_ = false;      // Process is detached from a client.
+  bool detached_ = false; // Process is detached from a client.
   std::optional<Namespace> ns_;
 };
 
@@ -195,7 +196,7 @@ public:
   // to a process through a socket, we can't interleave the messages
   // if multiple spawns happen at the same time.
   // Returns a pair of pid and pidfd (on linux only, all others will be 0);
-  absl::StatusOr<std::pair<int,toolbelt::FileDescriptor>>
+  absl::StatusOr<std::pair<int, toolbelt::FileDescriptor>>
   Spawn(const stagezero::control::LaunchVirtualProcessRequest &req,
         const std::vector<std::shared_ptr<StreamInfo>> &streams);
 

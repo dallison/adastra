@@ -11,6 +11,10 @@ message Value {
     map<string, Value> values = 1;
   }
 
+  message TimeValue {
+    int64 seconds = 1;
+    int32 nanos = 2;
+  }
   oneof value {
     string string_value = 1;
     int32 int32_value = 2;
@@ -20,6 +24,7 @@ message Value {
     ListValue list_value = 6;
     MapValue map_value = 7;
     bytes bytes_value = 8;
+    TimeValue time_value = 9;
   }
 }
 
@@ -97,6 +102,7 @@ message Response {
     DeleteParameterResponse delete_parameter = 4;
     HasParameterResponse has_parameter = 5;
     ListParametersResponse list_parameters = 6;
+    string general_error = 20;
   }
 }
 

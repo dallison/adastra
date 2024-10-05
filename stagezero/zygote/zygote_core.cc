@@ -342,7 +342,7 @@ absl::Status ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
           absl::StrFormat("%d:%d", parameters_read_fd, parameters_write_fd),
           true);
     }
-    
+
     for (auto &stream : req.streams()) {
       if (stream.has_filename()) {
         // For files, we have deferred the open until we know the pid

@@ -13,6 +13,7 @@
 #include "absl/container/flat_hash_map.h"
 #include "capcom/bitset.h"
 #include "common/alarm.h"
+#include "common/parameters.h"
 #include "common/states.h"
 #include "common/vars.h"
 #include "proto/capcom.pb.h"
@@ -151,6 +152,8 @@ protected:
   std::string description_;
   std::vector<Variable> vars_;
   std::vector<std::string> args_;
+  parameters::ParameterServer local_parameters_;
+
   int32_t startup_timeout_secs_;
   int32_t sigint_shutdown_timeout_secs_;
   int32_t sigterm_shutdown_timeout_secs_;

@@ -138,7 +138,8 @@ public:
   void InitClient(adastra::capcom::client::Client &client,
                   const std::string &name,
                   int event_mask = adastra::kSubsystemStatusEvents |
-                                   adastra::kOutputEvents | adastra::kParameterEvents) {
+                                   adastra::kOutputEvents |
+                                   adastra::kParameterEvents) {
     absl::Status s = client.Init(CapcomAddr(), name, event_mask);
     std::cout << "Init status: " << s << std::endl;
     ASSERT_TRUE(s.ok());
@@ -221,7 +222,8 @@ public:
   }
 
   void WaitForParameterUpdate(adastra::capcom::client::Client &client,
-                              const std::string &name, adastra::parameters::Value v) {
+                              const std::string &name,
+                              adastra::parameters::Value v) {
     std::cout << "waiting for parameter update\n";
     for (int retry = 0; retry < 10; retry++) {
       absl::StatusOr<std::shared_ptr<adastra::Event>> e = client.WaitForEvent();
@@ -231,8 +233,9 @@ public:
       std::shared_ptr<adastra::Event> event = *e;
       std::cerr << "event: " << (int)event->type << std::endl;
       if (event->type == adastra::EventType::kParameterUpdate) {
-        adastra::parameters::Parameter p = std::get<4>(event->event);
-        std::cerr << "update parameter: " << p.GetName() << " " << p.GetValue() << std::endl;
+        adastra::parameters::ParameterNode p = std::get<4>(event->event);
+        std::cerr << "update parameter: " << p.GetName() << " " << p.GetValue()
+                  << std::endl;
         if (p.GetName() == name && p.GetValue() == v) {
           std::cout << "parameter update received\n";
           return;
@@ -242,7 +245,7 @@ public:
     FAIL();
   }
 
- void WaitForParameterDelete(adastra::capcom::client::Client &client,
+  void WaitForParameterDelete(adastra::capcom::client::Client &client,
                               const std::string &name) {
     std::cout << "waiting for parameter delete\n";
     for (int retry = 0; retry < 10; retry++) {
@@ -369,10 +372,10 @@ TEST_F(CapcomTest, SimpleSubsystem) {
   InitClient(client, "foobar1");
 
   absl::Status status = client.AddSubsystem(
-      "foobar", {.static_processes = {{
-                     .name = "loop",
-                     .executable = "${runfiles_dir}/_main/testdata/loop",
-                 }}});
+      "foobar",
+      {.static_processes = {{
+           .name = "loop", .executable = "${runfiles_dir}/_main/testdata/loop",
+       }}});
   std::cerr << status << std::endl;
   ASSERT_TRUE(status.ok());
 
@@ -453,10 +456,10 @@ TEST_F(CapcomTest, StartSimpleSubsystem) {
   InitClient(client, "foobar1");
 
   absl::Status status = client.AddSubsystem(
-      "foobar1", {.static_processes = {{
-                      .name = "loop",
-                      .executable = "${runfiles_dir}/_main/testdata/loop",
-                  }}});
+      "foobar1",
+      {.static_processes = {{
+           .name = "loop", .executable = "${runfiles_dir}/_main/testdata/loop",
+       }}});
   ASSERT_TRUE(status.ok());
 
   status = client.StartSubsystem("foobar1");
@@ -640,19 +643,18 @@ TEST_F(CapcomTest, StartSimpleSubsystemWithMultipleCompute) {
   ASSERT_TRUE(status.ok());
 
   status = client.AddSubsystem(
-      "foobar1",
-      {.static_processes = {
-           {
-               .name = "loop1",
-               .executable = "${runfiles_dir}/_main/testdata/loop",
-               .compute = "localhost1",
-           },
-           {
-               .name = "loop2",
-               .executable = "${runfiles_dir}/_main/testdata/loop",
-               .compute = "localhost2",
-           },
-       }});
+      "foobar1", {.static_processes = {
+                      {
+                          .name = "loop1",
+                          .executable = "${runfiles_dir}/_main/testdata/loop",
+                          .compute = "localhost1",
+                      },
+                      {
+                          .name = "loop2",
+                          .executable = "${runfiles_dir}/_main/testdata/loop",
+                          .compute = "localhost2",
+                      },
+                  }});
   ASSERT_TRUE(status.ok());
 
   status = client.StartSubsystem("foobar1");
@@ -676,10 +678,10 @@ TEST_F(CapcomTest, RestartSimpleSubsystem) {
   InitClient(client, "foobar1");
 
   absl::Status status = client.AddSubsystem(
-      "foobar1", {.static_processes = {{
-                      .name = "loop",
-                      .executable = "${runfiles_dir}/_main/testdata/loop",
-                  }}});
+      "foobar1",
+      {.static_processes = {{
+           .name = "loop", .executable = "${runfiles_dir}/_main/testdata/loop",
+       }}});
   ASSERT_TRUE(status.ok());
 
   WaitForState(client, "foobar1", AdminState::kOffline, OperState::kOffline);
@@ -699,7 +701,7 @@ TEST_F(CapcomTest, RestartSimpleSubsystem) {
   // Wait for the subsytem to go into restarting, then back online.
   WaitForState(client, "foobar1", AdminState::kOnline, OperState::kRestarting);
   WaitForState(client, "foobar1", AdminState::kOnline, OperState::kOnline);
-  sleep(1); 
+  sleep(1);
 
   // Stop the subsystem
   status = client.StopSubsystem("foobar1");
@@ -760,23 +762,23 @@ TEST_F(CapcomTest, RestartSubsystemParentOffline) {
   InitClient(client, "foobar1");
 
   absl::Status status = client.AddSubsystem(
-      "foobar1", {.static_processes = {{
-                      .name = "loop",
-                      .executable = "${runfiles_dir}/_main/testdata/loop",
-                  }}});
+      "foobar1",
+      {.static_processes = {{
+           .name = "loop", .executable = "${runfiles_dir}/_main/testdata/loop",
+       }}});
   ASSERT_TRUE(status.ok());
 
   WaitForState(client, "foobar1", AdminState::kOffline, OperState::kOffline);
 
   // This won't go online.  It has processes.
   status = client.AddSubsystem(
-      "foobar2", {.static_processes = {{
-                      .name = "loop",
-                      .executable = "${runfiles_dir}/_main/testdata/loop",
-                  }},
-                  .children = {
-                      "foobar1",
-                  }});
+      "foobar2",
+      {.static_processes = {{
+           .name = "loop", .executable = "${runfiles_dir}/_main/testdata/loop",
+       }},
+       .children = {
+           "foobar1",
+       }});
   ASSERT_TRUE(status.ok());
 
   // This won't go online.
@@ -823,20 +825,20 @@ TEST_F(CapcomTest, StartSimpleSubsystemTree) {
   InitClient(client, "foobar1");
 
   absl::Status status = client.AddSubsystem(
-      "child", {.static_processes = {{
-                    .name = "loop1",
-                    .executable = "${runfiles_dir}/_main/testdata/loop",
-                }}});
+      "child",
+      {.static_processes = {{
+           .name = "loop1", .executable = "${runfiles_dir}/_main/testdata/loop",
+       }}});
   ASSERT_TRUE(status.ok());
 
   status = client.AddSubsystem(
-      "parent", {.static_processes = {{
-                     .name = "loop2",
-                     .executable = "${runfiles_dir}/_main/testdata/loop",
-                 }},
-                 .children = {
-                     "child",
-                 }});
+      "parent",
+      {.static_processes = {{
+           .name = "loop2", .executable = "${runfiles_dir}/_main/testdata/loop",
+       }},
+       .children = {
+           "child",
+       }});
   ASSERT_TRUE(status.ok());
 
   status = client.StartSubsystem("parent");
@@ -902,13 +904,16 @@ TEST_F(CapcomTest, RestartProcess2) {
       "manual",
       {.static_processes =
            {{
-                .name = "loop1", .executable = "${runfiles_dir}/_main/testdata/loop",
+                .name = "loop1",
+                .executable = "${runfiles_dir}/_main/testdata/loop",
             },
             {
-                .name = "loop2", .executable = "${runfiles_dir}/_main/testdata/loop",
+                .name = "loop2",
+                .executable = "${runfiles_dir}/_main/testdata/loop",
             },
             {
-                .name = "loop3", .executable = "${runfiles_dir}/_main/testdata/loop",
+                .name = "loop3",
+                .executable = "${runfiles_dir}/_main/testdata/loop",
             }},
        .restart_policy = adastra::capcom::client::RestartPolicy::kAutomatic});
   ASSERT_TRUE(status.ok());
@@ -951,13 +956,16 @@ TEST_F(CapcomTest, RestartAllProcesses) {
       "manual",
       {.static_processes =
            {{
-                .name = "loop1", .executable = "${runfiles_dir}/_main/testdata/loop",
+                .name = "loop1",
+                .executable = "${runfiles_dir}/_main/testdata/loop",
             },
             {
-                .name = "loop2", .executable = "${runfiles_dir}/_main/testdata/loop",
+                .name = "loop2",
+                .executable = "${runfiles_dir}/_main/testdata/loop",
             },
             {
-                .name = "loop3", .executable = "${runfiles_dir}/_main/testdata/loop",
+                .name = "loop3",
+                .executable = "${runfiles_dir}/_main/testdata/loop",
             }},
        .restart_policy = adastra::capcom::client::RestartPolicy::kAutomatic});
   ASSERT_TRUE(status.ok());
@@ -998,8 +1006,7 @@ TEST_F(CapcomTest, ManualRestartSimpleSubsystem) {
   absl::Status status = client.AddSubsystem(
       "manual",
       {.static_processes = {{
-           .name = "loop",
-           .executable = "${runfiles_dir}/_main/testdata/loop",
+           .name = "loop", .executable = "${runfiles_dir}/_main/testdata/loop",
        }},
        .restart_policy = adastra::capcom::client::RestartPolicy::kManual});
   ASSERT_TRUE(status.ok());
@@ -1034,8 +1041,7 @@ TEST_F(CapcomTest, ManualRestartSimpleSubsystemAfterCrash) {
   absl::Status status = client.AddSubsystem(
       "manual",
       {.static_processes = {{
-           .name = "loop",
-           .executable = "${runfiles_dir}/_main/testdata/loop",
+           .name = "loop", .executable = "${runfiles_dir}/_main/testdata/loop",
        }},
        .restart_policy = adastra::capcom::client::RestartPolicy::kManual});
   ASSERT_TRUE(status.ok());
@@ -1083,13 +1089,16 @@ TEST_F(CapcomTest, RestartProcessAfterCrash) {
       "processonly",
       {.static_processes =
            {{
-                .name = "loop1", .executable = "${runfiles_dir}/_main/testdata/loop",
+                .name = "loop1",
+                .executable = "${runfiles_dir}/_main/testdata/loop",
             },
             {
-                .name = "loop2", .executable = "${runfiles_dir}/_main/testdata/loop",
+                .name = "loop2",
+                .executable = "${runfiles_dir}/_main/testdata/loop",
             },
             {
-                .name = "loop3", .executable = "${runfiles_dir}/_main/testdata/loop",
+                .name = "loop3",
+                .executable = "${runfiles_dir}/_main/testdata/loop",
             }},
        .restart_policy = adastra::capcom::client::RestartPolicy::kProcessOnly});
   ASSERT_TRUE(status.ok());
@@ -1158,13 +1167,16 @@ TEST_F(CapcomTest, RestartProcessAfterCrashBackoff) {
       "processonly",
       {.static_processes =
            {{
-                .name = "loop1", .executable = "${runfiles_dir}/_main/testdata/loop",
+                .name = "loop1",
+                .executable = "${runfiles_dir}/_main/testdata/loop",
             },
             {
-                .name = "loop2", .executable = "${runfiles_dir}/_main/testdata/loop",
+                .name = "loop2",
+                .executable = "${runfiles_dir}/_main/testdata/loop",
             },
             {
-                .name = "loop3", .executable = "${runfiles_dir}/_main/testdata/loop",
+                .name = "loop3",
+                .executable = "${runfiles_dir}/_main/testdata/loop",
             }},
        .restart_policy = adastra::capcom::client::RestartPolicy::kProcessOnly});
   ASSERT_TRUE(status.ok());
@@ -1234,19 +1246,20 @@ TEST_F(CapcomTest, RestartProcessAfterCrashLimit) {
 
   absl::Status status = client.AddSubsystem(
       "processonly",
-      {.static_processes = {{
-                                .name = "loop1",
-                                .executable = "${runfiles_dir}/_main/testdata/loop",
-                            },
-                            {
-                                .name = "loop2",
-                                .executable = "${runfiles_dir}/_main/testdata/loop",
-                            },
-                            {
-                                .name = "loop3",
-                                .executable = "${runfiles_dir}/_main/testdata/loop",
-                                .max_restarts = 2,
-                            }},
+      {.static_processes =
+           {{
+                .name = "loop1",
+                .executable = "${runfiles_dir}/_main/testdata/loop",
+            },
+            {
+                .name = "loop2",
+                .executable = "${runfiles_dir}/_main/testdata/loop",
+            },
+            {
+                .name = "loop3",
+                .executable = "${runfiles_dir}/_main/testdata/loop",
+                .max_restarts = 2,
+            }},
        .restart_policy = adastra::capcom::client::RestartPolicy::kProcessOnly});
   ASSERT_TRUE(status.ok());
   WaitForState(client, "processonly", AdminState::kOffline,
@@ -1325,19 +1338,20 @@ TEST_F(CapcomTest, RestartProcessAfterCrashLimitRecover) {
 
   absl::Status status = client.AddSubsystem(
       "processonly",
-      {.static_processes = {{
-                                .name = "loop1",
-                                .executable = "${runfiles_dir}/_main/testdata/loop",
-                            },
-                            {
-                                .name = "loop2",
-                                .executable = "${runfiles_dir}/_main/testdata/loop",
-                            },
-                            {
-                                .name = "loop3",
-                                .executable = "${runfiles_dir}/_main/testdata/loop",
-                                .max_restarts = 2,
-                            }},
+      {.static_processes =
+           {{
+                .name = "loop1",
+                .executable = "${runfiles_dir}/_main/testdata/loop",
+            },
+            {
+                .name = "loop2",
+                .executable = "${runfiles_dir}/_main/testdata/loop",
+            },
+            {
+                .name = "loop3",
+                .executable = "${runfiles_dir}/_main/testdata/loop",
+                .max_restarts = 2,
+            }},
        .restart_policy = adastra::capcom::client::RestartPolicy::kProcessOnly});
   ASSERT_TRUE(status.ok());
   WaitForState(client, "processonly", AdminState::kOffline,
@@ -1418,10 +1432,10 @@ TEST_F(CapcomTest, Abort) {
   InitClient(client, "foobar1");
 
   absl::Status status = client.AddSubsystem(
-      "subsys", {.static_processes = {{
-                     .name = "loop",
-                     .executable = "${runfiles_dir}/_main/testdata/loop",
-                 }}});
+      "subsys",
+      {.static_processes = {{
+           .name = "loop", .executable = "${runfiles_dir}/_main/testdata/loop",
+       }}});
   ASSERT_TRUE(status.ok());
 
   status = client.StartSubsystem("subsys");
@@ -1443,10 +1457,10 @@ TEST_F(CapcomTest, AbortThenGoAgain) {
   InitClient(client, "foobar1");
 
   absl::Status status = client.AddSubsystem(
-      "subsys", {.static_processes = {{
-                     .name = "loop",
-                     .executable = "${runfiles_dir}/_main/testdata/loop",
-                 }}});
+      "subsys",
+      {.static_processes = {{
+           .name = "loop", .executable = "${runfiles_dir}/_main/testdata/loop",
+       }}});
   ASSERT_TRUE(status.ok());
 
   status = client.StartSubsystem("subsys");
@@ -1476,10 +1490,10 @@ TEST_F(CapcomTest, RestartSimpleSubsystemTree) {
   InitClient(client, "foobar1");
 
   absl::Status status = client.AddSubsystem(
-      "child", {.static_processes = {{
-                    .name = "loop1",
-                    .executable = "${runfiles_dir}/_main/testdata/loop",
-                }}});
+      "child",
+      {.static_processes = {{
+           .name = "loop1", .executable = "${runfiles_dir}/_main/testdata/loop",
+       }}});
   ASSERT_TRUE(status.ok());
 
   WaitForState(client, "child", AdminState::kOffline, OperState::kOffline);
@@ -1556,7 +1570,7 @@ TEST_F(CapcomTest, VirtualProcess) {
   InitClient(client, "foobar1");
 
   ASSERT_TRUE(client.SetParameter("/foo/bar", "baz").ok());
-  
+
   absl::Status status = client.AddSubsystem(
       "zygote1",
       {.zygotes = {{
@@ -1662,7 +1676,8 @@ TEST_F(CapcomTest, TalkAndListen) {
       "subspace",
       {.static_processes = {{
            .name = "subspace_server",
-           .executable = "${runfiles_dir}/_main/external/_main~_repo_rules~subspace/server/"
+           .executable = "${runfiles_dir}/_main/external/"
+                         "_main~_repo_rules~subspace/server/"
                          "subspace_server",
            .args = {"--notify_fd=${notify_fd}"},
            .notify = true,
@@ -1911,7 +1926,6 @@ TEST_F(CapcomTest, CgroupOps) {
   ASSERT_TRUE(status.ok());
 }
 
-
 TEST_F(CapcomTest, Parameters) {
   adastra::capcom::client::Client client(ClientMode::kBlocking);
   InitClient(client, "foobar1");
@@ -1924,19 +1938,56 @@ TEST_F(CapcomTest, Parameters) {
 
   // Add a subsystem that uses the parameters.
   status = client.AddSubsystem(
-      "param",
-      {.static_processes = {{
-           .name = "param",
-           .executable = "${runfiles_dir}/_main/testdata/loop",
-           .notify = true,
-       }},
-       });
+      "param", {
+                   .static_processes = {{
+                       .name = "param",
+                       .executable = "${runfiles_dir}/_main/testdata/loop",
+                       .notify = true,
+                   }},
+               });
   // Start the subsystem
   status = client.StartSubsystem("param");
   ASSERT_TRUE(status.ok());
 
-  WaitForParameterUpdate(client, "/foo/bar", "foobar");
+  std::cerr << "Waiting for parameter update\n";
+  WaitForParameterUpdate(client, "/foo/bar", "global-foobar");
+
+  std::cerr << "Waiting for parameter delete\n";
   WaitForParameterDelete(client, "/foo/baz");
+  sleep(1);
+  // Stop the subsystem.
+  status = client.StopSubsystem("param");
+  ASSERT_TRUE(status.ok());
+
+  // Remove the subsystem.
+  status = client.RemoveSubsystem("param", false);
+  ASSERT_TRUE(status.ok());
+}
+
+TEST_F(CapcomTest, LocalParameters) {
+  adastra::capcom::client::Client client(ClientMode::kBlocking);
+  InitClient(client, "foobar1");
+
+  absl::Status status = client.SetParameter("/foo/bar", "global-value1");
+  ASSERT_TRUE(status.ok());
+
+  status = client.AddSubsystem(
+      "param",
+      {
+          .static_processes = {{
+              .name = "param",
+              .executable = "${runfiles_dir}/_main/testdata/loop",
+              .notify = true,
+              .parameters =
+                  {
+                      {"foo/bar", "local-value1"}, {"foo/baz", "local-value2"},
+                  },
+          }},
+      });
+  // Start the subsystem
+  status = client.StartSubsystem("param");
+  ASSERT_TRUE(status.ok());
+
   sleep(1);
   // Stop the subsystem.
   status = client.StopSubsystem("param");

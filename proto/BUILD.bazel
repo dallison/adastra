@@ -6,6 +6,7 @@ proto_library(
     deps = [
         ":cgroup_proto",
         ":stream_proto",
+        ":parameters_proto",
     ],
 )
 

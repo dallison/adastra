@@ -134,6 +134,11 @@ absl::Status Client::AddSubsystem(const std::string &name,
       v->set_value(var.value);
       v->set_exported(var.exported);
     }
+    for (auto &para : sproc.parameters) {
+      auto *p = opts->add_parameters();
+      p->set_name(para.name);
+      para.value.ToProto(p->mutable_value());
+    }
     for (auto &stream : sproc.streams) {
       auto *s = proc->add_streams();
       stream.ToProto(s);
@@ -204,6 +209,11 @@ absl::Status Client::AddSubsystem(const std::string &name,
       v->set_name(var.name);
       v->set_value(var.value);
       v->set_exported(var.exported);
+    }
+    for (auto &para : vproc.parameters) {
+      auto *p = opts->add_parameters();
+      p->set_name(para.name);
+      para.value.ToProto(p->mutable_value());
     }
     for (auto &stream : vproc.streams) {
       auto *s = proc->add_streams();
@@ -667,7 +677,8 @@ absl::Status Client::KillCgroup(const std::string &compute,
   return absl::OkStatus();
 }
 
-absl::Status Client::SetParameter(const std::string& name, const parameters::Value &v,
+absl::Status Client::SetParameter(const std::string &name,
+                                  const parameters::Value &v,
                                   co::Coroutine *co) {
   if (co == nullptr) {
     co = co_;
@@ -722,8 +733,8 @@ Client::UploadParameters(const std::vector<parameters::Parameter> &params,
   auto x = req.mutable_upload_parameters();
   for (auto &p : params) {
     auto *param = x->add_parameters();
-    param->set_name(p.GetName());
-    p.GetValue().ToProto(param->mutable_value());
+    param->set_name(p.name);
+    p.value.ToProto(param->mutable_value());
   }
   adastra::capcom::proto::Response resp;
   if (absl::Status status = SendRequestReceiveResponse(req, resp, co);
