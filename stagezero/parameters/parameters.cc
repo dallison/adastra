@@ -1,17 +1,30 @@
 #include "stagezero/parameters/parameters.h"
+#include "toolbelt/hexdump.h"
 
 namespace stagezero {
-Parameters::Parameters() {
+Parameters::Parameters(bool events) {
   // Look for the STAGEZERO_PARAMETERS_FD environment variable.
   const char *env = getenv("STAGEZERO_PARAMETERS_FDS");
   if (env == nullptr) {
     // No parameters stream.
     return;
   }
-  int rfd, wfd;
-  sscanf(env, "%d:%d", &rfd, &wfd);
+  int rfd, wfd, efd;
+  sscanf(env, "%d:%d:%d", &rfd, &wfd, &efd);
   read_fd_.SetFd(rfd);
   write_fd_.SetFd(wfd);
+  event_fd_.SetFd(efd);
+
+  // Send the init message.  This tells stagezero if we want events or not.
+  adastra::proto::parameters::Request req;
+  adastra::proto::parameters::Response resp;
+  req.mutable_init()->set_events(events);
+  if (absl::Status status = SendRequestReceiveResponse(req, resp);
+      !status.ok()) {
+    read_fd_.Close();
+    write_fd_.Close();
+    event_fd_.Close();
+  }
 }
 
 absl::Status Parameters::SetParameter(const std::string &name,
@@ -143,6 +156,55 @@ absl::StatusOr<bool> Parameters::HasParameter(const std::string &name) {
                                resp.has_parameter().error());
   }
   return resp.has_parameter().has();
+}
+
+std::unique_ptr<adastra::parameters::ParameterEvent>
+Parameters::GetEvent() const {
+  std::unique_ptr<adastra::parameters::ParameterEvent> event;
+
+  if (!event_fd_.Valid()) {
+    return event;
+  }
+  uint32_t len;
+  ssize_t n = ::read(event_fd_.Fd(), &len, sizeof(len));
+  if (n <= 0) {
+    return event;
+  }
+  std::cerr << "Got event of length " << len << std::endl;
+  std::vector<char> buffer(len);
+  char *buf = buffer.data();
+  size_t remaining = len;
+  while (remaining > 0) {
+    ssize_t n = ::read(event_fd_.Fd(), buf, remaining);
+    if (n <= 0) {
+      return event;
+    }
+    remaining -= n;
+    buf += n;
+  }
+  adastra::proto::parameters::ParameterEvent event_proto;
+  if (!event_proto.ParseFromArray(buffer.data(), buffer.size())) {
+    return event;
+  }
+  switch (event_proto.event_case()) {
+  case adastra::proto::parameters::ParameterEvent::kUpdate: {
+    auto update = std::make_unique<adastra::parameters::ParameterUpdateEvent>();
+    update->name = event_proto.update().name();
+    update->value.FromProto(event_proto.update().value());
+    event = std::move(update);
+    break;
+  }
+  case adastra::proto::parameters::ParameterEvent::kDelete: {
+    auto del = std::make_unique<adastra::parameters::ParameterDeleteEvent>();
+    del->name = event_proto.delete_();
+    event = std::move(del);
+    break;
+  }
+  default:
+    // Ignore invalid event.
+    break;
+  }
+  return event;
 }
 
 absl::Status Parameters::SendRequestReceiveResponse(

@@ -179,6 +179,9 @@ private:
   absl::Status SendProcessStartEvent(const std::string &process_id);
   absl::Status SendProcessStopEvent(const std::string &process_id, bool exited,
                                     int exit_status, int term_signal);
+  void SendParameterUpdateEventToProcesses(const std::string &name,
+                                           const parameters::Value &value, co::Coroutine* c);
+  void SendParameterDeleteEventToProcesses(const std::string &name, co::Coroutine* c);
 
   absl::Status SetParameter(const std::string &name,
                             const parameters::Value &value, co::Coroutine *c);
@@ -191,7 +194,7 @@ private:
   HandleParameterServerRequest(std::shared_ptr<Process> proc,
                                const adastra::proto::parameters::Request &req,
                                adastra::proto::parameters::Response &resp,
-                               std::shared_ptr<ClientHandler> client);
+                               std::shared_ptr<ClientHandler> client, co::Coroutine* c);
 
   co::CoroutineScheduler &co_scheduler_;
   toolbelt::InetAddress addr_;

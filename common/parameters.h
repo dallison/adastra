@@ -200,6 +200,28 @@ struct Parameter {
   void FromProto(const adastra::proto::parameters::Parameter &proto);
 };
 
+struct ParameterEvent {
+  enum class Type {
+    kUpdate,
+    kDelete,
+  };
+  ParameterEvent(Type type) : type(type) {}
+  Type type;
+};
+
+struct ParameterUpdateEvent : public ParameterEvent {
+  ParameterUpdateEvent() : ParameterEvent{Type::kUpdate} {}
+
+  std::string name;
+  Value value;
+};
+
+struct ParameterDeleteEvent : public ParameterEvent {
+  ParameterDeleteEvent() : ParameterEvent{Type::kDelete} {}
+
+  std::string name;
+};
+
 class ParameterServer;
 
 class ParameterNode : public std::enable_shared_from_this<ParameterNode> {

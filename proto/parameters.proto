@@ -33,6 +33,14 @@ message Parameter {
   Value value = 3;
 }
 
+message InitRequest {
+  bool events = 1;
+}
+
+message InitResponse {
+  string error = 1;
+}
+
 message GetAllParametersRequest {
 }
 
@@ -85,23 +93,26 @@ message ListParametersResponse {
 
 message Request {
   oneof req {
-    GetAllParametersRequest get_all_parameters = 1;
-    SetParameterRequest set_parameter = 2;
-    GetParameterRequest get_parameter = 3;
-    DeleteParameterRequest delete_parameter = 4;
-    HasParameterRequest has_parameter = 5;
-    ListParametersRequest list_parameters = 6;
+    InitRequest init = 1;
+    GetAllParametersRequest get_all_parameters = 2;
+    SetParameterRequest set_parameter = 3;
+    GetParameterRequest get_parameter = 4;
+    DeleteParameterRequest delete_parameter = 5;
+    HasParameterRequest has_parameter = 6;
+    ListParametersRequest list_parameters = 7;
   }
 }
 
 message Response {
   oneof resp {
-    GetAllParametersResponse get_all_parameters = 1;
-    SetParameterResponse set_parameter = 2;
-    GetParameterResponse get_parameter = 3;
-    DeleteParameterResponse delete_parameter = 4;
-    HasParameterResponse has_parameter = 5;
-    ListParametersResponse list_parameters = 6;
+    InitResponse init = 1;
+    GetAllParametersResponse get_all_parameters = 2;
+    SetParameterResponse set_parameter = 3;
+    GetParameterResponse get_parameter = 4;
+    DeleteParameterResponse delete_parameter = 5;
+    HasParameterResponse has_parameter = 6;
+    ListParametersResponse list_parameters = 7;
+    
     string general_error = 20;
   }
 }

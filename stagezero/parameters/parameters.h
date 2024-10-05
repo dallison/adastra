@@ -7,7 +7,7 @@
 namespace stagezero {
 class Parameters {
 public:
-  Parameters();
+  Parameters(bool events = false);
   ~Parameters() = default;
 
   // Set the given parameter to the value.  If it doesn't exist, it will be
@@ -33,6 +33,9 @@ public:
   // Does the parameter exist?
   absl::StatusOr<bool> HasParameter(const std::string &name);
 
+  const toolbelt::FileDescriptor &GetEventFD() const { return event_fd_; }
+  std::unique_ptr<adastra::parameters::ParameterEvent> GetEvent() const;
+
 private:
   absl::Status
   SendRequestReceiveResponse(const adastra::proto::parameters::Request &req,
@@ -40,5 +43,6 @@ private:
   bool IsOpen() const { return read_fd_.Valid() && write_fd_.Valid(); }
   toolbelt::FileDescriptor read_fd_;
   toolbelt::FileDescriptor write_fd_;
+  toolbelt::FileDescriptor event_fd_;
 };
 } // namespace stagezero

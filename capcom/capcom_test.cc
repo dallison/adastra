@@ -1998,6 +1998,81 @@ TEST_F(CapcomTest, LocalParameters) {
   ASSERT_TRUE(status.ok());
 }
 
+TEST_F(CapcomTest, ParametersWithUpdate) {
+  adastra::capcom::client::Client client(ClientMode::kBlocking);
+  InitClient(client, "foobar1");
+
+  absl::Status status = client.SetParameter("/foo/bar", "value1");
+  ASSERT_TRUE(status.ok());
+
+  status = client.SetParameter("/foo/baz", "value2");
+  ASSERT_TRUE(status.ok());
+
+  // Add a subsystem that uses the parameters.
+  status = client.AddSubsystem(
+      "param", {
+                   .static_processes = {{
+                       .name = "param",
+                       .executable = "${runfiles_dir}/_main/testdata/loop",
+                       .notify = true,
+                       .args = {"parameter_events"},
+                   }},
+               });
+  // Start the subsystem
+  status = client.StartSubsystem("param");
+  ASSERT_TRUE(status.ok());
+
+  std::cerr << "Waiting for parameter update\n";
+  WaitForParameterUpdate(client, "/foo/bar", "global-foobar");
+
+  std::cerr << "Waiting for parameter delete\n";
+  WaitForParameterDelete(client, "/foo/baz");
+  sleep(1);
+  // Stop the subsystem.
+  status = client.StopSubsystem("param");
+  ASSERT_TRUE(status.ok());
+
+  // Remove the subsystem.
+  status = client.RemoveSubsystem("param", false);
+  ASSERT_TRUE(status.ok());
+}
+
+TEST_F(CapcomTest, LocalParametersWithEvents) {
+  adastra::capcom::client::Client client(ClientMode::kBlocking);
+  InitClient(client, "foobar1");
+
+  absl::Status status = client.SetParameter("/foo/bar", "global-value1");
+  ASSERT_TRUE(status.ok());
+
+  status = client.AddSubsystem(
+      "param",
+      {
+          .static_processes = {{
+              .name = "param",
+              .executable = "${runfiles_dir}/_main/testdata/loop",
+              .notify = true,
+              .args = {"parameter_events"},
+
+              .parameters =
+                  {
+                      {"foo/bar", "local-value1"}, {"foo/baz", "local-value2"},
+                  },
+          }},
+      });
+  // Start the subsystem
+  status = client.StartSubsystem("param");
+  ASSERT_TRUE(status.ok());
+
+  sleep(1);
+  // Stop the subsystem.
+  status = client.StopSubsystem("param");
+  ASSERT_TRUE(status.ok());
+
+  // Remove the subsystem.
+  status = client.RemoveSubsystem("param", false);
+  ASSERT_TRUE(status.ok());
+}
+
 int main(int argc, char **argv) {
   testing::InitGoogleTest(&argc, argv);
   absl::ParseCommandLine(argc, argv);

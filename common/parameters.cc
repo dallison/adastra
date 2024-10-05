@@ -387,4 +387,5 @@ void Parameter::FromProto(const adastra::proto::parameters::Parameter &proto) {
   name = proto.name();
   value.FromProto(proto.value());
 }
+
 } // namespace adastra::parameters

@@ -26,11 +26,11 @@ class TCPClientHandler : public std::enable_shared_from_this<
 public:
   TCPClientHandler(toolbelt::TCPSocket socket)
       : command_socket_(std::move(socket)) {
-        if (absl::Status status = stop_trigger_.Open(); !status.ok()) {
-          std::cerr << "Failed to open stop trigger: " << status << std::endl;
-          abort();
-        }
-      }
+    if (absl::Status status = stop_trigger_.Open(); !status.ok()) {
+      std::cerr << "Failed to open stop trigger: " << status << std::endl;
+      abort();
+    }
+  }
   virtual ~TCPClientHandler() = default;
 
   void Run(co::Coroutine *c);
@@ -94,7 +94,6 @@ protected:
   void EventSenderCoroutine(co::Coroutine *c);
 
   toolbelt::TCPSocket command_socket_;
-  char command_buffer_[kMaxMessageSize];
   std::string client_name_ = "unknown";
 
   char event_buffer_[kMaxMessageSize];
@@ -113,11 +112,6 @@ inline void TCPClientHandler<Request, Response, Event>::Stop() {
 
 template <typename Request, typename Response, typename Event>
 inline void TCPClientHandler<Request, Response, Event>::Run(co::Coroutine *c) {
-  // The data is placed 4 bytes into the buffer.  The first 4
-  // bytes of the buffer are used by SendMessage and ReceiveMessage
-  // for the length of the data.
-  char *sendbuf = command_buffer_ + sizeof(int32_t);
-  constexpr size_t kSendBufLen = sizeof(command_buffer_) - sizeof(int32_t);
   for (;;) {
     // Wait for command socket input or stop trigger.
     int fd = c->Wait({command_socket_.GetFileDescriptor().Fd(),
@@ -126,18 +120,18 @@ inline void TCPClientHandler<Request, Response, Event>::Run(co::Coroutine *c) {
     if (fd == stop_trigger_.GetPollFd().Fd()) {
       break;
     }
-    absl::StatusOr<ssize_t> n = command_socket_.ReceiveMessage(
-        command_buffer_, sizeof(command_buffer_), c);
-    if (!n.ok()) {
+    absl::StatusOr<std::vector<char>> command_buffer =
+        command_socket_.ReceiveVariableLengthMessage(c);
+    if (!command_buffer.ok()) {
       return;
     }
 
-    if (*n == 0) {
+    if (command_buffer->empty()) {
       // EOF.
       return;
     }
     Request request;
-    if (request.ParseFromArray(command_buffer_, *n)) {
+    if (request.ParseFromArray(command_buffer->data(), command_buffer->size())) {
       Response response;
       if (absl::Status s = HandleMessage(request, response, c); !s.ok()) {
         GetLogger().Log(toolbelt::LogLevel::kError, "%s\n",
@@ -145,14 +139,17 @@ inline void TCPClientHandler<Request, Response, Event>::Run(co::Coroutine *c) {
         return;
       }
 
-      if (!response.SerializeToArray(sendbuf, kSendBufLen)) {
+      uint64_t resplen = response.ByteSizeLong();
+      std::vector<char> sendbuf(resplen + sizeof(int32_t));
+      char* buf = sendbuf.data() + sizeof(int32_t);
+      // Data is placed 4 bytes into buffer
+      if (!response.SerializeToArray(buf, resplen)) {
         GetLogger().Log(toolbelt::LogLevel::kError,
                         "Failed to serialize response\n");
         return;
       }
-      size_t msglen = response.ByteSizeLong();
       absl::StatusOr<ssize_t> n =
-          command_socket_.SendMessage(sendbuf, msglen, c);
+          command_socket_.SendMessage(buf, resplen, c);
       if (!n.ok()) {
         return;
       }

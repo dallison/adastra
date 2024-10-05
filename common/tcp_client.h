@@ -45,7 +45,6 @@ class TCPClient {
   std::string name_ = "";
   co::Coroutine *co_;
   toolbelt::TCPSocket command_socket_;
-  char command_buffer_[kMaxMessageSize];
 
   toolbelt::TCPSocket event_socket_;
   char event_buffer_[kMaxMessageSize];
@@ -127,29 +126,28 @@ absl::Status TCPClient<Request, Response, Event>::SendRequestReceiveResponse(
     const Request &req, Response &response, co::Coroutine *c) {
   // SendMessage needs 4 bytes before the buffer passed to
   // use for the length.
-  char *sendbuf = command_buffer_ + sizeof(int32_t);
-  constexpr size_t kSendBufLen = sizeof(command_buffer_) - sizeof(int32_t);
+  uint64_t reqlen = req.ByteSizeLong();
+  std::vector<char> command_buffer(reqlen + sizeof(int32_t));
+  char *sendbuf = command_buffer.data() + sizeof(int32_t);
 
-  if (!req.SerializeToArray(sendbuf, kSendBufLen)) {
+  if (!req.SerializeToArray(sendbuf, reqlen)) {
     return absl::InternalError("Failed to serialize request");
   }
 
-  size_t length = req.ByteSizeLong();
-  absl::StatusOr<ssize_t> n = command_socket_.SendMessage(sendbuf, length, c);
+  absl::StatusOr<ssize_t> n = command_socket_.SendMessage(sendbuf, reqlen, c);
   if (!n.ok()) {
     command_socket_.Close();
     return n.status();
   }
 
-  // Wait for response and put it in the same buffer we used for send.
-  n = command_socket_.ReceiveMessage(command_buffer_, sizeof(command_buffer_),
-                                     c);
-  if (!n.ok()) {
+  absl::StatusOr<std::vector<char>> respbuffer = command_socket_.ReceiveVariableLengthMessage(c);
+
+  if (!respbuffer.ok()) {
     command_socket_.Close();
     return n.status();
   }
 
-  if (!response.ParseFromArray(command_buffer_, *n)) {
+  if (!response.ParseFromArray(respbuffer->data(), respbuffer->size())) {
     command_socket_.Close();
     return absl::InternalError("Failed to parse response");
   }

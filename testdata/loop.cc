@@ -2,6 +2,7 @@
 #include "absl/debugging/symbolize.h"
 #include "stagezero/parameters/parameters.h"
 #include <iostream>
+#include <poll.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,8 +18,17 @@ int main(int argc, char **argv) {
       .use_alternate_stack = false,
   });
 
+  bool ignore_signal = false;
+  bool parameter_events = false;
   printf("Running\n");
-  if (argc == 2 && strcmp(argv[1], "ignore_signal") == 0) {
+  for (int i = 1; i < argc; i++) {
+    if (strcmp(argv[i], "ignore_signal") == 0) {
+      ignore_signal = true;
+    } else if (strcmp(argv[i], "parameter_events") == 0) {
+      parameter_events = true;
+    }
+  }
+  if (ignore_signal) {
     printf("Ignoring signals\n");
     signal(SIGINT, Signal);
     signal(SIGTERM, Signal);
@@ -35,7 +45,7 @@ int main(int argc, char **argv) {
 
   // If there are parameters, they must be /foo/bar and /foo/baz.
   // There might also be local parameters foo/bar and foo/baz.
-  stagezero::Parameters params;
+  stagezero::Parameters params(parameter_events);
   absl::StatusOr<std::vector<std::string>> list = params.ListParameters();
   if (!list.ok()) {
     std::cerr << "Failed to list parameters: " << list.status().message()
@@ -81,7 +91,7 @@ int main(int argc, char **argv) {
 
       // Set a local parameter.
       std::cerr << "Local parameter set:\n";
-      s = params.SetParameter("foo/bar", "set-global-foobar");
+      s = params.SetParameter("foo/bar", "set-local-foobar");
       if (!s.ok()) {
         std::cerr << "Failed to set local parameter: " << s.message()
                   << std::endl;
@@ -108,6 +118,46 @@ int main(int argc, char **argv) {
       }
     }
   }
+
+  if (parameter_events) {
+    const toolbelt::FileDescriptor &fd = params.GetEventFD();
+    struct pollfd pfd = {
+        .fd = fd.Fd(), .events = POLLIN,
+    };
+    for (;;) {
+      int ret = poll(&pfd, 1, 0);
+      if (ret < 0) {
+        perror("poll");
+        break;
+      }
+      if (pfd.revents & POLLIN) {
+        std::unique_ptr<adastra::parameters::ParameterEvent> event =
+            params.GetEvent();
+        std::cerr << "Event: " << std::endl;
+        switch (event->type) {
+        case adastra::parameters::ParameterEvent::Type::kUpdate: {
+          adastra::parameters::ParameterUpdateEvent *update =
+              static_cast<adastra::parameters::ParameterUpdateEvent *>(
+                  event.get());
+
+          std::cerr << "Update: " << update->name << " = " << update->value
+                    << std::endl;
+          break;
+        }
+        case adastra::parameters::ParameterEvent::Type::kDelete: {
+          adastra::parameters::ParameterDeleteEvent *del =
+              static_cast<adastra::parameters::ParameterDeleteEvent *>(
+                  event.get());
+          std::cerr << "Delete: " << del->name << std::endl;
+          break;
+        }
+        }
+        continue;
+      }
+      break;
+    }
+  }
+
   // char buf[256];
   // snprintf(buf, sizeof(buf), "/usr/sbin/lsof -p %d", getpid());
   // system(buf);

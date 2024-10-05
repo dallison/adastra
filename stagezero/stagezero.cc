@@ -317,12 +317,30 @@ StageZero::UploadParameters(const std::vector<parameters::Parameter> &params,
   return absl::OkStatus();
 }
 
+void StageZero::SendParameterUpdateEventToProcesses(
+    const std::string &name, const parameters::Value &value, co::Coroutine *c) {
+  for (auto &proc : processes_) {
+    proc.second->SendParameterUpdateEvent(name, value, c);
+  }
+}
+
+void StageZero::SendParameterDeleteEventToProcesses(const std::string &name,
+                                                    co::Coroutine *c) {
+  for (auto &proc : processes_) {
+    proc.second->SendParameterDeleteEvent(name, c);
+  }
+}
+
 void StageZero::HandleParameterServerRequest(
     std::shared_ptr<Process> process,
     const adastra::proto::parameters::Request &req,
     adastra::proto::parameters::Response &resp,
-    std::shared_ptr<ClientHandler> client) {
+    std::shared_ptr<ClientHandler> client, co::Coroutine *c) {
   switch (req.req_case()) {
+  case adastra::proto::parameters::Request::kInit:
+    process->SetWantsParameterEvents(req.init().events());
+    break;
+
   case adastra::proto::parameters::Request::kSetParameter: {
     parameters::Value value;
     value.FromProto(req.set_parameter().parameter().value());
@@ -333,19 +351,27 @@ void StageZero::HandleParameterServerRequest(
           !status.ok()) {
         resp.mutable_set_parameter()->set_error(status.ToString());
       }
-      break;
+    } else {
+      if (absl::Status status = parameters_.SetParameter(
+              req.set_parameter().parameter().name(), value);
+          !status.ok()) {
+        resp.mutable_set_parameter()->set_error(status.ToString());
+        break;
+      }
+      if (absl::Status status = client->SendParameterUpdateEvent(
+              req.set_parameter().parameter().name(), value);
+          !status.ok()) {
+        resp.mutable_set_parameter()->set_error(status.ToString());
+        break;
+      }
     }
-    if (absl::Status status = parameters_.SetParameter(
-            req.set_parameter().parameter().name(), value);
-        !status.ok()) {
-      resp.mutable_set_parameter()->set_error(status.ToString());
-      break;
-    }
-    if (absl::Status status = client->SendParameterUpdateEvent(
-            req.set_parameter().parameter().name(), value);
-        !status.ok()) {
-      resp.mutable_set_parameter()->set_error(status.ToString());
-      break;
+    if (req.set_parameter().parameter().name()[0] != '/') {
+      // Locall parameter update.
+      process->SendParameterUpdateEvent(req.set_parameter().parameter().name(),
+                                        value, c);
+    } else {
+      SendParameterUpdateEventToProcesses(
+          req.set_parameter().parameter().name(), value, c);
     }
     break;
   }
@@ -358,18 +384,23 @@ void StageZero::HandleParameterServerRequest(
         resp.mutable_delete_parameter()->set_error(status.ToString());
         break;
       }
-      break;
+    } else {
+      if (absl::Status status =
+              parameters_.DeleteParameter(req.delete_parameter().name());
+          !status.ok()) {
+        resp.mutable_delete_parameter()->set_error(status.ToString());
+        break;
+      }
+      if (absl::Status status =
+              client->SendParameterDeleteEvent(req.delete_parameter().name());
+          !status.ok()) {
+        resp.mutable_delete_parameter()->set_error(status.ToString());
+      }
     }
-    if (absl::Status status =
-            parameters_.DeleteParameter(req.delete_parameter().name());
-        !status.ok()) {
-      resp.mutable_delete_parameter()->set_error(status.ToString());
-      break;
-    }
-    if (absl::Status status =
-            client->SendParameterDeleteEvent(req.delete_parameter().name());
-        !status.ok()) {
-      resp.mutable_delete_parameter()->set_error(status.ToString());
+    if (req.delete_parameter().name()[0] != '/') {
+      process->SendParameterDeleteEvent(req.delete_parameter().name(), c);
+    } else {
+      SendParameterDeleteEventToProcesses(req.delete_parameter().name(), c);
     }
     break;
 

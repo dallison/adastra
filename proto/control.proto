@@ -233,6 +233,8 @@ message SpawnRequest {
       13; // Index of parameters read fd (into fds)
   optional int32 parameters_write_fd_index =
       14; // Index of parameters write fd (into fds)
+  optional int32 parameters_events_fd_index =
+      15; // Index of parameters write fd (into fds)
 }
 
 message SpawnResponse {

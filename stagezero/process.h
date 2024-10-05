@@ -13,6 +13,7 @@
 #include "coroutine.h"
 #include "proto/config.pb.h"
 #include "proto/control.pb.h"
+#include "proto/parameters.pb.h"
 #include "stagezero/symbols.h"
 #include "toolbelt/fd.h"
 #include "toolbelt/pipe.h"
@@ -121,6 +122,11 @@ public:
 
   parameters::ParameterServer &Parameters() { return local_parameters_; }
 
+  void SetWantsParameterEvents(bool wants) { wants_parameter_events_ = wants; }
+
+  void SendParameterUpdateEvent(const std::string &name, const parameters::Value &value, co::Coroutine* c);
+  void SendParameterDeleteEvent(const std::string &name, co::Coroutine* c);
+
 protected:
   virtual int Wait() = 0;
   absl::Status BuildStreams(
@@ -133,6 +139,7 @@ protected:
     }
     return -1;
   }
+  void SendParameterEvent(const adastra::proto::parameters::ParameterEvent &event, co::Coroutine* c);
 
   co::CoroutineScheduler &scheduler_;
   StageZero &stagezero_;
@@ -160,6 +167,9 @@ protected:
   std::string cgroup_;
   bool detached_ = false; // Process is detached from a client.
   std::optional<Namespace> ns_;
+  bool wants_parameter_events_ = false;
+  toolbelt::FileDescriptor parameters_event_read_fd_;
+  toolbelt::FileDescriptor parameters_event_write_fd_;
 };
 
 class StaticProcess : public Process {

@@ -429,9 +429,23 @@ absl::Status Process::BuildStreams(
     if (!wpipe.ok()) {
       return wpipe.status();
     }
-    wstream->fd = rpipe->WriteFd().Fd();
+    wstream->fd = wpipe->WriteFd().Fd();
     wstream->pipe = std::move(*wpipe);
     streams_.push_back(wstream);
+
+    // Events stream.
+    auto estream = std::make_shared<StreamInfo>();
+    estream->disposition = proto::StreamControl::PARAMETERS_EVENTS;
+    estream->direction = proto::StreamControl::INPUT;
+    absl::StatusOr<toolbelt::Pipe> epipe = MakeFileDescriptors(false, nullptr);
+    if (!epipe.ok()) {
+      return epipe.status();
+    }
+    parameters_event_write_fd_ = epipe->WriteFd();
+    parameters_event_read_fd_ = epipe->ReadFd();
+    estream->fd = epipe->WriteFd().Fd();
+    estream->pipe = std::move(*epipe);
+    streams_.push_back(estream);
   }
 
   if (interactive_) {
@@ -627,7 +641,8 @@ absl::Status Process::BuildStreams(
 void Process::RunParameterServer() {
   std::shared_ptr<StreamInfo> param_read_stream = FindParametersStream(true);
   std::shared_ptr<StreamInfo> param_write_stream = FindParametersStream(false);
-  assert(param_read_stream != nullptr || param_write_stream != nullptr);
+  assert(param_read_stream != nullptr && param_write_stream != nullptr);
+
   client_->AddCoroutine(std::make_unique<co::Coroutine>(scheduler_, [
     proc = shared_from_this(), param_read_stream, param_write_stream,
     client = client_
@@ -671,7 +686,7 @@ void Process::RunParameterServer() {
       adastra::proto::parameters::Response resp;
 
       proc->GetStageZero().HandleParameterServerRequest(proc, req, resp,
-                                                        client);
+                                                        client, c);
 
       uint64_t len = resp.ByteSizeLong();
       std::vector<char> resp_buffer(len + sizeof(uint32_t));
@@ -701,6 +716,58 @@ void Process::RunParameterServer() {
       }
     }
   }));
+}
+
+void Process::SendParameterUpdateEvent(const std::string &name,
+                                       const parameters::Value &value,
+                                       co::Coroutine *c) {
+  if (!wants_parameter_events_) {
+    std::cerr << "Not sending parameter update event\n";
+    return;
+  }
+  adastra::proto::parameters::ParameterEvent event;
+  event.mutable_update()->set_name(name);
+  value.ToProto(event.mutable_update()->mutable_value());
+  SendParameterEvent(event, c);
+}
+
+void Process::SendParameterDeleteEvent(const std::string &name,
+                                       co::Coroutine *c) {
+  if (!wants_parameter_events_) {
+    return;
+  }
+  adastra::proto::parameters::ParameterEvent event;
+  event.set_delete_(name);
+  SendParameterEvent(event, c);
+}
+
+void Process::SendParameterEvent(
+    const adastra::proto::parameters::ParameterEvent &event, co::Coroutine *c) {
+  std::cerr << "sending parameter event " << event.DebugString() << "\n";
+  uint64_t len = event.ByteSizeLong();
+  std::vector<char> event_buffer(len + sizeof(uint32_t));
+  char *eventbuf = event_buffer.data() + 4;
+  if (!event.SerializeToArray(eventbuf, uint32_t(len))) {
+    client_->Log(Name(), toolbelt::LogLevel::kError,
+                 "Failed to serialize parameters event");
+    return;
+  }
+  // Copy length into buffer.
+  memcpy(event_buffer.data(), &len, sizeof(uint32_t));
+  char *buf = event_buffer.data();
+  size_t remaining = len + sizeof(uint32_t);
+  while (remaining > 0) {
+    int wait_fd = c->Wait(parameters_event_write_fd_.Fd(), POLLOUT);
+    if (wait_fd != parameters_event_write_fd_.Fd()) {
+      return;
+    }
+    ssize_t n = ::write(parameters_event_write_fd_.Fd(), buf, remaining);
+    if (n <= 0) {
+      return;
+    }
+    remaining -= n;
+    buf += n;
+  }
 }
 
 absl::Status
@@ -814,7 +881,8 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
         // number and close the duplicated file descriptor.
         if (stream->disposition != proto::StreamControl::NOTIFY &&
             stream->disposition != proto::StreamControl::PARAMETERS_READ &&
-            stream->disposition != proto::StreamControl::PARAMETERS_WRITE) {
+            stream->disposition != proto::StreamControl::PARAMETERS_WRITE &&
+            stream->disposition != proto::StreamControl::PARAMETERS_EVENTS) {
           if (stream->disposition == proto::StreamControl::FILENAME) {
             // For files, we have deferred the open until we know the pid
             // of the process.  This is because it's likely that the
@@ -864,7 +932,8 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
         if (stream->disposition == proto::StreamControl::CLIENT ||
             stream->disposition == proto::StreamControl::NOTIFY ||
             stream->disposition == proto::StreamControl::PARAMETERS_READ ||
-            stream->disposition == proto::StreamControl::PARAMETERS_WRITE) {
+            stream->disposition == proto::StreamControl::PARAMETERS_WRITE ||
+            stream->disposition == proto::StreamControl::PARAMETERS_EVENTS) {
           // Close the duplicated other end of the pipes.
           toolbelt::FileDescriptor &fd =
               stream->direction == proto::StreamControl::OUTPUT
@@ -923,9 +992,10 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
     assert(params_read_stream != nullptr);
     assert(params_write_stream != nullptr);
     env_strings.push_back(
-        absl::StrFormat("STAGEZERO_PARAMETERS_FDS=%d:%d",
+        absl::StrFormat("STAGEZERO_PARAMETERS_FDS=%d:%d:%d",
                         params_read_stream->pipe.ReadFd().Fd(),
-                        params_write_stream->pipe.WriteFd().Fd()));
+                        params_write_stream->pipe.WriteFd().Fd(),
+                        parameters_event_read_fd_.Fd()));
 
     absl::flat_hash_map<std::string, Symbol *> env_vars =
         local_symbols_.GetEnvironmentSymbols();
@@ -1286,6 +1356,10 @@ Zygote::Spawn(const stagezero::control::LaunchVirtualProcessRequest &req,
     case proto::StreamControl::PARAMETERS_WRITE:
       fds.push_back(stream->pipe.WriteFd());
       spawn.set_parameters_write_fd_index(fd_index++);
+      break;
+    case proto::StreamControl::PARAMETERS_EVENTS:
+      fds.push_back(stream->pipe.ReadFd());
+      spawn.set_parameters_events_fd_index(fd_index++);
       break;
     default:
       if (stream->disposition != proto::StreamControl::STAGEZERO) {
