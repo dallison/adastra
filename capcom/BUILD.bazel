@@ -58,6 +58,7 @@ cc_test(
         "//testdata:files",
         "//testdata:listener.so",
         "//testdata:loop",
+        "//testdata:params",
         "//testdata:module.so",
         "//testdata:talker.so",
         "//testdata:vars",

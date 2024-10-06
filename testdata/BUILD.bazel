@@ -6,12 +6,23 @@ cc_binary(
         "loop.cc",
     ],
     deps = [
-        "//stagezero/parameters",
         "@com_google_absl//absl/debugging:failure_signal_handler",
         "@com_google_absl//absl/debugging:symbolize",
     ],
 )
 
+cc_binary(
+    name = "params",
+    srcs = [
+        "params.cc",
+    ],
+    deps = [
+        "//stagezero/parameters",
+        "@com_google_absl//absl/debugging:failure_signal_handler",
+        "@com_google_absl//absl/debugging:symbolize",
+        "@toolbelt//toolbelt",
+    ],
+)
 cc_binary(
     name = "echo",
     srcs = [

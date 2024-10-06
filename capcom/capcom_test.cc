@@ -1940,8 +1940,8 @@ TEST_F(CapcomTest, Parameters) {
   status = client.AddSubsystem(
       "param", {
                    .static_processes = {{
-                       .name = "param",
-                       .executable = "${runfiles_dir}/_main/testdata/loop",
+                       .name = "params",
+                       .executable = "${runfiles_dir}/_main/testdata/params",
                        .notify = true,
                    }},
                });
@@ -1975,8 +1975,8 @@ TEST_F(CapcomTest, LocalParameters) {
       "param",
       {
           .static_processes = {{
-              .name = "param",
-              .executable = "${runfiles_dir}/_main/testdata/loop",
+              .name = "params",
+              .executable = "${runfiles_dir}/_main/testdata/params",
               .notify = true,
               .parameters =
                   {
@@ -2012,8 +2012,8 @@ TEST_F(CapcomTest, ParametersWithUpdate) {
   status = client.AddSubsystem(
       "param", {
                    .static_processes = {{
-                       .name = "param",
-                       .executable = "${runfiles_dir}/_main/testdata/loop",
+                       .name = "params",
+                       .executable = "${runfiles_dir}/_main/testdata/params",
                        .notify = true,
                        .args = {"parameter_events"},
                    }},
@@ -2048,8 +2048,8 @@ TEST_F(CapcomTest, LocalParametersWithEvents) {
       "param",
       {
           .static_processes = {{
-              .name = "param",
-              .executable = "${runfiles_dir}/_main/testdata/loop",
+              .name = "params",
+              .executable = "${runfiles_dir}/_main/testdata/params",
               .notify = true,
               .args = {"parameter_events"},
 
@@ -2059,6 +2059,57 @@ TEST_F(CapcomTest, LocalParametersWithEvents) {
                   },
           }},
       });
+  // Start the subsystem
+  status = client.StartSubsystem("param");
+  ASSERT_TRUE(status.ok());
+
+  sleep(1);
+  // Stop the subsystem.
+  status = client.StopSubsystem("param");
+  ASSERT_TRUE(status.ok());
+
+  // Remove the subsystem.
+  status = client.RemoveSubsystem("param", false);
+  ASSERT_TRUE(status.ok());
+}
+
+TEST_F(CapcomTest, ParameterPerformance) {
+  adastra::capcom::client::Client client(ClientMode::kBlocking);
+  InitClient(client, "foobar1");
+
+  // Add a lot of global parameters.
+  for (int i = 0; i < 10; i++) {
+    for (int j = 0; j < 10; j++) {
+      for (int k = 0; k < 10; k++) {
+        std::string name = absl::StrFormat("/%d/%d/%d", i, j, k);
+        int32_t value = i * j * k;
+        absl::Status status = client.SetParameter(name, value);
+        ASSERT_TRUE(status.ok());
+      }
+    }
+  }
+
+  std::vector<adastra::parameters::Parameter> local_params;
+  for (int i = 0; i < 5; i++) {
+    for (int j = 0; j < 5; j++) {
+      for (int k = 0; k < 5; k++) {
+        std::string name = absl::StrFormat("%d/%d/%d", i, j, k);
+        int32_t value = i * j * k;
+        local_params.push_back({name, value});
+      }
+    }
+  }
+  absl::Status status = client.AddSubsystem(
+      "param", {
+                   .static_processes = {{
+                       .name = "params",
+                       .executable = "${runfiles_dir}/_main/testdata/params",
+                       .notify = true,
+                       .args = {"performance"},
+
+                       .parameters = local_params,
+                   }},
+               });
   // Start the subsystem
   status = client.StartSubsystem("param");
   ASSERT_TRUE(status.ok());

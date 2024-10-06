@@ -19,18 +19,19 @@ bazel_dep(name = "rules_cc", version = "0.0.9")
 bazel_dep(name = "rules_pkg", version = "0.9.1")
 bazel_dep(name = "zlib", version = "1.3.1.bcr.3")
 
-# http_archive(
-#   name = "toolbelt",
-#   urls = ["https://github.com/dallison/cpp_toolbelt/archive/refs/tags/1.2.1.tar.gz"],
-#   strip_prefix = "cpp_toolbelt-1.2.1",
-#   sha256 = "d9b4747cd90a4be9984cf623e2b174bc6333592cd381cc11abea659214c85257"
-# )
+http_archive(
+  name = "toolbelt",
+  urls = ["https://github.com/dallison/cpp_toolbelt/archive/refs/tags/1.2.2.tar.gz"],
+  strip_prefix = "cpp_toolbelt-1.2.2",
+  #sha256 = "d9b4747cd90a4be9984cf623e2b174bc6333592cd381cc11abea659214c85257"
+  integrity = "sha256-ZVjTxhPStiGhheys3qIpwHHuP9h7r6BaT0BW0fVr4xM=",
+)
 
 # For local debugging of toolbelt coroutine library.
-local_repository(
-    name = "toolbelt",
-    path = "../cpp_toolbelt",
-)
+# local_repository(
+#     name = "toolbelt",
+#     path = "../cpp_toolbelt",
+# )
 
 # Coroutines
 http_archive(
