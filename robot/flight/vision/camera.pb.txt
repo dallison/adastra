@@ -4,7 +4,7 @@ subsystem {
     name: "camera_left"
     zygote: "standard_zygote"
     disabled: false
-    dso: "${runfiles_dir}/__main__/robot/vision/camera.so"
+    dso: "${runfiles_dir}/_main/robot/vision/camera.so"
     options {
       vars: {
           name: "camera_name"
@@ -25,7 +25,7 @@ subsystem {
   module {
     name: "camera_right"
     zygote: "standard_zygote"
-    dso: "${runfiles_dir}/__main__/robot/vision/camera.so"
+    dso: "${runfiles_dir}/_main/robot/vision/camera.so"
     disabled: false
     options {
       vars: {

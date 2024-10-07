@@ -4,7 +4,7 @@ subsystem {
    module {
     name: "ipc_logger"
     zygote: "standard_zygote"
-    dso: "${runfiles_dir}/__main__/robot/logger/logger.so"
+    dso: "${runfiles_dir}/_main/robot/logger/logger.so"
     disabled: false
     options {
       sigint_shutdown_timeout_secs: 2

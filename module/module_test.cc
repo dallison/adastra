@@ -486,7 +486,7 @@ TEST_F(ModuleTest, MultiplePublishersAndSubscribers) {
                    moduletest::TestMessage &msg, co::Coroutine *c) -> size_t {
           msg.set_x(count++);
           msg.set_s(pub_name);
-          return true;
+          return msg.ByteSizeLong();
         });
     ASSERT_TRUE(pub.ok());
     pubs.push_back(*pub);

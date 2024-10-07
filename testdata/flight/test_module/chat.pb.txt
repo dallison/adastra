@@ -3,7 +3,7 @@ subsystem {
   module {
     name: "talker"
     zygote: "standard_zygote"
-    dso: "${runfiles_dir}/__main__/testdata/${name}.so"
+    dso: "${runfiles_dir}/_main/testdata/${name}.so"
     options {
       sigint_shutdown_timeout_secs: 2
       sigterm_shutdown_timeout_secs: 10
@@ -18,7 +18,7 @@ subsystem {
   module {
     name: "listener"
     zygote: "standard_zygote"
-    dso: "${runfiles_dir}/__main__/testdata/${name}.so"
+    dso: "${runfiles_dir}/_main/testdata/${name}.so"
     options {
       sigint_shutdown_timeout_secs: 2
       sigterm_shutdown_timeout_secs: 10

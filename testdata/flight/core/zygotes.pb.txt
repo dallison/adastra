@@ -2,7 +2,7 @@ subsystem {
   name: "standard_zygote"
   zygote {
     name: "standard_zygote"
-    executable: "${runfiles_dir}/__main__/stagezero/zygote/${name}"
+    executable: "${runfiles_dir}/_main/stagezero/zygote/${name}"
     options {
       notify: true
     }

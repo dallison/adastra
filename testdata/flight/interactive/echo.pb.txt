@@ -3,7 +3,7 @@ subsystem {
 
  static_process {
   name: "echoraw"
-  executable: "${runfiles_dir}/__main__/testdata/${name}"
+  executable: "${runfiles_dir}/_main/testdata/${name}"
   interactive: true
   options {
     notify: true

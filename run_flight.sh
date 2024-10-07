@@ -11,19 +11,19 @@ TEST_MODE=false
 
 echo Running stagezero
 if [[ "$SUDO" != "" ]]; then
-  (cd $RUNFILES_DIR ; $SUDO ./__main__/stagezero/stagezero --silent=$SILENT 0<&1 &)
+  (cd $RUNFILES_DIR ; $SUDO ./_main/stagezero/stagezero --silent=$SILENT 0<&1 &)
 else
-  $RUNFILES_DIR/__main__/stagezero/stagezero --silent=$SILENT 0<&1 &
+  $RUNFILES_DIR/_main/stagezero/stagezero --silent=$SILENT 0<&1 &
 fi
 s0_pid=$!
 sleep 1
 
 echo Running capcom
-bazel-bin/flight/flight.runfiles/__main__/capcom/capcom --silent=$SILENT --test_mode=$TEST_MODE 0<&1 &
+bazel-bin/flight/flight.runfiles/_main/capcom/capcom --silent=$SILENT --test_mode=$TEST_MODE 0<&1 &
 capcom_pid=$!
 sleep 1
 trap "kill -INT $s0_pid $capcom_pid; exit" SIGINT EXIT
 
-bazel-bin//flight/flight.runfiles/__main__/flight/flight_director $*
+bazel-bin//flight/flight.runfiles/_main/flight/flight_director $*
 #wait
 
