@@ -37,6 +37,9 @@ int main(int argc, char **argv) {
 
   if (performance) {
     // Parameter performance test.
+    // This relies on the parameters being set by the test.  See
+    // capcom_test.cc, ParametersPerformance for the test that sets the
+    // parameters.  Best to keep this in sync with that test.
     stagezero::Parameters params;
     auto start = toolbelt::Now();
     int num_globals = 0;

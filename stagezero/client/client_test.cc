@@ -178,8 +178,7 @@ TEST_F(ClientTest, LaunchAndStop) {
   InitClient(client, "foobar2");
 
   absl::StatusOr<std::pair<std::string, int>> status =
-      client.LaunchStaticProcess("loop",
-                                 "${runfiles_dir}/__main__/testdata/loop",
+      client.LaunchStaticProcess("loop", "${runfiles_dir}/_main/testdata/loop",
                                  {
                                      .args =
                                          {
@@ -201,8 +200,7 @@ TEST_F(ClientTest, LaunchAndStopSigTerm) {
   InitClient(client, "foobar2");
 
   absl::StatusOr<std::pair<std::string, int>> status =
-      client.LaunchStaticProcess("loop",
-                                 "${runfiles_dir}/__main__/testdata/loop",
+      client.LaunchStaticProcess("loop", "${runfiles_dir}/_main/testdata/loop",
                                  {
                                      .args =
                                          {
@@ -226,8 +224,7 @@ TEST_F(ClientTest, LaunchAndStopSigKill) {
   InitClient(client, "foobar2");
 
   absl::StatusOr<std::pair<std::string, int>> status =
-      client.LaunchStaticProcess("loop",
-                                 "${runfiles_dir}/__main__/testdata/loop",
+      client.LaunchStaticProcess("loop", "${runfiles_dir}/_main/testdata/loop",
                                  {
                                      .args =
                                          {
@@ -251,8 +248,7 @@ TEST_F(ClientTest, LaunchAndKill) {
   InitClient(client, "foobar2");
 
   absl::StatusOr<std::pair<std::string, int>> status =
-      client.LaunchStaticProcess("loop",
-                                 "${runfiles_dir}/__main__/testdata/loop",
+      client.LaunchStaticProcess("loop", "${runfiles_dir}/_main/testdata/loop",
                                  {
                                      .notify = true,
                                  });
@@ -269,8 +265,7 @@ TEST_F(ClientTest, LaunchAndStopNoNotify) {
   InitClient(client, "foobar2");
 
   absl::StatusOr<std::pair<std::string, int>> status =
-      client.LaunchStaticProcess("loop",
-                                 "${runfiles_dir}/__main__/testdata/loop",
+      client.LaunchStaticProcess("loop", "${runfiles_dir}/_main/testdata/loop",
                                  {.args = {
                                       "ignore_signal",
                                   }});
@@ -291,7 +286,7 @@ TEST_F(ClientTest, LaunchAndStopRepeated) {
   for (int i = 0; i < 10; i++) {
     absl::StatusOr<std::pair<std::string, int>> status =
         client.LaunchStaticProcess(
-            "loop", "${runfiles_dir}/__main__/testdata/loop",
+            "loop", "${runfiles_dir}/_main/testdata/loop",
             {
                 .startup_timeout_secs = 1, .notify = true,
             });
@@ -312,7 +307,7 @@ TEST_F(ClientTest, LaunchAndStopRepeatedNewClient) {
 
     absl::StatusOr<std::pair<std::string, int>> status =
         client.LaunchStaticProcess("loop",
-                                   "${runfiles_dir}/__main__/testdata/loop",
+                                   "${runfiles_dir}/_main/testdata/loop",
                                    {
                                        .notify = true,
                                    });
@@ -337,8 +332,7 @@ TEST_F(ClientTest, Output) {
   };
 
   absl::StatusOr<std::pair<std::string, int>> status =
-      client.LaunchStaticProcess("loop",
-                                 "${runfiles_dir}/__main__/testdata/loop",
+      client.LaunchStaticProcess("loop", "${runfiles_dir}/_main/testdata/loop",
                                  {.streams = {
                                       output,
                                   }});
@@ -368,8 +362,7 @@ TEST_F(ClientTest, OutputTTY) {
   };
 
   absl::StatusOr<std::pair<std::string, int>> status =
-      client.LaunchStaticProcess("loop2",
-                                 "${runfiles_dir}/__main__/testdata/loop",
+      client.LaunchStaticProcess("loop2", "${runfiles_dir}/_main/testdata/loop",
                                  {.streams = {
                                       output,
                                   }});
@@ -396,8 +389,7 @@ TEST_F(ClientTest, OutputSyslog) {
   };
 
   absl::StatusOr<std::pair<std::string, int>> status =
-      client.LaunchStaticProcess("loop2",
-                                 "${runfiles_dir}/__main__/testdata/loop",
+      client.LaunchStaticProcess("loop2", "${runfiles_dir}/_main/testdata/loop",
                                  {.streams = {
                                       output,
                                   }});
@@ -429,8 +421,7 @@ TEST_F(ClientTest, Echo) {
   };
 
   absl::StatusOr<std::pair<std::string, int>> status =
-      client.LaunchStaticProcess("echo",
-                                 "${runfiles_dir}/__main__/testdata/echo",
+      client.LaunchStaticProcess("echo", "${runfiles_dir}/_main/testdata/echo",
                                  {.streams = {
                                       output, input,
                                   }});
@@ -475,13 +466,12 @@ TEST_F(ClientTest, EchoFileRead) {
       .direction = adastra::Stream::Direction::kInput,
       .data =
           {
-              "${runfiles_dir}/__main__/testdata/input_data.txt",
+              "${runfiles_dir}/_main/testdata/input_data.txt",
           },
   };
 
   absl::StatusOr<std::pair<std::string, int>> status =
-      client.LaunchStaticProcess("echo",
-                                 "${runfiles_dir}/__main__/testdata/echo",
+      client.LaunchStaticProcess("echo", "${runfiles_dir}/_main/testdata/echo",
                                  {.streams = {
                                       output, input,
                                   }});
@@ -519,13 +509,12 @@ TEST_F(ClientTest, EchoFileWrite) {
       .direction = adastra::Stream::Direction::kInput,
       .data =
           {
-              "${runfiles_dir}/__main__/testdata/input_data.txt",
+              "${runfiles_dir}/_main/testdata/input_data.txt",
           },
   };
 
   absl::StatusOr<std::pair<std::string, int>> status =
-      client.LaunchStaticProcess("echo",
-                                 "${runfiles_dir}/__main__/testdata/echo",
+      client.LaunchStaticProcess("echo", "${runfiles_dir}/_main/testdata/echo",
                                  {.streams = {
                                       output, input,
                                   }});
@@ -610,7 +599,7 @@ TEST_F(ClientTest, ProcessVars) {
 
   absl::StatusOr<std::pair<std::string, int>> status =
       client.LaunchStaticProcess(
-          "vars", "${runfiles_dir}/__main__/testdata/${procname}",
+          "vars", "${runfiles_dir}/_main/testdata/${procname}",
           {.vars =
                {
                    {.name = "dave", .value = "allison", .exported = false},
@@ -634,13 +623,24 @@ TEST_F(ClientTest, ProcessVars) {
   WaitForEvent(client, adastra::stagezero::control::Event::kStart);
 
   std::string data = WaitForOutput(client, "DONE\n");
-
+  size_t fds = data.find("STAGEZERO_PARAMETERS_FDS=");
+  if (fds != std::string::npos) {
+    size_t nl = data.find('\n', fds);
+    if (nl != std::string::npos) {
+      // Go back to an equals sign.
+      size_t eq = data.rfind('=', nl);
+      if (eq != std::string::npos) {
+        data.replace(eq + 1, nl - eq - 1, "X:X:X");
+      }
+    }
+  }
   std::string expected = "arg[0]: " + runfiles +
-                         R"(/__main__/testdata/vars
+                         R"(/_main/testdata/vars
 arg[1]: allison123
 arg[2]: barfoo 456
 DAVE=ALLISON
 FOOBAR=BARFOO
+STAGEZERO_PARAMETERS_FDS=X:X:X
 DONE
 )";
   ASSERT_EQ(expected, data);
@@ -652,7 +652,7 @@ TEST_F(ClientTest, LaunchZygoteAndStop) {
   InitClient(client, "foobar2");
 
   absl::StatusOr<std::pair<std::string, int>> status = client.LaunchZygote(
-      "zygote", "${runfiles_dir}/__main__/stagezero/zygote/standard_zygote");
+      "zygote", "${runfiles_dir}/_main/stagezero/zygote/standard_zygote");
   ASSERT_TRUE(status.ok());
 
   std::string process_id = status->first;
@@ -669,7 +669,7 @@ TEST_F(ClientTest, LaunchZygoteAndKill) {
   InitClient(client, "foobar2");
 
   absl::StatusOr<std::pair<std::string, int>> status = client.LaunchZygote(
-      "zygote", "${runfiles_dir}/__main__/stagezero/zygote/standard_zygote");
+      "zygote", "${runfiles_dir}/_main/stagezero/zygote/standard_zygote");
   ASSERT_TRUE(status.ok());
 
   int pid = status->second;
@@ -687,7 +687,7 @@ TEST_F(ClientTest, Launch2ZygotesAndStop) {
   for (int i = 0; i < 2; i++) {
     absl::StatusOr<std::pair<std::string, int>> status = client.LaunchZygote(
         absl::StrFormat("zygote_%d", i),
-        "${runfiles_dir}/__main__/stagezero/zygote/standard_zygote");
+        "${runfiles_dir}/_main/stagezero/zygote/standard_zygote");
     ASSERT_TRUE(status.ok());
 
     std::string process_id = status->first;
@@ -709,8 +709,7 @@ TEST_F(ClientTest, LaunchAndStopVirtual) {
   // Launch zygote.
   absl::StatusOr<std::pair<std::string, int>> zygote_status =
       client.LaunchZygote(
-          "zygote",
-          "${runfiles_dir}/__main__/stagezero/zygote/standard_zygote");
+          "zygote", "${runfiles_dir}/_main/stagezero/zygote/standard_zygote");
   ASSERT_TRUE(zygote_status.ok());
 
   std::string zygote_process_id = zygote_status->first;
@@ -719,7 +718,7 @@ TEST_F(ClientTest, LaunchAndStopVirtual) {
 
   absl::StatusOr<std::pair<std::string, int>> virt_status =
       client.LaunchVirtualProcess("modtest", "zygote",
-                                  "${runfiles_dir}/__main__/"
+                                  "${runfiles_dir}/_main/"
                                   "testdata/module.so",
                                   "Main",
                                   {.args = {"ignore_signal"}, .notify = true});
@@ -744,8 +743,7 @@ TEST_F(ClientTest, LaunchAndStopVirtualVars) {
   // Launch zygote.
   absl::StatusOr<std::pair<std::string, int>> zygote_status =
       client.LaunchZygote(
-          "zygote",
-          "${runfiles_dir}/__main__/stagezero/zygote/standard_zygote");
+          "zygote", "${runfiles_dir}/_main/stagezero/zygote/standard_zygote");
   ASSERT_TRUE(zygote_status.ok());
 
   std::string zygote_process_id = zygote_status->first;
@@ -759,7 +757,7 @@ TEST_F(ClientTest, LaunchAndStopVirtualVars) {
   absl::StatusOr<std::pair<std::string, int>> virt_status =
       client.LaunchVirtualProcess(
           "modtest", "zygote",
-          "${runfiles_dir}/__main__/"
+          "${runfiles_dir}/_main/"
           "testdata/module.so",
           "Main",
           {
@@ -790,8 +788,7 @@ TEST_F(ClientTest, LaunchAndKillVirtual) {
   // Launch zygote.
   absl::StatusOr<std::pair<std::string, int>> zygote_status =
       client.LaunchZygote(
-          "zygote",
-          "${runfiles_dir}/__main__/stagezero/zygote/standard_zygote");
+          "zygote", "${runfiles_dir}/_main/stagezero/zygote/standard_zygote");
   ASSERT_TRUE(zygote_status.ok());
 
   std::string zygote_process_id = zygote_status->first;
@@ -800,7 +797,7 @@ TEST_F(ClientTest, LaunchAndKillVirtual) {
 
   absl::StatusOr<std::pair<std::string, int>> virt_status =
       client.LaunchVirtualProcess("modtest", "zygote",
-                                  "${runfiles_dir}/__main__/"
+                                  "${runfiles_dir}/_main/"
                                   "testdata/module.so",
                                   "Main", {.notify = true});
   ASSERT_TRUE(virt_status.ok());
@@ -823,8 +820,7 @@ TEST_F(ClientTest, VirtualOutput) {
   // Launch zygote.
   absl::StatusOr<std::pair<std::string, int>> zygote_status =
       client.LaunchZygote(
-          "zygote",
-          "${runfiles_dir}/__main__/stagezero/zygote/standard_zygote");
+          "zygote", "${runfiles_dir}/_main/stagezero/zygote/standard_zygote");
   ASSERT_TRUE(zygote_status.ok());
 
   std::string zygote_process_id = zygote_status->first;
@@ -839,7 +835,7 @@ TEST_F(ClientTest, VirtualOutput) {
 
   absl::StatusOr<std::pair<std::string, int>> virt_status =
       client.LaunchVirtualProcess("modtest", "zygote",
-                                  "${runfiles_dir}/__main__/"
+                                  "${runfiles_dir}/_main/"
                                   "testdata/module.so",
                                   "Main", {.streams = {output}});
   ASSERT_TRUE(virt_status.ok());
@@ -914,7 +910,7 @@ TEST_F(ClientTest, Namespaces) {
   std::vector<std::string> lines = absl::StrSplit(data, '\n');
   bool lo_found = false;
   bool something_else_found = false;
-  for (auto& line : lines) {
+  for (auto &line : lines) {
     if (line.find("FOO") != std::string::npos) {
       continue;
     }
@@ -925,13 +921,13 @@ TEST_F(ClientTest, Namespaces) {
         continue;
       }
       something_else_found = true;
-	  break;
+      break;
     }
   }
   ASSERT_TRUE(lo_found);
   ASSERT_FALSE(something_else_found);
 #endif
-  
+
   absl::Status s = client.StopProcess(process_id);
   ASSERT_TRUE(s.ok());
   WaitForEvent(client, adastra::stagezero::control::Event::kStop);

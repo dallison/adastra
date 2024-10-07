@@ -982,7 +982,7 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
     }
 
     // Tell the process what the parameters stream is.  This is used by the
-    // process to read and modify the global parameters for the system.
+    // process to read and modify the global and local parameters for the system.
     // Think ROS parameter server.  The directions here are from the point
     // of view of the process.  So the read stream is the stream the process
     // reads from.
