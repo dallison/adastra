@@ -89,7 +89,13 @@ int Process::WaitLoop(co::Coroutine *c,
   running_ = false;
   siginfo_t siginfo;
   int e = waitid(idtype_t(P_PIDFD), pid_fd_.Fd(), &siginfo, WEXITED | WNOHANG);
-  if (e == 0 && siginfo.si_pid != 0) {
+  if (e != 0) {
+    return 127;
+  }
+  switch (siginfo.si_code) {
+  case CLD_EXITED:
+    return (siginfo.si_status & 0xff) << 8;
+  case CLD_KILLED:
     return siginfo.si_status;
   }
   return 127;
@@ -1017,14 +1023,14 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
 
     if (geteuid() == 0) {
       // We can only set the user and group if we are running as root.
-      e = seteuid(uid);
+      e = setuid(uid);
       if (e == -1) {
-        std::cerr << "Failed to seteuid: " << strerror(errno) << std::endl;
+        std::cerr << "Failed to setuid: " << strerror(errno) << std::endl;
         exit(1);
       }
-      e = setegid(gid);
+      e = setgid(gid);
       if (e == -1) {
-        std::cerr << "Failed to setegid: " << strerror(errno) << std::endl;
+        std::cerr << "Failed to setgid: " << strerror(errno) << std::endl;
         exit(1);
       }
     }

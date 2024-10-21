@@ -58,7 +58,7 @@ public:
   }
 
 private:
-  static constexpr uint64_t kMaxResponseMessageSize = 4096;
+  static constexpr uint64_t kMaxResponseMessageSize = 8192;
   static constexpr int32_t kNumResponseSlots = 16;
 
   struct MapTile {

@@ -28,7 +28,7 @@ static inline constexpr char kLocalizerStatus[] = "/localizer_status";
 static inline constexpr char kStereo[] = "/stereo";
 static inline constexpr char kGps[] = "/gps";
 
-static constexpr uint64_t kMaxMessageSize = 32;
+static constexpr uint64_t kMaxMessageSize = 8192;
 static constexpr int32_t kNumSlots = 16;
 
 class Localizer : public adastra::module::ProtobufModule,
