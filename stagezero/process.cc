@@ -691,8 +691,8 @@ void Process::RunParameterServer() {
       }
       adastra::proto::parameters::Response resp;
 
-      proc->GetStageZero().HandleParameterServerRequest(proc, req, resp,
-                                                        client, c);
+      proc->GetStageZero().HandleParameterServerRequest(proc, req, resp, client,
+                                                        c);
 
       uint64_t len = resp.ByteSizeLong();
       std::vector<char> resp_buffer(len + sizeof(uint32_t));
@@ -728,7 +728,6 @@ void Process::SendParameterUpdateEvent(const std::string &name,
                                        const parameters::Value &value,
                                        co::Coroutine *c) {
   if (!wants_parameter_events_) {
-    std::cerr << "Not sending parameter update event\n";
     return;
   }
   adastra::proto::parameters::ParameterEvent event;
@@ -749,7 +748,6 @@ void Process::SendParameterDeleteEvent(const std::string &name,
 
 void Process::SendParameterEvent(
     const adastra::proto::parameters::ParameterEvent &event, co::Coroutine *c) {
-  std::cerr << "sending parameter event " << event.DebugString() << "\n";
   uint64_t len = event.ByteSizeLong();
   std::vector<char> event_buffer(len + sizeof(uint32_t));
   char *eventbuf = event_buffer.data() + 4;
@@ -988,10 +986,10 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
     }
 
     // Tell the process what the parameters stream is.  This is used by the
-    // process to read and modify the global and local parameters for the system.
-    // Think ROS parameter server.  The directions here are from the point
-    // of view of the process.  So the read stream is the stream the process
-    // reads from.
+    // process to read and modify the global and local parameters for the
+    // system. Think ROS parameter server.  The directions here are from the
+    // point of view of the process.  So the read stream is the stream the
+    // process reads from.
     std::shared_ptr<StreamInfo> params_read_stream = FindParametersStream(true);
     std::shared_ptr<StreamInfo> params_write_stream =
         FindParametersStream(false);

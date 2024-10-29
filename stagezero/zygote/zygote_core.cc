@@ -321,7 +321,8 @@ absl::Status ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
                                absl::StrFormat("%d", notify_fd.Fd()), true);
     }
 
-    int parameters_read_fd = -1, parameters_write_fd = -1;
+    int parameters_read_fd = -1, parameters_write_fd = -1,
+        parameters_events_fd = -1;
     if (req.has_parameters_read_fd_index()) {
       toolbelt::FileDescriptor &parameters_fd =
           fds[req.parameters_read_fd_index()];
@@ -334,13 +335,20 @@ absl::Status ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
       parameters_write_fd = parameters_fd.Fd();
       fds_to_keep_open.insert(parameters_fd.Fd());
     }
-
-    if (parameters_read_fd != -1 && parameters_write_fd != -1) {
+    if (req.has_parameters_events_fd_index()) {
+      toolbelt::FileDescriptor &parameters_fd =
+          fds[req.parameters_events_fd_index()];
+      parameters_events_fd = parameters_fd.Fd();
+      fds_to_keep_open.insert(parameters_fd.Fd());
+    }
+    if (parameters_read_fd != -1 && parameters_write_fd != -1 &&
+        parameters_events_fd != -1) {
       unsetenv("STAGEZERO_PARAMETERS_FDS");
-      local_symbols->AddSymbol(
-          "STAGEZERO_PARAMETERS_FDS",
-          absl::StrFormat("%d:%d", parameters_read_fd, parameters_write_fd),
-          true);
+      local_symbols->AddSymbol("STAGEZERO_PARAMETERS_FDS",
+                               absl::StrFormat("%d:%d:%d", parameters_read_fd,
+                                               parameters_write_fd,
+                                               parameters_events_fd),
+                               true);
     }
 
     for (auto &stream : req.streams()) {
