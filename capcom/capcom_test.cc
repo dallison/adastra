@@ -2124,6 +2124,78 @@ TEST_F(CapcomTest, ParameterPerformance) {
   ASSERT_TRUE(status.ok());
 }
 
+TEST_F(CapcomTest, AllParameterTypes) {
+    adastra::capcom::client::Client client(ClientMode::kBlocking);
+    InitClient(client, "foobar1");
+
+    cruise::Status status = client.SetParameter("/parameter/int32", int32_t(1234));
+    CRUISE_ASSERT_OK_ALWAYS(status);
+
+    status = client.SetParameter("/parameter/int64", int64_t(4321));
+    CRUISE_ASSERT_OK_ALWAYS(status);
+
+    status = client.SetParameter("/parameter/string1", "string1");
+    CRUISE_ASSERT_OK_ALWAYS(status);
+
+    status = client.SetParameter("/parameter/string2", std::string("string2"));
+    CRUISE_ASSERT_OK_ALWAYS(status);
+
+    status = client.SetParameter("/parameter/double", 3.14159265);
+    CRUISE_ASSERT_OK_ALWAYS(status);
+
+    status = client.SetParameter("/parameter/bool", true);
+    CRUISE_ASSERT_OK_ALWAYS(status);
+
+    std::string bytes(1'000, 'a');
+    status = client.SetParameter("/parameter/bytes", absl::Span(bytes.data(), bytes.size()));
+    CRUISE_ASSERT_OK_ALWAYS(status);
+
+    struct timespec ts = {1234, 4321};
+    status = client.SetParameter("/parameter/timespec", ts);
+    CRUISE_ASSERT_OK_ALWAYS(status);
+
+    std::vector<adastra::parameters::Value> values;
+    values.push_back(int32_t(1234));
+    values.push_back(int64_t(4321));
+    values.push_back("string1");
+
+    status = client.SetParameter("/parameter/vector", values);
+    CRUISE_ASSERT_OK_ALWAYS(status);
+
+    std::map<std::string, adastra::parameters::Value> map;
+    map["int32"] = int32_t(1234);
+    map["int64"] = int64_t(4321);
+    map["string"] = "string1";
+
+    status = client.SetParameter("/parameter/map", map);
+    CRUISE_ASSERT_OK_ALWAYS(status);
+
+    // Add a subsystem that uses the parameters.
+    status = client.AddSubsystem(
+            "param",
+            {
+                    .static_processes = {{
+                            .name = "params",
+                            .executable = "cruise/adastra/testdata/params",
+                            .notify = true,
+                    }},
+            });
+    CRUISE_ASSERT_OK_ALWAYS(status);
+
+    // Start the subsystem
+    status = client.StartSubsystem("param");
+    CRUISE_ASSERT_OK_ALWAYS(status);
+
+    sleep(1);
+    // Stop the subsystem.
+    status = client.StopSubsystem("param");
+    CRUISE_ASSERT_OK_ALWAYS(status);
+
+    // Remove the subsystem.
+    status = client.RemoveSubsystem("param", false);
+    CRUISE_ASSERT_OK_ALWAYS(status);
+}
+
 int main(int argc, char **argv) {
   testing::InitGoogleTest(&argc, argv);
   absl::ParseCommandLine(argc, argv);
