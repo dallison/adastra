@@ -2124,6 +2124,78 @@ TEST_F(CapcomTest, ParameterPerformance) {
   ASSERT_TRUE(status.ok());
 }
 
+TEST_F(CapcomTest, AllParameterTypes) {
+  adastra::capcom::client::Client client(ClientMode::kBlocking);
+  InitClient(client, "foobar1");
+
+  absl::Status status = client.SetParameter("/parameter/int32", int32_t(1234));
+  ASSERT_TRUE(status.ok());
+
+  status = client.SetParameter("/parameter/int64", int64_t(4321));
+  ASSERT_TRUE(status.ok());
+
+  status = client.SetParameter("/parameter/string1", "string1");
+  ASSERT_TRUE(status.ok());
+
+  status = client.SetParameter("/parameter/string2", std::string("string2"));
+  ASSERT_TRUE(status.ok());
+
+  status = client.SetParameter("/parameter/double", 3.14159265);
+  ASSERT_TRUE(status.ok());
+
+  status = client.SetParameter("/parameter/bool", true);
+  ASSERT_TRUE(status.ok());
+
+  std::string bytes(1'000, 'a');
+  status = client.SetParameter("/parameter/bytes",
+                               absl::Span(bytes.data(), bytes.size()));
+  ASSERT_TRUE(status.ok());
+
+  struct timespec ts = {1234, 4321};
+  status = client.SetParameter("/parameter/timespec", ts);
+  ASSERT_TRUE(status.ok());
+
+  std::vector<adastra::parameters::Value> values;
+  values.push_back(int32_t(1234));
+  values.push_back(int64_t(4321));
+  values.push_back("string1");
+
+  status = client.SetParameter("/parameter/vector", values);
+  ASSERT_TRUE(status.ok());
+
+  std::map<std::string, adastra::parameters::Value> map;
+  map["int32"] = int32_t(1234);
+  map["int64"] = int64_t(4321);
+  map["string"] = "string1";
+
+  status = client.SetParameter("/parameter/map", map);
+  ASSERT_TRUE(status.ok());
+
+  // Add a subsystem that uses the parameters.
+  status = client.AddSubsystem(
+      "param", {
+                   .static_processes = {{
+                       .name = "params",
+                       .executable = "${runfiles_dir}/_main/testdata/params",
+                       .notify = true,
+                   }},
+               });
+  ASSERT_TRUE(status.ok());
+
+  // Start the subsystem
+  status = client.StartSubsystem("param");
+  ASSERT_TRUE(status.ok());
+
+  sleep(1);
+  // Stop the subsystem.
+  status = client.StopSubsystem("param");
+  ASSERT_TRUE(status.ok());
+
+  // Remove the subsystem.
+  status = client.RemoveSubsystem("param", false);
+  ASSERT_TRUE(status.ok());
+}
+
 int main(int argc, char **argv) {
   testing::InitGoogleTest(&argc, argv);
   absl::ParseCommandLine(argc, argv);
