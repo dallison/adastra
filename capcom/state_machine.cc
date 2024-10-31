@@ -139,7 +139,6 @@ Subsystem::HandleAdminCommand(const Message &message,
   if (next_state == subsystem->oper_state_) {
     // We are not changing admin states, but the parent will be expecting
     // to see an event.
-    subsystem->capcom_.SendSubsystemStatusEvent(subsystem.get());
     subsystem->NotifyParents();
   }
   return next_state;
@@ -283,7 +282,6 @@ void Subsystem::StartingChildren(uint32_t client_id, co::Coroutine *c) {
     EnterState(OperState::kStartingProcesses, client_id);
     return;
   }
-  SendToChildren(AdminState::kOnline, client_id);
   NotifyParents();
 
   capcom_.SendSubsystemStatusEvent(this);
@@ -915,7 +913,6 @@ void Subsystem::StoppingChildren(uint32_t client_id, co::Coroutine *c) {
     EnterState(OperState::kOffline, client_id);
     return;
   }
-  SendToChildren(AdminState::kOffline, client_id);
   NotifyParents();
 
   capcom_.SendSubsystemStatusEvent(this);
@@ -1078,7 +1075,8 @@ void Subsystem::StoppingChildren(uint32_t client_id, co::Coroutine *c) {
           });
 }
 
-void Subsystem::RestartNow(uint32_t client_id) {
+void Subsystem::RestartNow(uint32_t client_id) {  
+  SendToChildren(AdminState::kOnline, client_id);
   EnterState(OperState::kStartingChildren, client_id);
 }
 

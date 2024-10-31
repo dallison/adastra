@@ -662,7 +662,7 @@ void ClientHandler::HandleUploadParameters(
     params.push_back({p.name(), std::move(v)});
   }
 
-  if (absl::Status status = capcom_.UploadParameters(params); !status.ok()) {
+  if (absl::Status status = capcom_.SetAllParameters(params); !status.ok()) {
     response->set_error(status.ToString());
     return;
   }

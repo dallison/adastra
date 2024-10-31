@@ -160,7 +160,6 @@ bool ParameterServer::HasParameter(const std::string &name) {
 }
 
 absl::Status ParameterServer::DeleteParameter(const std::string &name) {
-  std::cerr << "Deleting parameter " << name << std::endl;
   std::vector<std::string> parts = ParseParameterName(name);
   if (parts.empty()) {
     return absl::InvalidArgumentError("Invalid parameter name");

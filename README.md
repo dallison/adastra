@@ -205,6 +205,259 @@ To define a module, derive a class from `adastra::module::Module` and in its `In
  
 It is important to register your module by calling `DEFINE_MODULE` in the module's code.  This will define a module that is loaded dynamically after the zygote forks.  You can also, if you want, link the module with a zygote and use `DEFINE_EMBEDDED_MODULE` to define it.
 
+### Parameters
+Parameters are a way to pass runtime information to processes run by `AdAstra`.  ROS has a global parameter server inside its `roscore` process that is used by most ROS programs to pass runtime parameters to nodes.  AdAstra provides a similar facility in the form of a global parameter server running in `Capcom` which is distrubuted to all `StageZero` instances.  The processes can access parameters via a pipe to StageZero.  Alongside global parameters which are seen by all processes, a process can have a set of local parameters that are known only to that process.  ROS has a notional concept of local parameters, but they are just global parameters that are prefixed by a node's name.
+
+Parameters look like the names of files in a filesystem.  Global parameters are `rooted` with a slash and contain a set of names separated by `/` (just like a file).  Each parameter has a value which is one of:
+
+1. Signed 32-bit integer
+2. Signed 64-bit integer
+3. String
+4. Double precision IEEE 754 number
+5. Boolean
+6. Array of arbitrary bytes
+7. A `struct timespec` specifying a nanosecond timestamp
+8. A vector of other values (need not all be the same type)
+9. A map of name vs value
+
+A process can perform the following operations on parameters, all controlled by the `//stagezero/parameters` library:
+
+* Obtain a list of all parameters without their values
+* Obtain a list of all parameters with their values
+* Get the value of a specific parameter
+* Get the value of a set of parameters, parented by a named parameter (as a map)
+* Set the value of a specific parameter or tree of parameters
+* Delete a parameter or tree of parameters
+* Listen of parameter value updates or deletions
+
+The API for the parameter library from a process is:
+
+```c++
+namespace stagezero {
+class Parameters {
+public:
+  Parameters(bool events = false, co::Coroutine *c = nullptr);
+
+  // Set the given parameter to the value.  If it doesn't exist, it will be
+  // created.
+  absl::Status SetParameter(const std::string &name,
+                            adastra::parameters::Value value,
+                            co::Coroutine *c = nullptr);
+
+  // Delete the parameter with the given name.  Error if it doesn't exist.
+  absl::Status DeleteParameter(const std::string &name,
+                               co::Coroutine *c = nullptr);
+
+  // Get a list of all parameters, not in any particular order.
+  absl::StatusOr<std::vector<std::string>>
+  ListParameters(co::Coroutine *c = nullptr);
+
+  // Get the names and values of all parameters, not in any particular order.
+  absl::StatusOr<
+      std::vector<std::shared_ptr<adastra::parameters::ParameterNode>>>
+  GetAllParameters(co::Coroutine *c = nullptr);
+
+  // Get the value of a parameter.  Error if it doesn't exist
+  absl::StatusOr<adastra::parameters::Value>
+  GetParameter(const std::string &name, co::Coroutine *c = nullptr);
+
+  // Does the parameter exist?
+  absl::StatusOr<bool> HasParameter(const std::string &name,
+                                    co::Coroutine *c = nullptr);
+
+  // Use this to poll for events.
+  const toolbelt::FileDescriptor &GetEventFD() const { return event_fd_; }
+
+  // Read an event.  This will block until an event is available.
+  std::unique_ptr<adastra::parameters::ParameterEvent>
+  GetEvent(co::Coroutine *c = nullptr) const;
+};
+}
+```
+
+The value of a parameter is held in the struct `adastra::parameters::Value` which holds a `std::variant` of all the different parameter types.  Take a look at the file `common/parameters.h` for the struct definition.  It is straightforward.  The `Value` struct contains non-explicit constructors for each of the parameter types for convenience (yes, this generally violates company style-guides for explicit constructors but it's worth it).
+
+#### How this works
+`StageZero` is the process's parent and holds a cached copy of all the global parameters and all process local parameters.  When a process is spawned, it creates three pipes and passes one end of each of them to the process.  The pipes are:
+
+1. Write pipe: processes write parameter commands to the write end
+2. Read pipe: processes read command responses from the read end
+3. Event pipe: processes read events from parameter updates and deletes
+
+Say a process wants to read a parameter's value.  It will send a command to StageZero through the write pipe and wait for a result to come back through the read pipe.
+
+If it wants to receive events, it tells StageZero to send events (via an initialization command sent through the write pipe), and then reads the events from the event pipe.
+
+The performance is very good, empirically measured at about 30 microseconds per command/response on a modern computer.
+
+#### Creating a Parameters object
+Before a process can access its parameters, it must create a `stagezero::Parameters` instance and use it to talk to StageZero.  The `Parameters` constructor takes a couple of arguments with default values:
+
+1. `events`: a boolean specifying whether you want to use the event pipe to receive events
+2. `c`: a coroutine if you are in a coroutine environment.
+
+The `events` argument must be set to `true` if the process wants to see events.  If a process sets it to true and then doesn't actually read any events, the pipe might fill up with data, consuming memory in the kernel.  It won't actually block StageZero but you should avoid it anyway since it uses memory for no reason.
+
+#### Listening for parameter changes
+A process can listen for changes to its local and all global parameters.  The API provides a way to get a file descriptor for the  `event pipe` that is connected to StageZero.  This file descriptor can be used in a call to  `poll` or `epoll` (or `select` too I guess) to wait for data to come in.  This can be done in a separate thread or coroutine in the process, or could be in the process's main loop depending on its design.
+
+When you detect a parameter change, you can call `GetEvent` to get the details of what happened.  The `ParameterEvent` is defined as:
+
+```c++
+struct ParameterEvent {
+  enum class Type {
+    kUpdate,
+    kDelete,
+  };
+  ParameterEvent(Type type) : type(type) {}
+  Type type;
+};
+
+struct ParameterUpdateEvent : public ParameterEvent {
+  ParameterUpdateEvent() : ParameterEvent{Type::kUpdate} {}
+
+  std::string name;
+  Value value;
+};
+
+struct ParameterDeleteEvent : public ParameterEvent {
+  ParameterDeleteEvent() : ParameterEvent{Type::kDelete} {}
+
+  std::string name;
+};
+
+```
+There are two derived classes, one for an update to a parameter and one for the deletion.  The `type` tells you which one is appropriate for the event.
+
+As an example, here's code to print the events seen by a process:
+
+```c++
+      stagezero::Parameters params(true);
+
+      const toolbelt::FileDescriptor &fd = params.GetEventFD();
+      struct pollfd pfd = {
+          .fd = fd.Fd(), .events = POLLIN,
+      };
+      for (;;) {
+        int ret = poll(&pfd, 1, 0);
+        if (ret < 0) {
+          perror("poll");
+          break;
+        }
+        if (pfd.revents & POLLIN) {
+          std::unique_ptr<adastra::parameters::ParameterEvent> event =
+              params.GetEvent();
+          std::cerr << "Event: " << std::endl;
+          switch (event->type) {
+          case adastra::parameters::ParameterEvent::Type::kUpdate: {
+            adastra::parameters::ParameterUpdateEvent *update =
+                static_cast<adastra::parameters::ParameterUpdateEvent *>(
+                    event.get());
+
+            std::cerr << "Update: " << update->name << " = " << update->value
+                      << std::endl;
+            break;
+          }
+          case adastra::parameters::ParameterEvent::Type::kDelete: {
+            adastra::parameters::ParameterDeleteEvent *del =
+                static_cast<adastra::parameters::ParameterDeleteEvent *>(
+                    event.get());
+            std::cerr << "Delete: " << del->name << std::endl;
+            break;
+          }
+          }
+          continue;
+        }
+        break;
+      }
+    }
+
+```
+
+
+#### Parameter layout
+Parameters form a tree.  If they are global, the tree is rooted at `/`.  If they are local, there is no `/` and the root is the empty name.  Each parameter has a value and that value is either one of the primitive types or is a map of `name` vs `value` nodes.  Put another way, if you access a leaf parameter you will get is value as one of the primitive types, but if you access a non-leaf, you will get a map of all its children (recursively) with their values.
+
+
+For example, say you have the following parameter tree:
+
+```
+/
+  a
+    b
+      c (value 1)
+    d
+      e (value 2)
+  f (value 3)
+```
+Non-leaf parameters do not have any value themselves. You can access the parameters leaf nodes:
+
+```
+/a/b/c = 1
+/a/d/e = 2
+/f = 3
+```
+Or, if you access a non-leaf node, you will see a map containing a recursive set of parameters values.  Say you access `/a/b`:
+
+```
+/a/b = {c: 1}
+```
+
+And if you access `/a`:
+
+```
+/a = {b: {c: 1}, {d: {e: 2}}}
+```
+That is, a map of maps.
+
+When you read non-leaf parameters, you will get a map and when you write to them you pass them a map containing the names and values of the children.
+
+#### Global parameters
+Global parameters are held by `Capcom` and distributed to all `StageZero` instances.  Any changes made to global parameters are propagated to all `StageZero` instances immediately.  Processes who are interested in detecting changes to global parameters are can watch for events through the `//stagezero/parameters` library API.
+
+Global parameters all start with a slash `/` and are added to `Capcom` using its regular API.  There are three
+functions you can use to create or modify parameters in the Capcom client API:
+
+```c++
+  absl::Status SetParameter(const std::string &name, const parameters::Value &v,
+                            co::Coroutine *c = nullptr);
+
+  absl::Status DeleteParameter(const std::string &name,
+                               co::Coroutine *c = nullptr);
+
+  absl::Status
+  UploadParameters(const std::vector<parameters::Parameter> &params,
+                   co::Coroutine *c = nullptr);
+```
+The `SetParameter` function will create the parameter if it doesn't exist.  If the value is a map, a tree will be created.  If it does exist, the parameter value will be set.
+
+The `DeleteParameter` will delete a parameter or a tree of them.
+
+The `UploadParameters` allows a whole set of parameters to be sent to Capcom at once.
+
+When the system is running, if you use these functions to change the global parameters, the changes will be propagated to StageZeros and onward to any processes that care to listen for changes.
+
+#### Local parameters
+Local parameters are, by definition, local to a process and are specified in the process's configuration when it is added to Capcom.  Processes will see these parameters and can change them, but they are purely local to the process and no other process can access them.  This is unlike the `notionally local` ROS parameter system where a local parameter is just a global parameter with a node name prefix.
+
+To add local parameters to a process, put them in the config.  For example, from one of the unit tests:
+
+```c++
+  absl::Status status = client.AddSubsystem(
+      "param",
+      {
+          .static_processes = {{
+              .name = "params",
+              .executable = "${runfiles_dir}/_main/testdata/params",
+              .notify = true,
+              .parameters =
+                  {
+                      {"foo/bar", "local-value1"}, {"foo/baz", "local-value2"},
+                  },
+          }},
+      });
+```
+This adds two local parameters with really impressive and imaginative names to the `params` process.
 
 ## FlightDirector
 The FlightDirector is Capcom's manager (think Gene Kranz in Apollo 13).  He/she is in charge of the mission.  In this software, the FlightDirector (or just `flight`) talks to Capcom through a client connection and tells it to load, unload, start and stop subsystems.  It also can receive events from Capcom.

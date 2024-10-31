@@ -181,7 +181,7 @@ private:
                             const parameters::Value &value);
   absl::Status DeleteParameter(const std::string &name);
   absl::Status
-  UploadParameters(const std::vector<parameters::Parameter> &params);
+  SetAllParameters(const std::vector<parameters::Parameter> &params);
 
   absl::Status
   HandleParameterEvent(const adastra::proto::parameters::ParameterEvent &event,
