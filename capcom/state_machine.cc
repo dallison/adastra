@@ -118,8 +118,6 @@ Subsystem::HandleAdminCommand(const Message &message,
               OperStateName(message.state.oper),
               AdminStateName(message.state.admin), message.client_id);
 
-  subsystem->SendToChildren(message.state.admin, message.client_id);
-
   if (message.state.admin == AdminState::kOnline) {
     if (message.client_id != kNoClient) {
       subsystem->active_clients_.Set(message.client_id);
@@ -229,6 +227,8 @@ void Subsystem::Offline(uint32_t client_id, co::Coroutine *c) {
                        OperState::kOffline);
                    if (next_state == OperState::kStartingChildren) {
                      subsystem->admin_state_ = AdminState::kOnline;
+                     subsystem->SendToChildren(message->state.admin,
+                                               message->client_id);
                    }
                    subsystem->interactive_ = message->interactive;
                    if (message->interactive) {
@@ -360,6 +360,8 @@ void Subsystem::StartingChildren(uint32_t client_id, co::Coroutine *c) {
                 next_state = subsystem->HandleAdminCommand(
                     *message, OperState::kStartingProcesses,
                     OperState::kStoppingChildren);
+                subsystem->SendToChildren(message->state.admin,
+                                          message->client_id);
                 client_id = message->client_id;
                 if (next_state == OperState::kStoppingChildren) {
                   subsystem->admin_state_ = AdminState::kOffline;
@@ -553,6 +555,8 @@ void Subsystem::StartingProcesses(uint32_t client_id, co::Coroutine *c) {
                    next_state = subsystem->HandleAdminCommand(
                        *message, OperState::kOnline,
                        OperState::kStoppingProcesses);
+                   subsystem->SendToChildren(message->state.admin,
+                                             message->client_id);
                    client_id = message->client_id;
                    if (next_state == OperState::kStoppingProcesses) {
                      subsystem->admin_state_ = AdminState::kOffline;
@@ -783,6 +787,7 @@ void Subsystem::StoppingProcesses(uint32_t client_id, co::Coroutine *c) {
     }
   }
   if (num_running_processes == 0) {
+    SendToChildren(AdminState::kOffline, client_id);
     EnterState(OperState::kStoppingChildren, client_id);
     return;
   }
@@ -792,7 +797,7 @@ void Subsystem::StoppingProcesses(uint32_t client_id, co::Coroutine *c) {
 
   OperState next_state = OperState::kStoppingChildren;
   RunSubsystemInState(
-      c, [ subsystem = shared_from_this(), client_id,
+      c, [ subsystem = shared_from_this(), &client_id,
            &next_state ](EventSource event_source,
                          std::shared_ptr<stagezero::Client> stagezero_client,
                          co::Coroutine * c)
@@ -869,6 +874,7 @@ void Subsystem::StoppingProcesses(uint32_t client_id, co::Coroutine *c) {
                    next_state = subsystem->HandleAdminCommand(
                        *message, OperState::kStartingProcesses,
                        OperState::kStoppingChildren);
+                   client_id = message->client_id;
                    break;
                  case Message::kReportOper:
                    subsystem->capcom_.Log(
@@ -903,6 +909,7 @@ void Subsystem::StoppingProcesses(uint32_t client_id, co::Coroutine *c) {
                  return StateTransition::kStay;
                }
                // If we have children, stop them now, otherwise we are offline.
+               subsystem->SendToChildren(AdminState::kOffline, client_id);
                subsystem->EnterState(next_state, client_id);
                return StateTransition::kLeave;
              });
@@ -930,7 +937,7 @@ void Subsystem::StoppingChildren(uint32_t client_id, co::Coroutine *c) {
   RunSubsystemInState(
       c,
       [
-        subsystem = shared_from_this(), client_id, &child_notified, &next_state,
+        subsystem = shared_from_this(), &client_id, &child_notified, &next_state,
         &offline_requests
       ](EventSource event_source,
         std::shared_ptr<stagezero::Client> stagezero_client, co::Coroutine * c)
@@ -1007,6 +1014,7 @@ void Subsystem::StoppingChildren(uint32_t client_id, co::Coroutine *c) {
                 } else {
                   offline_requests.erase(message->client_id);
                 }
+                client_id = message->client_id;
                 break;
               case Message::kReportOper:
                 subsystem->capcom_.Log(
@@ -1070,12 +1078,13 @@ void Subsystem::StoppingChildren(uint32_t client_id, co::Coroutine *c) {
                 }
               }
             }
+            subsystem->SendToChildren(AdminState::kOffline, client_id);
             subsystem->EnterState(next_state, client_id);
             return StateTransition::kLeave;
           });
 }
 
-void Subsystem::RestartNow(uint32_t client_id) {  
+void Subsystem::RestartNow(uint32_t client_id) {
   SendToChildren(AdminState::kOnline, client_id);
   EnterState(OperState::kStartingChildren, client_id);
 }
