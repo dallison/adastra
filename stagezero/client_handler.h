@@ -34,11 +34,14 @@ public:
   absl::Status SendProcessStartEvent(const std::string &process_id);
   absl::Status SendProcessStopEvent(const std::string &process_id, bool exited,
                                     int exit_status, int term_signal);
+  absl::Status SendConnectEvent();
+
   absl::Status SendOutputEvent(const std::string &process_id, int fd,
                                const char *data, size_t len);
-  absl::Status SendParameterUpdateEvent(const std::string &name, const parameters::Value &value);
+  absl::Status SendParameterUpdateEvent(const std::string &name,
+                                        const parameters::Value &value);
   absl::Status SendParameterDeleteEvent(const std::string &name);
-  
+
   toolbelt::Logger &GetLogger() const override;
 
   co::CoroutineScheduler &GetScheduler() const override;

@@ -119,6 +119,11 @@ enum class RunMode {
   kProcessOnly, // Restart only the process that exited
 };
 
+enum class ComputeConnectionPolicy {
+  kDynamic,
+  kStatic,
+};
+
 class Client : public TCPClient<capcom::proto::Request, capcom::proto::Response,
                                 adastra::proto::Event> {
 public:
@@ -133,6 +138,7 @@ public:
 
   absl::Status AddCompute(const std::string &name,
                           const toolbelt::InetAddress &addr,
+                          ComputeConnectionPolicy connection_policy = ComputeConnectionPolicy::kDynamic,
                           const std::vector<Cgroup> &cgroups = {},
                           co::Coroutine *c = nullptr);
 

@@ -36,6 +36,13 @@ public:
   void Run(co::Coroutine *c);
   void Stop();
 
+  // Mainly for testing, close the sockets.
+  void ForceClose() {
+    command_socket_.GetFileDescriptor().ForceClose();
+    event_socket_.GetFileDescriptor().ForceClose();
+    stop_trigger_.Close();
+  }
+
   const std::string &GetClientName() const { return client_name_; }
 
   virtual toolbelt::Logger &GetLogger() const = 0;
@@ -76,6 +83,8 @@ public:
     return event->IsMaskedIn(event_mask_);
   }
 
+  void FlushEvents(co::Coroutine *c);
+
 protected:
   static constexpr size_t kMaxMessageSize = 4096;
 
@@ -87,7 +96,8 @@ protected:
   // is to allow a derived class to do something when the connections to
   // a client are all stable.
   absl::StatusOr<int> Init(const std::string &client_name, int event_mask,
-                           std::function<void()> ready, co::Coroutine *c);
+                           std::function<absl::Status()> ready,
+                           co::Coroutine *c);
 
   // Coroutine spawned by Init to send events in the order queued by
   // QueueEvent.
@@ -131,7 +141,8 @@ inline void TCPClientHandler<Request, Response, Event>::Run(co::Coroutine *c) {
       return;
     }
     Request request;
-    if (request.ParseFromArray(command_buffer->data(), command_buffer->size())) {
+    if (request.ParseFromArray(command_buffer->data(),
+                               command_buffer->size())) {
       Response response;
       if (absl::Status s = HandleMessage(request, response, c); !s.ok()) {
         GetLogger().Log(toolbelt::LogLevel::kError, "%s\n",
@@ -141,15 +152,14 @@ inline void TCPClientHandler<Request, Response, Event>::Run(co::Coroutine *c) {
 
       uint64_t resplen = response.ByteSizeLong();
       std::vector<char> sendbuf(resplen + sizeof(int32_t));
-      char* buf = sendbuf.data() + sizeof(int32_t);
+      char *buf = sendbuf.data() + sizeof(int32_t);
       // Data is placed 4 bytes into buffer
       if (!response.SerializeToArray(buf, resplen)) {
         GetLogger().Log(toolbelt::LogLevel::kError,
                         "Failed to serialize response\n");
         return;
       }
-      absl::StatusOr<ssize_t> n =
-          command_socket_.SendMessage(buf, resplen, c);
+      absl::StatusOr<ssize_t> n = command_socket_.SendMessage(buf, resplen, c);
       if (!n.ok()) {
         return;
       }
@@ -162,8 +172,8 @@ inline void TCPClientHandler<Request, Response, Event>::Run(co::Coroutine *c) {
 
 template <typename Request, typename Response, typename Event>
 inline absl::StatusOr<int> TCPClientHandler<Request, Response, Event>::Init(
-    const std::string &client_name, int event_mask, std::function<void()> ready,
-    co::Coroutine *c) {
+    const std::string &client_name, int event_mask,
+    std::function<absl::Status()> ready, co::Coroutine *c) {
   client_name_ = client_name;
   event_mask_ = event_mask;
 
@@ -223,7 +233,11 @@ inline absl::StatusOr<int> TCPClientHandler<Request, Response, Event>::Init(
             absl::StrFormat("EventSender.%s", client->GetClientName())));
 
         // Call the ready callback now what the connections are open.
-        ready();
+        if (absl::Status status = ready(); !status.ok()) {
+          client->GetLogger().Log(toolbelt::LogLevel::kError,
+                                  "Failed to call ready callback: %s",
+                                  status.ToString().c_str());
+        }
       },
       absl::StrFormat("ClientHandler/event_acceptor.%s", GetClientName())));
   return event_port;
@@ -261,30 +275,38 @@ inline void TCPClientHandler<Request, Response, Event>::EventSenderCoroutine(
     // to waiting for the trigger.  This ensures that we never have
     // something in the event queue after the trigger has been
     // cleared.
-    while (!client->events_.empty()) {
-      // Remove event from the queue and send it.
-      std::shared_ptr<Event> event = std::move(client->events_.front());
-      client->events_.pop_front();
+    FlushEvents(c);
+  }
+}
 
-      char *sendbuf = client->event_buffer_ + sizeof(int32_t);
-      constexpr size_t kSendBufLen =
-          sizeof(client->event_buffer_) - sizeof(int32_t);
-      if (!event->SerializeToArray(sendbuf, kSendBufLen)) {
-        client->GetLogger().Log(toolbelt::LogLevel::kError,
-                                "Failed to serialize event");
-      } else {
-        size_t msglen = event->ByteSizeLong();
-        absl::StatusOr<ssize_t> n =
-            client->event_socket_.SendMessage(sendbuf, msglen, c);
-        if (!n.ok()) {
-          // This isn't really an issue and can occur if the socket is
-          // closed on the remote end.  Switch debug on if you want to
-          // see why events aren't being delivered if  you think they
-          // should be.
-          client->GetLogger().Log(toolbelt::LogLevel::kDebug,
-                                  "Failed to send event: %s",
-                                  n.status().ToString().c_str());
-        }
+template <typename Request, typename Response, typename Event>
+inline void
+TCPClientHandler<Request, Response, Event>::FlushEvents(co::Coroutine *c) {
+  auto client = this->shared_from_this();
+  while (!client->events_.empty()) {
+    // Remove event from the queue and send it.
+    std::shared_ptr<Event> event = std::move(client->events_.front());
+    client->events_.pop_front();
+
+    char *sendbuf = client->event_buffer_ + sizeof(int32_t);
+    constexpr size_t kSendBufLen =
+        sizeof(client->event_buffer_) - sizeof(int32_t);
+    // std::cerr << "Sending event " << event->DebugString() << std::endl;
+    if (!event->SerializeToArray(sendbuf, kSendBufLen)) {
+      client->GetLogger().Log(toolbelt::LogLevel::kError,
+                              "Failed to serialize event");
+    } else {
+      size_t msglen = event->ByteSizeLong();
+      absl::StatusOr<ssize_t> n =
+          client->event_socket_.SendMessage(sendbuf, msglen, c);
+      if (!n.ok()) {
+        // This isn't really an issue and can occur if the socket is
+        // closed on the remote end.  Switch debug on if you want to
+        // see why events aren't being delivered if  you think they
+        // should be.
+        client->GetLogger().Log(toolbelt::LogLevel::kDebug,
+                                "Failed to send event: %s",
+                                n.status().ToString().c_str());
       }
     }
   }

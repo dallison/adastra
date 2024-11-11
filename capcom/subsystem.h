@@ -34,6 +34,25 @@ class Subsystem;
 struct Compute;
 class Process;
 
+// An umbilical connects capcom to StageZero via a client connection.
+enum UmbilicalState {
+  kUmbilicalClosed,
+  kUmbilicalConnecting,
+  kUmbilicalConnected,
+};
+
+struct Umbilical {
+  Umbilical(std::shared_ptr<Compute> compute, std::shared_ptr<stagezero::Client> client, bool is_static = false)
+      : compute(compute), client(client), is_static(is_static) {}
+  std::shared_ptr<Compute> compute = nullptr;
+  std::shared_ptr<stagezero::Client> client{};
+  UmbilicalState state = kUmbilicalClosed;
+  int staticRefs = 0; // Total number of processes referencing this umbilical.
+  int dynamicRefs =
+      0; // Current number of processes referencing this umbilical.
+  bool is_static = false;
+};
+
 constexpr uint32_t kNoClient = -1U;
 
 // Messages are sent through the message pipe.
@@ -71,12 +90,14 @@ struct Message {
 
 class Process {
 public:
-  Process(Capcom &capcom, std::string name, std::string compute,
-          std::shared_ptr<stagezero::Client> client)
-      : capcom_(capcom), name_(name), compute_(compute), client_(client) {}
+  Process(Capcom &capcom, std::string name, const std::string &compute)
+      : capcom_(capcom), name_(name), compute_(compute) {}
   virtual ~Process() = default;
   virtual absl::Status Launch(Subsystem *subsystem, co::Coroutine *c) = 0;
-  absl::Status Stop(co::Coroutine *c);
+  absl::Status Stop(Subsystem *subsystem, co::Coroutine *c);
+
+  void Connect(std::shared_ptr<Subsystem> subsystem);
+  void Disconnect(std::shared_ptr<Subsystem> subsystem);
 
   const std::string &Name() const { return name_; }
 
@@ -85,8 +106,13 @@ public:
   bool IsRunning() const { return running_; }
 
   const std::string &GetProcessId() const { return process_id_; }
-  const std::string &Compute() const { return compute_; }
+  const std::string &GetCompute() const { return compute_; }
 
+  bool IsOnCompute(const std::string &c) const;
+
+  bool IsConnected(Subsystem *subsystem) const;
+
+  void SetProcessId(const std::string &process_id) { process_id_ = process_id; }
   int GetPid() const { return pid_; }
 
   void RaiseAlarm(Capcom &capcom, const Alarm &alarm);
@@ -104,9 +130,10 @@ public:
   virtual bool IsZygote() const { return false; }
   virtual bool IsVirtual() const { return false; }
 
-  absl::Status SendInput(int fd, const std::string &data, co::Coroutine *c);
+  absl::Status SendInput(Umbilical *umbilical, int fd, const std::string &data,
+                         co::Coroutine *c);
 
-  absl::Status CloseFd(int fd, co::Coroutine *c);
+  absl::Status CloseFd(Umbilical *umbilical, int fd, co::Coroutine *c);
 
   bool IsCritical() const { return critical_; }
   bool IsOneShot() const { return oneshot_; }
@@ -161,12 +188,14 @@ protected:
   int max_restarts_;
 
   bool running_ = false;
+  bool maybe_connected_ =
+      false; // Not necessaryily connected, but contributing to
+             // dynamicRefs in umbilical.
   std::string process_id_;
   int pid_;
   Alarm alarm_;
   bool alarm_raised_ = false;
   int alarm_count_ = 0;
-  std::shared_ptr<stagezero::Client> client_;
   std::vector<Stream> streams_;
   bool interactive_ = false;
   std::string user_;
@@ -185,11 +214,10 @@ protected:
 class StaticProcess : public Process {
 public:
   StaticProcess(
-      Capcom &capcom, std::string name, std::string compute,
+      Capcom &capcom, std::string name, const std::string &compute,
       std::string executable, const stagezero::config::ProcessOptions &options,
       const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
-          &streams,
-      std::shared_ptr<stagezero::Client> client);
+          &streams);
   absl::Status Launch(Subsystem *subsystem, co::Coroutine *c) override;
 
 protected:
@@ -199,13 +227,11 @@ protected:
 class Zygote : public StaticProcess {
 public:
   Zygote(
-      Capcom &capcom, std::string name, std::string compute,
+      Capcom &capcom, std::string name, const std::string &compute,
       std::string executable, const stagezero::config::ProcessOptions &options,
       const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
-          &streams,
-      std::shared_ptr<stagezero::Client> client)
-      : StaticProcess(capcom, name, compute, executable, options, streams,
-                      std::move(client)) {}
+          &streams)
+      : StaticProcess(capcom, name, compute, executable, options, streams) {}
   absl::Status Launch(Subsystem *subsystem, co::Coroutine *c) override;
   bool IsZygote() const override { return true; }
 };
@@ -213,12 +239,11 @@ public:
 class VirtualProcess : public Process {
 public:
   VirtualProcess(
-      Capcom &capcom, std::string name, std::string compute,
+      Capcom &capcom, std::string name, const std::string &compute,
       std::string zygote_name, std::string dso, std::string main_func,
       const stagezero::config::ProcessOptions &options,
       const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
-          &streams,
-      std::shared_ptr<stagezero::Client> client);
+          &streams);
   absl::Status Launch(Subsystem *subsystem, co::Coroutine *c) override;
   bool IsVirtual() const override { return true; }
 
@@ -246,21 +271,21 @@ public:
       const stagezero::config::ProcessOptions &options,
       const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
           &streams,
-      const Compute *compute, int max_restarts, co::Coroutine *c);
+      const std::string &compute, int max_restarts, co::Coroutine *c);
 
   absl::Status AddZygote(
       const stagezero::config::StaticProcess &proc,
       const stagezero::config::ProcessOptions &options,
       const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
           &streams,
-      const Compute *compute, int max_restarts, co::Coroutine *c);
+      const std::string &compute, int max_restarts, co::Coroutine *c);
 
   absl::Status AddVirtualProcess(
       const stagezero::config::VirtualProcess &proc,
       const stagezero::config::ProcessOptions &options,
       const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
           &streams,
-      const Compute *compute, int max_restarts, co::Coroutine *c);
+      const std::string &compute, int max_restarts, co::Coroutine *c);
 
   void RemoveProcess(const std::string &name);
 
@@ -314,6 +339,10 @@ public:
            oper_state_ == OperState::kOffline;
   }
 
+  bool IsConnecting() const { return oper_state_ == OperState::kConnecting; }
+
+  void Wakeup() { interrupt_.Trigger(); }
+
   absl::Status SendInput(const std::string &process, int fd,
                          const std::string &data, co::Coroutine *c);
 
@@ -334,7 +363,15 @@ public:
     return it->second;
   }
 
+  std::shared_ptr<Compute> FindCompute(const std::string &name) const;
+
+  void AddUmbilicalReference(std::shared_ptr<Compute> compute);
+  Umbilical *FindUmbilical(const std::string &compute);
+  void RemoveUmbilicalReference(const std::string &compute);
+  
 private:
+  friend class Process;
+
   enum class EventSource {
     kUnknown,
     kStageZero, // StageZero (process state or data).
@@ -391,6 +428,7 @@ private:
     }
     return true;
   }
+
   bool AllProcessesStopped(
       const std::vector<std::shared_ptr<Process>> &procs) const {
     for (auto &p : procs) {
@@ -403,8 +441,18 @@ private:
 
   bool AllProcessesStopped() const { return AllProcessesStopped(processes_); }
 
-  absl::StatusOr<std::shared_ptr<stagezero::Client>>
-  ConnectToStageZero(const Compute *compute, co::Coroutine *c);
+  bool AllProcessesConnected() {
+    for (const auto &proc : processes_) {
+      if (!proc->IsConnected(this)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  void ConnectUmbilical(const std::string &compute);
+  void DisconnectUmbilical(const std::string &compute);
+  void DisconnectProcessesForCompute(const std::string &compute);
 
   // State event processing coroutines.
   // General event processor.  Calls handler for incoming events
@@ -420,6 +468,7 @@ private:
 
   void Offline(uint32_t client_id, co::Coroutine *c);
   void StartingChildren(uint32_t client_id, co::Coroutine *c);
+  void Connecting(uint32_t client_id, co::Coroutine *c);
   void StartingProcesses(uint32_t client_id, co::Coroutine *c);
   void Online(uint32_t client_id, co::Coroutine *c);
   void StoppingProcesses(uint32_t client_id, co::Coroutine *c);
@@ -509,11 +558,12 @@ private:
   static constexpr std::chrono::duration<int> kMaxRestartDelay = 32s;
   std::chrono::duration<int> restart_delay_ = 1s;
 
-  // Mapping of compute name vs StageZero client for that compute.
-  // Each StageZero client is unique to this subsystem, so each subsystem
-  // maintains its own connections to the StageZeros on the computes.
-  absl::flat_hash_map<std::string, std::shared_ptr<stagezero::Client>>
-      computes_;
+  // Mapping of compute name vs Umbilical for that compute.
+  // A subsystem has its own umbilical to the stagezero instances it
+  // needs.  It will connect these to stagezero when it needs to start
+  // a process on that compute.  Subsystems can't share umbilicals as
+  // they each read events in their state machines.
+  absl::flat_hash_map<std::string, Umbilical> umbilicals_;
 
   bool interactive_ = false;
   toolbelt::FileDescriptor interactive_output_;

@@ -59,6 +59,12 @@ private:
     return inserted;
   }
 
+  bool AddProcessByName(std::string name, std::shared_ptr<Process> process) {
+    auto[it, inserted] = processes_by_name_.emplace(
+        std::make_pair(std::move(name), std::move(process)));
+    return inserted;
+  }
+
   bool AddZygote(std::string name, std::string id,
                  std::shared_ptr<Zygote> zygote) {
     bool p_inserted = AddProcess(id, zygote);
@@ -90,7 +96,9 @@ private:
     if (it == processes_.end()) {
       return absl::InternalError(absl::StrFormat("No such process %s", id));
     }
+    processes_by_name_.erase(proc->Name());
     processes_.erase(it);
+
     return absl::OkStatus();
   }
 
@@ -110,6 +118,7 @@ private:
     const std::string &id = proc->GetId();
     auto it = processes_.find(id);
     if (it != processes_.end()) {
+      processes_by_name_.erase(proc->Name());
       processes_.erase(it);
     }
   }
@@ -117,6 +126,14 @@ private:
   std::shared_ptr<Process> FindProcess(const std::string &id) {
     auto it = processes_.find(id);
     if (it == processes_.end()) {
+      return nullptr;
+    }
+    return it->second;
+  }
+
+  std::shared_ptr<Process> FindProcessByName(const std::string &name) {
+    auto it = processes_by_name_.find(name);
+    if (it == processes_by_name_.end()) {
       return nullptr;
     }
     return it->second;
@@ -180,8 +197,10 @@ private:
   absl::Status SendProcessStopEvent(const std::string &process_id, bool exited,
                                     int exit_status, int term_signal);
   void SendParameterUpdateEventToProcesses(const std::string &name,
-                                           const parameters::Value &value, co::Coroutine* c);
-  void SendParameterDeleteEventToProcesses(const std::string &name, co::Coroutine* c);
+                                           const parameters::Value &value,
+                                           co::Coroutine *c);
+  void SendParameterDeleteEventToProcesses(const std::string &name,
+                                           co::Coroutine *c);
 
   absl::Status SetParameter(const std::string &name,
                             const parameters::Value &value, co::Coroutine *c);
@@ -194,7 +213,8 @@ private:
   HandleParameterServerRequest(std::shared_ptr<Process> proc,
                                const adastra::proto::parameters::Request &req,
                                adastra::proto::parameters::Response &resp,
-                               std::shared_ptr<ClientHandler> client, co::Coroutine* c);
+                               std::shared_ptr<ClientHandler> client,
+                               co::Coroutine *c);
 
   co::CoroutineScheduler &co_scheduler_;
   toolbelt::InetAddress addr_;
@@ -208,6 +228,7 @@ private:
   std::vector<std::shared_ptr<ClientHandler>> client_handlers_;
   bool running_ = false;
   absl::flat_hash_map<std::string, std::shared_ptr<Process>> processes_;
+  absl::flat_hash_map<std::string, std::shared_ptr<Process>> processes_by_name_;
 
   absl::flat_hash_map<std::string, std::shared_ptr<Zygote>> zygotes_;
   absl::flat_hash_map<int, std::shared_ptr<Process>> virtual_processes_;

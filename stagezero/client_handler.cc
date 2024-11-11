@@ -133,7 +133,9 @@ absl::Status ClientHandler::HandleMessage(const control::Request &req,
 void ClientHandler::HandleInit(const control::InitRequest &req,
                                control::InitResponse *response,
                                co::Coroutine *c) {
-  absl::StatusOr<int> s = Init(req.client_name(), req.event_mask(), [] {}, c);
+  absl::StatusOr<int> s =
+      Init(req.client_name(), req.event_mask(),
+           [this]() -> absl::Status { return SendConnectEvent(); }, c);
   if (!s.ok()) {
     response->set_error(s.status().ToString());
     return;
@@ -149,6 +151,18 @@ void ClientHandler::HandleLaunchStaticProcess(
     control::LaunchResponse *response, co::Coroutine *c) {
   auto proc = std::make_shared<StaticProcess>(
       GetScheduler(), stagezero_, this->shared_from_this(), std::move(req));
+  auto existing = stagezero_.FindProcessByName(proc->Name());
+  if (existing != nullptr) {
+    // Process already exists so it is already running.  Report an start event
+    // for it.
+    if (absl::Status status = SendProcessStartEvent(existing->GetId());
+        !status.ok()) {
+      response->set_error(
+          absl::StrFormat("Failed to send start event for process %s: %s",
+                          existing->GetId(), status.ToString()));
+    }
+    return;
+  }
   absl::Status status = proc->Start(c);
   if (!status.ok()) {
     response->set_error(status.ToString());
@@ -171,6 +185,18 @@ void ClientHandler::HandleLaunchZygote(
     control::LaunchResponse *response, co::Coroutine *c) {
   auto zygote = std::make_shared<Zygote>(GetScheduler(), stagezero_,
                                          shared_from_this(), std::move(req));
+  auto existing = stagezero_.FindProcessByName(zygote->Name());
+  if (existing != nullptr) {
+    // Process already exists so it is already running.  Report an start event
+    // for it.
+    if (absl::Status status = SendProcessStartEvent(existing->GetId());
+        !status.ok()) {
+      response->set_error(
+          absl::StrFormat("Failed to send start event for process %s: %s",
+                          existing->GetId(), status.ToString()));
+    }
+    return;
+  }
   absl::Status status = zygote->Start(c);
   if (!status.ok()) {
     response->set_error(status.ToString());
@@ -192,6 +218,20 @@ void ClientHandler::HandleLaunchVirtualProcess(
     control::LaunchResponse *response, co::Coroutine *c) {
   auto proc = std::make_shared<VirtualProcess>(
       GetScheduler(), stagezero_, shared_from_this(), std::move(req));
+  auto existing = stagezero_.FindProcessByName(proc->Name());
+  if (existing != nullptr) {
+    // Process already exists so it is already running.  Report an start event
+    // for it.
+    if (absl::Status status = SendProcessStartEvent(existing->GetId());
+        !status.ok()) {
+      response->set_error(
+          absl::StrFormat("Failed to send start event for process %s: %s",
+                          existing->GetId(), status.ToString()));
+      std::cerr << "Failed to send start event for process "
+                << existing->GetId() << ": " << status << std::endl;
+    }
+    return;
+  }
   absl::Status status = proc->Start(c);
   if (!status.ok()) {
     response->set_error(status.ToString());
@@ -260,6 +300,12 @@ ClientHandler::SendProcessStartEvent(const std::string &process_id) {
   auto event = std::make_shared<control::Event>();
   auto start = event->mutable_start();
   start->set_process_id(process_id);
+  return QueueEvent(std::move(event));
+}
+
+absl::Status ClientHandler::SendConnectEvent() {
+  auto event = std::make_shared<control::Event>();
+  (void)event->mutable_connect();
   return QueueEvent(std::move(event));
 }
 

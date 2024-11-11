@@ -15,9 +15,10 @@ Capcom::Capcom(co::CoroutineScheduler &scheduler, toolbelt::InetAddress addr,
       log_to_output_(log_to_output), test_mode_(test_mode),
       notify_fd_(notify_fd), logger_("capcom", log_to_output) {
   logger_.SetLogLevel(log_level);
-  local_compute_ = {
-      .name = "<localhost>",
-      .addr = toolbelt::InetAddress("localhost", local_stagezero_port)};
+  Compute lc = {.name = "<localhost>",
+                .addr =
+                    toolbelt::InetAddress("localhost", local_stagezero_port)};
+  local_compute_ = std::make_shared<Compute>(lc);
 
   // Create the log message pipe.
   absl::StatusOr<toolbelt::Pipe> p = toolbelt::Pipe::Create();
@@ -132,6 +133,64 @@ void Capcom::Log(const adastra::proto::LogMessage &msg) {
   }
 }
 
+absl::Status Capcom::ConnectUmbilical(const std::string &compute,
+                                      co::Coroutine *c) {
+  Umbilical *umbilical = FindUmbilical(compute);
+  if (umbilical == nullptr) {
+    return absl::InternalError(
+        absl::StrFormat("No umbilical found for compute %s", compute));
+  }
+
+  if (umbilical->state != UmbilicalState::kUmbilicalClosed) {
+    return absl::OkStatus();
+  }
+  umbilical->client->Reset();
+  umbilical->state = UmbilicalState::kUmbilicalConnecting;
+  if (absl::Status status = umbilical->client->Init(
+          umbilical->compute->addr, "<capcom umbilical>", kNoEvents,
+          umbilical->compute->name, c);
+      !status.ok()) {
+    umbilical->state = UmbilicalState::kUmbilicalClosed;
+    return absl::InternalError(
+        absl::StrFormat("Failed to connect umbilical to %s: %s",
+                        compute.c_str(), status.ToString().c_str()));
+  }
+  umbilical->state = UmbilicalState::kUmbilicalConnected;
+  logger_.Log(toolbelt::LogLevel::kInfo,
+              "StageZero umbilical connected to compute %s", compute.c_str());
+  // Register cgroups
+  if (absl::Status add_status =
+          RegisterComputeCgroups(umbilical->client, umbilical->compute, c);
+      !add_status.ok()) {
+    return absl::InternalError(absl::StrFormat(
+        "Failed to add cgroup to compute %s: %s",
+        umbilical->compute->name.c_str(), add_status.ToString().c_str()));
+  }
+
+  // Upload all the parameters to stagezero.
+  std::vector<parameters::Parameter> parameters =
+      parameters_.GetAllParameters();
+  // Send the parameters to the client.
+  if (absl::Status status = umbilical->client->UploadParameters(parameters, c);
+      !status.ok()) {
+    return absl::InternalError(absl::StrFormat(
+        "Failed to upload parameters to compute %s: %s",
+        umbilical->compute->name.c_str(), status.ToString().c_str()));
+  }
+
+  // Add all global symbols to stagezero.
+  for (auto & [ name, sym ] : global_symbols_.GetSymbols()) {
+    if (absl::Status status = umbilical->client->SetGlobalVariable(
+            sym->Name(), sym->Value(), sym->Exported(), c);
+        !status.ok()) {
+      return absl::InternalError(absl::StrFormat(
+          "Failed to set global variable %s on %s: %s", sym->Name().c_str(),
+          umbilical->compute->name.c_str(), status.ToString().c_str()));
+    }
+  }
+  return absl::OkStatus();
+}
+
 void Capcom::LoggerCoroutine(co::Coroutine *c) {
   for (;;) {
     c->Wait(log_pipe_.ReadFd().Fd());
@@ -161,72 +220,75 @@ void Capcom::LoggerCoroutine(co::Coroutine *c) {
   }
 }
 
+void Capcom::FlushLogs() {
+  // If there is no client wants log events, log it to the local logger.
+  bool client_wants_events = false;
+  for (auto &handler : client_handlers_) {
+    if (handler->WantsLogEvents()) {
+      client_wants_events = true;
+      break;
+    }
+  }
+
+  for (auto & [ timestamp, msg ] : log_buffer_) {
+    toolbelt::LogLevel level;
+    switch (msg->level()) {
+    case adastra::proto::LogMessage::LOG_VERBOSE:
+      level = toolbelt::LogLevel::kVerboseDebug;
+      break;
+    case adastra::proto::LogMessage::LOG_DBG:
+      level = toolbelt::LogLevel::kDebug;
+      break;
+    case adastra::proto::LogMessage::LOG_INFO:
+      level = toolbelt::LogLevel::kInfo;
+      break;
+    case adastra::proto::LogMessage::LOG_WARNING:
+      level = toolbelt::LogLevel::kWarning;
+      break;
+    case adastra::proto::LogMessage::LOG_ERR:
+      level = toolbelt::LogLevel::kError;
+      break;
+    default:
+      continue;
+    }
+
+    if (log_file_.Valid()) {
+      // Serialize into the log file.
+      // TODO: I don't think the multiple serializations will affect anything
+      // because this is a low volume channel and there is a much longer path
+      // from the process running to this point.
+      uint64_t size = msg->ByteSizeLong();
+      ssize_t n = ::write(log_file_.Fd(), &size, sizeof(size));
+      if (n <= 0) {
+        logger_.Log(toolbelt::LogLevel::kError,
+                    "Failed to write to log file: %s", strerror(errno));
+      } else {
+        if (!msg->SerializeToFileDescriptor(log_file_.Fd())) {
+          logger_.Log(toolbelt::LogLevel::kError,
+                      "Failed to serialize to log file: %s", strerror(errno));
+        }
+      }
+    }
+
+    if (!client_wants_events) {
+      logger_.Log(level, timestamp, msg->source(), msg->text());
+    } else {
+      // Send as log events to the clients.
+      for (auto &handler : client_handlers_) {
+        if (absl::Status status = handler->SendLogEvent(msg); !status.ok()) {
+          logger_.Log(toolbelt::LogLevel::kError,
+                      "Failed to send log event: %s", strerror(errno));
+        }
+      }
+    }
+  }
+  log_buffer_.clear();
+}
+
 void Capcom::LoggerFlushCoroutine(co::Coroutine *c) {
   for (;;) {
     c->Millisleep(500); // Flush the log buffer every 500ms.
-
-    // If there is no client wants log events, log it to the local logger.
-    bool client_wants_events = false;
-    for (auto &handler : client_handlers_) {
-      if (handler->WantsLogEvents()) {
-        client_wants_events = true;
-        break;
-      }
-    }
-
-    for (auto & [ timestamp, msg ] : log_buffer_) {
-      toolbelt::LogLevel level;
-      switch (msg->level()) {
-      case adastra::proto::LogMessage::LOG_VERBOSE:
-        level = toolbelt::LogLevel::kVerboseDebug;
-        break;
-      case adastra::proto::LogMessage::LOG_DBG:
-        level = toolbelt::LogLevel::kDebug;
-        break;
-      case adastra::proto::LogMessage::LOG_INFO:
-        level = toolbelt::LogLevel::kInfo;
-        break;
-      case adastra::proto::LogMessage::LOG_WARNING:
-        level = toolbelt::LogLevel::kWarning;
-        break;
-      case adastra::proto::LogMessage::LOG_ERR:
-        level = toolbelt::LogLevel::kError;
-        break;
-      default:
-        continue;
-      }
-
-      if (log_file_.Valid()) {
-        // Serialize into the log file.
-        // TODO: I don't think the multiple serializations will affect anything
-        // because this is a low volume channel and there is a much longer path
-        // from the process running to this point.
-        uint64_t size = msg->ByteSizeLong();
-        ssize_t n = ::write(log_file_.Fd(), &size, sizeof(size));
-        if (n <= 0) {
-          logger_.Log(toolbelt::LogLevel::kError,
-                      "Failed to write to log file: %s", strerror(errno));
-        } else {
-          if (!msg->SerializeToFileDescriptor(log_file_.Fd())) {
-            logger_.Log(toolbelt::LogLevel::kError,
-                        "Failed to serialize to log file: %s", strerror(errno));
-          }
-        }
-      }
-
-      if (!client_wants_events) {
-        logger_.Log(level, timestamp, msg->source(), msg->text());
-      } else {
-        // Send as log events to the clients.
-        for (auto &handler : client_handlers_) {
-          if (absl::Status status = handler->SendLogEvent(msg); !status.ok()) {
-            logger_.Log(toolbelt::LogLevel::kError,
-                        "Failed to send log event: %s", strerror(errno));
-          }
-        }
-      }
-    }
-    log_buffer_.clear();
+    FlushLogs();
   }
 }
 
@@ -280,6 +342,11 @@ absl::Status Capcom::Run() {
   // Run the coroutine main loop.
   co_scheduler_.Run();
 
+  for (auto &client : client_handlers_) {
+    client->FlushEvents(nullptr);
+  }
+  FlushLogs();
+
   // Notify that we are stopped.
   if (notify_fd_.Valid()) {
     int64_t val = kStopped;
@@ -288,6 +355,7 @@ absl::Status Capcom::Run() {
 
   return absl::OkStatus();
 }
+
 void Capcom::SendSubsystemStatusEvent(Subsystem *subsystem) {
   for (auto &handler : client_handlers_) {
     if (absl::Status status = handler->SendSubsystemStatusEvent(subsystem);
@@ -386,30 +454,15 @@ absl::Status Capcom::Abort(const std::string &reason, bool emergency,
 
   // Now tell all computes (the stagezero running on them) to kill
   // all the processes.
-  std::vector<Compute *> computes;
-
-  for (auto & [ name, compute ] : computes_) {
-    computes.push_back(&compute);
-  }
-
-  // If we have no computes (like in testing), add the local compute.
-  if (computes.empty()) {
-    computes.push_back(&local_compute_);
-  }
-
-  for (auto &compute : computes) {
-    stagezero::Client client;
-    if (absl::Status status = client.Init(compute->addr, "<capcom abort>");
-        !status.ok()) {
-      result = absl::InternalError(
-          absl::StrFormat("Failed to connect compute for abort%s: %s",
-                          compute->name, status.ToString()));
+   for (auto & [ name, umbilical ] : stagezero_umbilicals_) {
+    if (umbilical.client == nullptr || !umbilical.client->IsConnected()) {
       continue;
     }
-    absl::Status status = client.Abort(reason, emergency, c);
+
+   absl::Status status = umbilical.client->Abort(reason, emergency, c);
     if (!status.ok()) {
       result = absl::InternalError(absl::StrFormat(
-          "Failed to abort compute %s: %s", compute->name, status.ToString()));
+          "Failed to abort compute %s: %s", umbilical.compute->name, status.ToString()));
     }
   }
   if (emergency) {
@@ -435,101 +488,47 @@ absl::Status Capcom::Abort(const std::string &reason, bool emergency,
 }
 
 absl::Status Capcom::AddGlobalVariable(const Variable &var, co::Coroutine *c) {
-  std::vector<Compute *> computes;
-  absl::Status result = absl::OkStatus();
-
-  for (auto & [ name, compute ] : computes_) {
-    computes.push_back(&compute);
-  }
-
-  // If we have no computes (like in testing), add the local compute.
-  if (computes.empty()) {
-    computes.push_back(&local_compute_);
-  }
-
-  for (auto &compute : computes) {
-    stagezero::Client client;
-    if (absl::Status status =
-            client.Init(compute->addr, "<set global variable>");
-        !status.ok()) {
-      result = absl::InternalError(absl::StrFormat(
-          "Failed to connect compute %s for adding global variable: %s",
-          compute->name, status.ToString()));
-      continue;
-    }
-    absl::Status status =
-        client.SetGlobalVariable(var.name, var.value, var.exported, c);
-    if (!status.ok()) {
-      result = absl::InternalError(
-          absl::StrFormat("Failed to set global variable %s on compute %s: %s",
-                          var.name, compute->name, status.ToString()));
-    }
-  }
-  return result;
+  global_symbols_.AddSymbol(var.name, var.value, var.exported);
+  return absl::OkStatus();
 }
 
 absl::Status Capcom::PropagateParameterUpdate(const std::string &name,
                                               parameters::Value &value,
                                               co::Coroutine *c) {
-  std::vector<Compute *> computes;
   absl::Status result = absl::OkStatus();
 
-  for (auto & [ name, compute ] : computes_) {
-    computes.push_back(&compute);
-  }
-
-  // If we have no computes (like in testing), add the local compute.
-  if (computes.empty()) {
-    computes.push_back(&local_compute_);
-  }
-
-  for (auto &compute : computes) {
-    stagezero::Client client;
-    if (absl::Status status = client.Init(compute->addr, "<parameter update>");
-        !status.ok()) {
-      result = absl::InternalError(absl::StrFormat(
-          "Failed to connect compute %s for updating parameter: %s",
-          compute->name, status.ToString()));
+  for (auto & [ name, umbilical ] : stagezero_umbilicals_) {
+    if (umbilical.client == nullptr || !umbilical.client->IsConnected()) {
       continue;
     }
-    absl::Status status = client.SetParameter(name, value, c);
+
+    absl::Status status = umbilical.client->SetParameter(name, value, c);
     if (!status.ok()) {
       result = absl::InternalError(
           absl::StrFormat("Failed to update parameter %s on compute %s: %s",
-                          name, compute->name, status.ToString()));
+                          name, umbilical.compute->name, status.ToString()));
     }
   }
+
   return result;
 }
 
 absl::Status Capcom::PropagateParameterDelete(const std::string &name,
                                               co::Coroutine *c) {
-  std::vector<Compute *> computes;
+
   absl::Status result = absl::OkStatus();
 
-  for (auto & [ name, compute ] : computes_) {
-    computes.push_back(&compute);
-  }
-
-  // If we have no computes (like in testing), add the local compute.
-  if (computes.empty()) {
-    computes.push_back(&local_compute_);
-  }
-
-  for (auto &compute : computes) {
-    stagezero::Client client;
-    if (absl::Status status = client.Init(compute->addr, "<parameter delete>");
-        !status.ok()) {
-      result = absl::InternalError(absl::StrFormat(
-          "Failed to connect compute %s for deleting parameter: %s",
-          compute->name, status.ToString()));
+  for (auto & [ name, umbilical ] : stagezero_umbilicals_) {
+    if (umbilical.client == nullptr || !umbilical.client->IsConnected()) {
       continue;
     }
-    absl::Status status = client.DeleteParameter(name, c);
+
+    absl::Status status = umbilical.client->DeleteParameter(name, c);
     if (!status.ok()) {
       // This will fail on the stagezero that deleted the parameter.
     }
   }
+
   return result;
 }
 
@@ -611,14 +610,16 @@ void Capcom::Log(const std::string &source, toolbelt::LogLevel level,
 
   adastra::proto::LogMessage proto_msg;
   log.ToProto(&proto_msg);
+  // std::cerr << proto_msg.DebugString() << std::endl;
   Log(proto_msg);
 }
 
-absl::Status Capcom::RegisterComputeCgroups(stagezero::Client &client,
-                                            const Compute &compute,
-                                            co::Coroutine *c) {
-  for (auto &cgroup : compute.cgroups) {
-    if (absl::Status status = client.RegisterCgroup(cgroup, c); !status.ok()) {
+absl::Status
+Capcom::RegisterComputeCgroups(std::shared_ptr<stagezero::Client> client,
+                               std::shared_ptr<Compute> compute,
+                               co::Coroutine *c) {
+  for (auto &cgroup : compute->cgroups) {
+    if (absl::Status status = client->RegisterCgroup(cgroup, c); !status.ok()) {
       return status;
     }
   }
@@ -637,7 +638,7 @@ static const Cgroup *FindCgroup(const Compute &comp,
 
 absl::Status Capcom::FreezeCgroup(const std::string &compute,
                                   const std::string &cgroup, co::Coroutine *c) {
-  const Compute *comp = FindCompute(compute);
+  std::shared_ptr<Compute> comp = FindCompute(compute);
   if (comp == nullptr) {
     return absl::InternalError(absl::StrFormat("No such compute %s", compute));
   }
@@ -646,19 +647,19 @@ absl::Status Capcom::FreezeCgroup(const std::string &compute,
     return absl::InternalError(
         absl::StrFormat("No such cgroup %s on computer %s", cgroup, compute));
   }
-  stagezero::Client client;
-  if (absl::Status status = client.Init(comp->addr, "<cgroup freeze>");
-      !status.ok()) {
+  Umbilical *umbilical = FindUmbilical(compute);
+  if (umbilical == nullptr || umbilical->client == nullptr ||
+      !umbilical->client->IsConnected()) {
     return absl::InternalError(
-        absl::StrFormat("Failed to connect compute %s for freeze cgroup: %s",
-                        compute, status.ToString()));
+        absl::StrFormat("Not connected to compute %s", compute));
   }
-  return client.FreezeCgroup(cgroup, c);
+
+  return umbilical->client->FreezeCgroup(cgroup, c);
 }
 
 absl::Status Capcom::ThawCgroup(const std::string &compute,
                                 const std::string &cgroup, co::Coroutine *c) {
-  const Compute *comp = FindCompute(compute);
+  std::shared_ptr<Compute> comp = FindCompute(compute);
   if (comp == nullptr) {
     return absl::InternalError(absl::StrFormat("No such compute %s", compute));
   }
@@ -667,20 +668,21 @@ absl::Status Capcom::ThawCgroup(const std::string &compute,
     return absl::InternalError(
         absl::StrFormat("No such cgroup %s on computer %s", cgroup, compute));
   }
-  stagezero::Client client;
-  if (absl::Status status = client.Init(comp->addr, "<cgroup thaw>");
-      !status.ok()) {
+
+  Umbilical *umbilical = FindUmbilical(compute);
+  if (umbilical == nullptr || umbilical->client == nullptr ||
+      !umbilical->client->IsConnected()) {
     return absl::InternalError(
-        absl::StrFormat("Failed to connect compute %s for freeze cgroup: %s",
-                        compute, status.ToString()));
+        absl::StrFormat("Not connected to compute %s", compute));
   }
-  return client.ThawCgroup(cgroup, c);
+
+  return umbilical->client->ThawCgroup(cgroup, c);
 }
 
 absl::Status Capcom::KillCgroup(const std::string &compute,
                                 const std::string &cgroup, co::Coroutine *c) {
 
-  const Compute *comp = FindCompute(compute);
+  std::shared_ptr<Compute> comp = FindCompute(compute);
   if (comp == nullptr) {
     return absl::InternalError(absl::StrFormat("No such compute %s", compute));
   }
@@ -689,14 +691,14 @@ absl::Status Capcom::KillCgroup(const std::string &compute,
     return absl::InternalError(
         absl::StrFormat("No such cgroup %s on computer %s", cgroup, compute));
   }
-  stagezero::Client client;
-  if (absl::Status status = client.Init(comp->addr, "<cgroup kill>");
-      !status.ok()) {
+  Umbilical *umbilical = FindUmbilical(compute);
+  if (umbilical == nullptr || umbilical->client == nullptr ||
+      !umbilical->client->IsConnected()) {
     return absl::InternalError(
-        absl::StrFormat("Failed to connect compute %s for freeze cgroup: %s",
-                        compute, status.ToString()));
+        absl::StrFormat("Not connected to compute %s", compute));
   }
-  return client.KillCgroup(cgroup, c);
+
+  return umbilical->client->KillCgroup(cgroup, c);
 }
 
 } // namespace adastra::capcom

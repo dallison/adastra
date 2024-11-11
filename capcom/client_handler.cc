@@ -180,7 +180,9 @@ absl::Status ClientHandler::HandleMessage(const proto::Request &req,
 void ClientHandler::HandleInit(const proto::InitRequest &req,
                                proto::InitResponse *response,
                                co::Coroutine *c) {
-  absl::StatusOr<int> s = Init(req.client_name(), req.event_mask(), [] {}, c);
+  absl::StatusOr<int> s =
+      Init(req.client_name(), req.event_mask(),
+           []() -> absl::Status { return absl::OkStatus(); }, c);
   if (!s.ok()) {
     response->set_error(s.status().ToString());
     return;
@@ -204,20 +206,6 @@ void ClientHandler::HandleAddCompute(const proto::AddComputeRequest &req,
   memcpy(&ip_addr, compute.ip_addr().data(), compute.ip_addr().size());
   addr.sin_addr.s_addr = htonl(ip_addr);
 
-  toolbelt::InetAddress stagezero_addr(addr);
-
-  // Probe a connection to the stagezero instance to make sure it's
-  // there and to register cgroups.
-  stagezero::Client sclient;
-  if (absl::Status status = sclient.Init(stagezero_addr, "<capcom probe>",
-                                         kNoEvents, compute.name(), c);
-      !status.ok()) {
-    response->set_error(absl::StrFormat(
-        "Cannot connect to StageZero on compute %s at address %s",
-        compute.name(), stagezero_addr.ToString()));
-    return;
-  }
-
   std::vector<Cgroup> cgroups;
   for (auto &cg : compute.cgroups()) {
     Cgroup cgroup;
@@ -226,18 +214,21 @@ void ClientHandler::HandleAddCompute(const proto::AddComputeRequest &req,
   }
   Compute c2 = {compute.name(), toolbelt::InetAddress(addr),
                 std::move(cgroups)};
-  bool ok = capcom_.AddCompute(compute.name(), c2);
+  auto [compute_ptr, ok] = capcom_.AddCompute(compute.name(), c2);
   if (!ok) {
     response->set_error(
         absl::StrFormat("Failed to add compute %s", compute.name()));
     return;
   }
 
-  if (absl::Status add_status = capcom_.RegisterComputeCgroups(sclient, c2, c);
-      !add_status.ok()) {
-    response->set_error(
-        absl::StrFormat("Failed to add cgroup to compute %s: %s",
-                        compute.name(), add_status.ToString()));
+  // If this is a static compute connection, connect the umbilical now and keep it open.
+  if (req.connection_policy() == proto::AddComputeRequest::STATIC) {
+    capcom_.AddUmbilical(compute_ptr, c);
+    if (absl::Status status = capcom_.ConnectUmbilical(compute.name(), c); !status.ok()) {
+      response->set_error(
+          absl::StrFormat("Failed to connect to compute %s: %s", compute.name(),
+                          status.ToString()));
+    }
   }
 }
 
@@ -299,13 +290,17 @@ void ClientHandler::HandleAddSubsystem(const proto::AddSubsystemRequest &req,
 
   // Add the processes to the subsystem.
   for (auto &proc : req.processes()) {
-    const Compute *compute = capcom_.FindCompute(proc.compute());
+    const std::shared_ptr<Compute> compute = capcom_.FindCompute(proc.compute());
     if (compute == nullptr) {
       response->set_error(absl::StrFormat(
           "No such compute %s for process %s (have you added it?)",
           proc.compute(), proc.options().name()));
       return;
     }
+
+    // Record a reference to an umbilical for the compute.  It will not be connected
+    // until needed.
+    subsystem->AddUmbilicalReference(compute);
 
     if (absl::Status status = ValidateStreams(proc.streams()); !status.ok()) {
       response->set_error(status.ToString());
@@ -315,7 +310,7 @@ void ClientHandler::HandleAddSubsystem(const proto::AddSubsystemRequest &req,
     switch (proc.proc_case()) {
     case proto::Process::kStaticProcess:
       if (absl::Status status = subsystem->AddStaticProcess(
-              proc.static_process(), proc.options(), proc.streams(), compute,
+              proc.static_process(), proc.options(), proc.streams(), compute->name,
               proc.max_restarts(), c);
           !status.ok()) {
         response->set_error(
@@ -326,7 +321,7 @@ void ClientHandler::HandleAddSubsystem(const proto::AddSubsystemRequest &req,
       break;
     case proto::Process::kZygote:
       if (absl::Status status = subsystem->AddZygote(
-              proc.zygote(), proc.options(), proc.streams(), compute,
+              proc.zygote(), proc.options(), proc.streams(), compute->name,
               proc.max_restarts(), c);
           !status.ok()) {
         response->set_error(absl::StrFormat("Failed to add zygote %s: %s",
@@ -337,7 +332,7 @@ void ClientHandler::HandleAddSubsystem(const proto::AddSubsystemRequest &req,
       break;
     case proto::Process::kVirtualProcess:
       if (absl::Status status = subsystem->AddVirtualProcess(
-              proc.virtual_process(), proc.options(), proc.streams(), compute,
+              proc.virtual_process(), proc.options(), proc.streams(), compute->name,
               proc.max_restarts(), c);
           !status.ok()) {
         response->set_error(

@@ -36,7 +36,10 @@ StageZero::~StageZero() {
   client_handlers_.clear();
 }
 
-void StageZero::Stop() { co_scheduler_.Stop(); }
+void StageZero::Stop() {
+  client_handlers_.clear();
+  co_scheduler_.Stop();
+}
 
 void StageZero::CloseHandler(std::shared_ptr<ClientHandler> handler) {
   for (auto it = client_handlers_.begin(); it != client_handlers_.end(); it++) {

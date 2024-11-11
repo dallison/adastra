@@ -34,14 +34,17 @@ void SubsystemStatus::ToProto(proto::SubsystemStatus *dest) const {
   case OperState::kRestarting:
     dest->set_oper_state(adastra::proto::OPER_RESTARTING);
     break;
-    case OperState::kRestartingProcesses:
-        dest->set_oper_state(adastra::proto::OPER_RESTARTING_PROCESSES);
-        break;
-          case OperState::kStartingChildren:
+  case OperState::kRestartingProcesses:
+    dest->set_oper_state(adastra::proto::OPER_RESTARTING_PROCESSES);
+    break;
+  case OperState::kStartingChildren:
     dest->set_oper_state(adastra::proto::OPER_STARTING_CHILDREN);
     break;
   case OperState::kStartingProcesses:
     dest->set_oper_state(adastra::proto::OPER_STARTING_PROCESSES);
+    break;
+  case OperState::kConnecting:
+    dest->set_oper_state(adastra::proto::OPER_CONNECTING);
     break;
   case OperState::kStoppingChildren:
     dest->set_oper_state(adastra::proto::OPER_STOPPING_CHILDREN);
@@ -97,6 +100,9 @@ absl::Status SubsystemStatus::FromProto(const proto::SubsystemStatus &src) {
   case adastra::proto::OPER_STARTING_CHILDREN:
     this->oper_state = OperState::kStartingChildren;
     break;
+  case adastra::proto::OPER_CONNECTING:
+    this->oper_state = OperState::kConnecting;
+    break;
   case adastra::proto::OPER_STARTING_PROCESSES:
     this->oper_state = OperState::kStartingProcesses;
     break;
@@ -113,9 +119,9 @@ absl::Status SubsystemStatus::FromProto(const proto::SubsystemStatus &src) {
     this->oper_state = OperState::kRestarting;
     break;
   case adastra::proto::OPER_RESTARTING_PROCESSES:
-        this->oper_state = OperState::kRestartingProcesses;
-        break;
-   case adastra::proto::OPER_BROKEN:
+    this->oper_state = OperState::kRestartingProcesses;
+    break;
+  case adastra::proto::OPER_BROKEN:
     this->oper_state = OperState::kBroken;
     break;
   case adastra::proto::OPER_DEGRADED:

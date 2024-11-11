@@ -109,6 +109,7 @@ void SubsystemsWindow::PopulateTable() {
       oper_color = retro::kColorPairGreen;
       break;
     case adastra::OperState::kRestarting:
+    case adastra::OperState::kConnecting:
     case adastra::OperState::kStartingChildren:
     case adastra::OperState::kStartingProcesses:
     case adastra::OperState::kRestartingProcesses:

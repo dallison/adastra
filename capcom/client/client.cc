@@ -42,6 +42,7 @@ absl::StatusOr<std::shared_ptr<Event>> Client::ReadEvent(co::Coroutine *c) {
 
 absl::Status Client::AddCompute(const std::string &name,
                                 const toolbelt::InetAddress &addr,
+                                ComputeConnectionPolicy connection_policy,
                                 const std::vector<Cgroup> &cgroups,
                                 co::Coroutine *c) {
   if (!addr.Valid()) {
@@ -54,6 +55,16 @@ absl::Status Client::AddCompute(const std::string &name,
   in_addr ip_addr = addr.IpAddress();
   compute->set_ip_addr(&ip_addr, sizeof(ip_addr));
   compute->set_port(addr.Port());
+  switch (connection_policy) {
+  case ComputeConnectionPolicy::kDynamic:
+    add->set_connection_policy(
+        adastra::capcom::proto::AddComputeRequest::DYNAMIC);
+    break;
+  case ComputeConnectionPolicy::kStatic:
+    add->set_connection_policy(
+        adastra::capcom::proto::AddComputeRequest::STATIC);
+    break;
+  }
 
   for (auto &cgroup : cgroups) {
     auto *cg = compute->add_cgroups();

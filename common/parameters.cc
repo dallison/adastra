@@ -89,6 +89,7 @@ absl::Status ParameterServer::SetParameter(const std::string &name,
     if (value.GetType() == Type::kMap) {
       ExpandMap(value.GetMap(), node);
     } else {
+      node->children_.clear();
       node->SetValue(value);
     }
     return absl::OkStatus();
@@ -113,6 +114,7 @@ absl::Status ParameterServer::SetParameter(const std::string &name,
   if (value.GetType() == Type::kMap) {
     ExpandMap(value.GetMap(), last_node);
   } else {
+    last_node->children_.clear();
     last_node->SetValue(value);
   }
   return absl::OkStatus();

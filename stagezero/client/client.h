@@ -68,6 +68,13 @@ public:
   ReadEvent(co::Coroutine *c = nullptr) {
     absl::StatusOr<std::shared_ptr<control::Event>> event = ReadProtoEvent(c);
     if (!event.ok()) {
+      if (event.status().code() == absl::StatusCode::kCancelled) {
+        // On error or EOF, return a disconnect event.
+        auto event = std::make_shared<control::Event>();
+        event->mutable_disconnect()->set_compute(compute_);
+        Close();
+        return event;
+      }
       return event.status();
     }
     return *event;
@@ -148,5 +155,6 @@ private:
   void BuildProcessOptions(const std::string &name,
                            adastra::stagezero::config::ProcessOptions *options,
                            ProcessOptions opts) const;
+  std::string compute_;
 };
 } // namespace adastra::stagezero

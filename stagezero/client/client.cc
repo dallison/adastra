@@ -11,6 +11,7 @@ namespace adastra::stagezero {
 absl::Status Client::Init(toolbelt::InetAddress addr, const std::string &name,
                           int event_mask, const std::string &compute,
                           co::Coroutine *co) {
+  compute_ = compute;
   auto fill_init = [name, compute, event_mask](control::Request &req) {
     auto init = req.mutable_init();
     init->set_client_name(name);

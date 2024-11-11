@@ -22,7 +22,14 @@ message InitResponse {
   int32 event_port = 2;
 }
 
-message AddComputeRequest { stagezero.config.Compute compute = 1; }
+message AddComputeRequest {
+  enum ConnectionPolicy {
+    DYNAMIC = 0; // Connect only when needed.
+    STATIC = 1;  // Always connected.
+  }
+  stagezero.config.Compute compute = 1;
+  ConnectionPolicy connection_policy = 2;
+}
 
 message AddComputeResponse { string error = 1; }
 

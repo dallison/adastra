@@ -28,6 +28,7 @@ using EventType = adastra::EventType;
 using ClientMode = adastra::capcom::client::ClientMode;
 
 void SignalHandler(int sig);
+void StageZeroSignalHandler(int sig);
 void SignalQuitHandler(int sig);
 
 class CapcomTest : public ::testing::Test {
@@ -42,7 +43,7 @@ public:
   }
 
   static void StartStageZero(int port = 6522) {
-    printf("Starting StageZero\n");
+    fprintf(stderr, "Starting StageZero process\n");
 
     // Capcom will write to this pipe to notify us when it
     // has started and stopped.  This end of the pipe is blocking.
@@ -53,15 +54,17 @@ public:
         stagezero_scheduler_, stagezero_addr_, true, "/tmp", "debug", "",
         stagezero_pipe_[1]);
 
-    // Start stagezero running in a thread.
-    stagezero_thread_ = std::thread([]() {
-
+    stagezero_pid_ = fork();
+    if (stagezero_pid_ == 0) {
+      signal(SIGTERM, StageZeroSignalHandler);
+      signal(SIGINT, StageZeroSignalHandler);
+      // Child process.
       absl::Status s = stagezero_->Run();
       if (!s.ok()) {
         fprintf(stderr, "Error running stagezero: %s\n", s.ToString().c_str());
-        exit(1);
       }
-    });
+      exit(1);
+    }
 
     // Wait stagezero to tell us that it's running.
     char buf[8];
@@ -114,11 +117,13 @@ public:
   }
 
   static void StopStageZero() {
-    printf("Stopping StageZero\n");
-    stagezero_->Stop();
-
-    // Wait for server to tell us that it's stopped.
-    WaitForStop(stagezero_pipe_[0], stagezero_thread_);
+    if (stagezero_pid_ > 0) {
+      fprintf(stderr, "Stopping StageZero process\n");
+      kill(stagezero_pid_, SIGTERM);
+      int status;
+      waitpid(stagezero_pid_, &status, 0);
+      stagezero_pid_ = 0;
+    }
   }
 
   static void WaitForStop(int fd, std::thread &t) {
@@ -128,7 +133,11 @@ public:
   }
 
   static void WaitForStop() {
-    WaitForStop(stagezero_pipe_[0], stagezero_thread_);
+    if (stagezero_pid_ > 0) {
+      int status;
+      waitpid(stagezero_pid_, &status, 0);
+      stagezero_pid_ = 0;
+    }
     WaitForStop(capcom_pipe_[0], capcom_thread_);
   }
 
@@ -294,6 +303,7 @@ private:
   static std::unique_ptr<adastra::stagezero::StageZero> stagezero_;
   static std::thread stagezero_thread_;
   static toolbelt::InetAddress stagezero_addr_;
+  static int stagezero_pid_;
 };
 
 co::CoroutineScheduler CapcomTest::capcom_scheduler_;
@@ -307,6 +317,7 @@ int CapcomTest::stagezero_pipe_[2];
 std::unique_ptr<adastra::stagezero::StageZero> CapcomTest::stagezero_;
 std::thread CapcomTest::stagezero_thread_;
 toolbelt::InetAddress CapcomTest::stagezero_addr_;
+int CapcomTest::stagezero_pid_;
 
 void SignalHandler(int sig) {
   printf("Signal %d\n", sig);
@@ -316,6 +327,11 @@ void SignalHandler(int sig) {
 
   signal(sig, SIG_DFL);
   raise(sig);
+}
+
+void StageZeroSignalHandler(int sig) {
+  printf("StageZero Signal %d\n", sig);
+  CapcomTest::StageZero()->Stop();
 }
 
 void SignalQuitHandler(int sig) {
@@ -472,6 +488,107 @@ TEST_F(CapcomTest, StartSimpleSubsystem) {
   ASSERT_TRUE(status.ok());
 }
 
+// Start a subsystem with no stagezero, then start stagezero.
+TEST_F(CapcomTest, StartSimpleSubsystemDelayedStageZero) {
+  StopStageZero();
+  adastra::capcom::client::Client client(ClientMode::kNonBlocking);
+  InitClient(client, "foobar1");
+
+  absl::Status status = client.AddSubsystem(
+      "foobar1",
+      {.static_processes = {{
+           .name = "loop", .executable = "${runfiles_dir}/_main/testdata/loop",
+       }}});
+  ASSERT_TRUE(status.ok());
+
+  // Try to start a subsystem without stagezero running.  We will get into
+  // connecting state but will not go online.
+  status = client.StartSubsystem("foobar1");
+  ASSERT_TRUE(status.ok());
+
+  WaitForState(client, "foobar1", AdminState::kOnline, OperState::kConnecting);
+
+  // Now start stagezero and we should go online.
+  StartStageZero();
+  WaitForState(client, "foobar1", AdminState::kOnline, OperState::kOnline);
+
+  status = client.StopSubsystem("foobar1");
+  ASSERT_TRUE(status.ok());
+  WaitForState(client, "foobar1", AdminState::kOffline, OperState::kOffline);
+
+  status = client.RemoveSubsystem("foobar1", false);
+  ASSERT_TRUE(status.ok());
+}
+
+TEST_F(CapcomTest, StartSimpleSubsystemNoStageZeroAbort) {
+  StopStageZero();
+  adastra::capcom::client::Client client(ClientMode::kNonBlocking);
+  InitClient(client, "foobar1");
+
+  absl::Status status = client.AddSubsystem(
+      "foobar1",
+      {.static_processes = {{
+           .name = "loop", .executable = "${runfiles_dir}/_main/testdata/loop",
+       }}});
+  ASSERT_TRUE(status.ok());
+
+  // Try to start a subsystem without stagezero running.  We will get into
+  // connecting state but will not go online.
+  status = client.StartSubsystem("foobar1");
+  ASSERT_TRUE(status.ok());
+
+  WaitForState(client, "foobar1", AdminState::kOnline, OperState::kConnecting);
+
+  // While the subsystem is connecting, stop it.  It should go offline.
+  std::cerr << "Stopping subsystem\n";
+  status = client.StopSubsystem("foobar1");
+  ASSERT_TRUE(status.ok());
+  WaitForState(client, "foobar1", AdminState::kOffline, OperState::kOffline);
+
+  status = client.RemoveSubsystem("foobar1", false);
+  ASSERT_TRUE(status.ok());
+}
+
+TEST_F(CapcomTest, StartSimpleSubsystemStageZeroDisconnect) {
+  StopStageZero();
+  StartStageZero();
+  adastra::capcom::client::Client client(ClientMode::kNonBlocking);
+  InitClient(client, "foobar1");
+
+  absl::Status status = client.AddSubsystem(
+      "foobar1",
+      {.static_processes = {{
+           .name = "loop", .executable = "${runfiles_dir}/_main/testdata/loop",
+       }}});
+  ASSERT_TRUE(status.ok());
+
+  // Try to start a subsystem without stagezero running.  We will get into
+  // connecting state but will not go online.
+  status = client.StartSubsystem("foobar1");
+  ASSERT_TRUE(status.ok());
+
+  WaitForState(client, "foobar1", AdminState::kOnline, OperState::kOnline);
+
+  sleep(1);
+
+  StopStageZero();
+
+  // We will go into connecting state until stagezero starts.
+  WaitForState(client, "foobar1", AdminState::kOnline, OperState::kConnecting);
+
+  StartStageZero();
+
+  // Process should start again.
+  WaitForState(client, "foobar1", AdminState::kOnline, OperState::kOnline);
+
+  status = client.StopSubsystem("foobar1");
+  ASSERT_TRUE(status.ok());
+  WaitForState(client, "foobar1", AdminState::kOffline, OperState::kOffline);
+
+  status = client.RemoveSubsystem("foobar1", false);
+  ASSERT_TRUE(status.ok());
+}
+
 TEST_F(CapcomTest, OneshotOK) {
   adastra::capcom::client::Client client(ClientMode::kBlocking);
   InitClient(client, "foobar1");
@@ -610,11 +727,17 @@ TEST_F(CapcomTest, StartSimpleSubsystemCompute) {
   ASSERT_TRUE(status.ok());
 
   status = client.AddSubsystem(
-      "foobar1", {.static_processes = {{
-                      .name = "loop",
-                      .executable = "${runfiles_dir}/_main/testdata/loop",
-                      .compute = "localhost",
-                  }}});
+      "foobar1", {.static_processes = {
+                      {
+                          .name = "loop1",
+                          .executable = "${runfiles_dir}/_main/testdata/loop",
+                          .compute = "localhost",
+                      },
+                      {
+                          .name = "loop2",
+                          .executable = "${runfiles_dir}/_main/testdata/loop",
+                          .compute = "localhost",
+                      }}});
   ASSERT_TRUE(status.ok());
 
   status = client.StartSubsystem("foobar1");
@@ -852,6 +975,7 @@ TEST_F(CapcomTest, StartSimpleSubsystemTree) {
 
   status = client.RemoveSubsystem("parent", false);
   ASSERT_TRUE(status.ok());
+  sleep(1);
 }
 
 TEST_F(CapcomTest, RestartProcess) {
@@ -1889,6 +2013,7 @@ TEST_F(CapcomTest, CgroupOps) {
 
   absl::Status status =
       client.AddCompute("compute1", toolbelt::InetAddress("localhost", 6522),
+                        adastra::capcom::client::ComputeConnectionPolicy::kStatic,
                         {
                             cgroup,
                         });

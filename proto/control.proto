@@ -186,6 +186,10 @@ message OutputEvent {
   int32 fd = 3; // What fd sent it
 }
 
+message ConnectEvent {}
+
+message DisconnectEvent { string compute = 1; }
+
 message Event {
   oneof event {
     StartEvent start = 51;
@@ -193,6 +197,8 @@ message Event {
     OutputEvent output = 53;
     adastra.proto.LogMessage log = 54;
     adastra.proto.parameters.ParameterEvent parameter = 55;
+    ConnectEvent connect = 56;
+    DisconnectEvent disconnect = 57;
   }
 }
 

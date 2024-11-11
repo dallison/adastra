@@ -20,6 +20,7 @@ enum class AdminState {
 enum class OperState {
   kOffline,
   kStartingChildren,
+  kConnecting,
   kStartingProcesses,
   kOnline,
   kStoppingProcesses,
@@ -45,6 +46,8 @@ inline const char *OperStateName(OperState s) {
     return "online";
   case OperState::kOffline:
     return "offline";
+  case OperState::kConnecting:
+    return "connecting";
   case OperState::kStartingChildren:
     return "starting-children";
   case OperState::kStartingProcesses:
