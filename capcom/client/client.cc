@@ -120,10 +120,13 @@ absl::Status Client::AddSubsystem(const std::string &name,
     auto *opts = proc->mutable_options();
     opts->set_name(sproc.name);
     opts->set_description(sproc.description);
+    opts->set_telemetry_shutdown_timeout_secs(
+        sproc.telemetry_shutdown_timeout_secs);
     opts->set_sigint_shutdown_timeout_secs(sproc.sigint_shutdown_timeout_secs);
     opts->set_sigterm_shutdown_timeout_secs(
         sproc.sigterm_shutdown_timeout_secs);
     opts->set_notify(sproc.notify);
+    opts->set_telemetry(sproc.telemetry);
     opts->set_user(sproc.user);
     opts->set_group(sproc.group);
     opts->set_interactive(sproc.interactive);
@@ -196,10 +199,13 @@ absl::Status Client::AddSubsystem(const std::string &name,
     auto *opts = proc->mutable_options();
     opts->set_name(vproc.name);
     opts->set_description(vproc.description);
+    opts->set_telemetry_shutdown_timeout_secs(
+        vproc.telemetry_shutdown_timeout_secs);
     opts->set_sigint_shutdown_timeout_secs(vproc.sigint_shutdown_timeout_secs);
     opts->set_sigterm_shutdown_timeout_secs(
         vproc.sigterm_shutdown_timeout_secs);
     opts->set_notify(vproc.notify);
+    opts->set_telemetry(vproc.telemetry);
     opts->set_user(vproc.user);
     opts->set_group(vproc.group);
     opts->set_critical(options.critical);
@@ -756,6 +762,56 @@ Client::UploadParameters(const std::vector<parameters::Parameter> &params,
   if (!kill_resp.error().empty()) {
     return absl::InternalError(
         absl::StrFormat("Failed to upload parameter: %s", kill_resp.error()));
+  }
+  return absl::OkStatus();
+}
+
+absl::Status Client::SendTelemetryCommandToSubsystem(
+    const std::string &subsystem, const ::stagezero::TelemetryCommand &command,
+    co::Coroutine *co) {
+  if (co == nullptr) {
+    co = co_;
+  }
+  adastra::capcom::proto::Request req;
+  auto x = req.mutable_send_telemetry_command();
+  x->set_subsystem(subsystem);
+  command.ToProto(*x->mutable_command());
+
+  adastra::capcom::proto::Response resp;
+  if (absl::Status status = SendRequestReceiveResponse(req, resp, co);
+      !status.ok()) {
+    return status;
+  }
+  auto &tele_resp = resp.send_telemetry_command();
+  if (!tele_resp.error().empty()) {
+    return absl::InternalError(absl::StrFormat(
+        "Failed to send telemetry command: %s", tele_resp.error()));
+  }
+  return absl::OkStatus();
+}
+
+absl::Status Client::SendTelemetryCommandToProcess(const std::string& subsystem, const std::string &process_id,
+                                  const ::stagezero::TelemetryCommand &command,
+                                  co::Coroutine *co) {
+  if (co == nullptr) {
+    co = co_;
+  }
+  adastra::capcom::proto::Request req;
+  auto x = req.mutable_send_telemetry_command();
+  auto p = x->mutable_process();
+  p->set_subsystem(subsystem);
+  p->set_process_id(process_id);
+  command.ToProto(*x->mutable_command());
+
+  adastra::capcom::proto::Response resp;
+  if (absl::Status status = SendRequestReceiveResponse(req, resp, co);
+      !status.ok()) {
+    return status;
+  }
+  auto &tele_resp = resp.send_telemetry_command();
+  if (!tele_resp.error().empty()) {
+    return absl::InternalError(absl::StrFormat(
+        "Failed to send telemetry command: %s", tele_resp.error()));
   }
   return absl::OkStatus();
 }

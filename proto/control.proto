@@ -11,6 +11,8 @@ import "proto/stream.proto";
 import "proto/log.proto";
 import "proto/cgroup.proto";
 import "proto/parameters.proto";
+import "proto/telemetry.proto";
+import "google/protobuf/any.proto";
 
 message InitRequest {
   string client_name = 1;
@@ -123,6 +125,13 @@ message UploadParametersRequest {
 }
 message UploadParametersResponse { string error = 1; }
 
+message SendTelemetryCommandRequest {
+  string process_id = 1;
+  adastra.proto.telemetry.Command command = 2;
+}
+
+message SendTelemetryCommandResponse { string error = 1; }
+
 message Request {
   oneof request {
     InitRequest init = 1;
@@ -143,6 +152,7 @@ message Request {
     SetParameterRequest set_parameter = 16;
     DeleteParameterRequest delete_parameter = 17;
     UploadParametersRequest upload_parameters = 18;
+    SendTelemetryCommandRequest send_telemetry_command = 19;
   }
 }
 
@@ -164,6 +174,7 @@ message Response {
     SetParameterResponse set_parameter = 14;
     DeleteParameterResponse delete_parameter = 15;
     UploadParametersResponse upload_parameters = 16;
+    SendTelemetryCommandResponse send_telemetry_command = 17;
   }
 }
 
@@ -199,6 +210,7 @@ message Event {
     adastra.proto.parameters.ParameterEvent parameter = 55;
     ConnectEvent connect = 56;
     DisconnectEvent disconnect = 57;
+    adastra.proto.telemetry.Status telemetry = 58;
   }
 }
 
@@ -241,6 +253,10 @@ message SpawnRequest {
       14; // Index of parameters write fd (into fds)
   optional int32 parameters_events_fd_index =
       15; // Index of parameters write fd (into fds)
+  optional int32 telemetry_read_fd_index =
+      16; // Index of telemetry read fd (into fds)
+  optional int32 telemetry_write_fd_index =
+      17; // Index of telemetry write fd (into fds)
 }
 
 message SpawnResponse {

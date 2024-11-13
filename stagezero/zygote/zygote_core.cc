@@ -90,6 +90,38 @@ absl::Status ZygoteCore::Run() {
                                       },
                                       "ZygoteServer");
 
+  if (telemetry_.IsOpen()) {
+    telemetry_monitor_ = std::make_unique<co::Coroutine>(
+        scheduler_,
+        [this](co::Coroutine *c) {
+          const toolbelt::FileDescriptor &tele_fd = telemetry_.GetCommandFD();
+          for (;;) {
+            int fd = c->Wait(tele_fd.Fd());
+            if (fd != tele_fd.Fd()) {
+              break;
+            }
+            absl::StatusOr<std::unique_ptr<::stagezero::TelemetryCommand>> cmd =
+                telemetry_.GetCommand();
+            if (!cmd.ok()) {
+              continue;
+            }
+            switch ((*cmd)->Code()) {
+            case ::stagezero::SystemTelemetry::kShutdownCommand: {
+              auto shutdown =
+                  dynamic_cast<::stagezero::ShutdownCommand *>(cmd->get());
+              std::cerr << "Zygote is shutting down due to telemetry command\n";
+              exit(shutdown->exit_code);
+              break;
+            }
+
+            default:
+              break;
+            }
+          }
+        },
+        "TelemetryMonitor");
+  }
+
   monitor_ = std::make_unique<co::Coroutine>(
       scheduler_,
       [this](co::Coroutine *c) {

@@ -10,6 +10,7 @@
 #include "proto/config.pb.h"
 #include "proto/control.pb.h"
 #include "stagezero/symbols.h"
+#include "stagezero/telemetry/telemetry.h"
 #include "toolbelt/logging.h"
 #include "toolbelt/sockets.h"
 #include "toolbelt/pipe.h"
@@ -45,9 +46,11 @@ class ZygoteCore {
   toolbelt::FileDescriptor notification_pipe_;
   std::unique_ptr<co::Coroutine> server_;
   std::unique_ptr<co::Coroutine> monitor_;
+  std::unique_ptr<co::Coroutine> telemetry_monitor_;
   char buffer_[kBufferSize];
   toolbelt::Logger logger_;
   SymbolTable global_symbols_;
+  ::stagezero::Telemetry telemetry_;
 
   bool forked_ = false;
 

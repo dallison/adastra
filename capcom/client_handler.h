@@ -35,6 +35,8 @@ public:
                                         const parameters::Value &value);
 
   absl::Status SendParameterDeleteEvent(const std::string &name);
+  absl::Status SendTelemetryStatusEvent(
+      const adastra::proto::telemetry::Status &status);
 
   co::CoroutineScheduler &GetScheduler() const override;
 
@@ -127,6 +129,9 @@ private:
   void HandleUploadParameters(const proto::UploadParametersRequest &req,
                               proto::UploadParametersResponse *response,
                               co::Coroutine *c);
+  void HandleSendTelemetryCommand(const proto::SendTelemetryCommandRequest &req,
+                                  proto::SendTelemetryCommandResponse *response,
+                                  co::Coroutine *c);
   Capcom &capcom_;
   uint32_t id_;
 };

@@ -23,6 +23,20 @@ cc_binary(
         "@toolbelt//toolbelt",
     ],
 )
+
+cc_binary(
+    name = "telemetry",
+    srcs = [
+        "telemetry.cc",
+    ],
+    deps = [
+        "//stagezero/telemetry",
+        "@com_google_absl//absl/debugging:failure_signal_handler",
+        "@com_google_absl//absl/debugging:symbolize",
+        "@toolbelt//toolbelt",
+    ],
+)
+
 cc_binary(
     name = "echo",
     srcs = [

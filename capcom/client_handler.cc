@@ -61,6 +61,16 @@ absl::Status ClientHandler::SendParameterDeleteEvent(const std::string &name) {
   return QueueEvent(std::move(event));
 }
 
+absl::Status ClientHandler::SendTelemetryStatusEvent(
+    const adastra::proto::telemetry::Status &status) {
+  if ((event_mask_ & kTelemetryEvents) == 0) {
+    return absl::OkStatus();
+  }
+  auto event = std::make_shared<adastra::proto::Event>();
+  *event->mutable_telemetry() = status;
+  return QueueEvent(std::move(event));
+}
+
 absl::Status ClientHandler::SendAlarm(const Alarm &alarm) {
   if ((event_mask_ & kAlarmEvents) == 0) {
     return absl::OkStatus();
@@ -171,6 +181,11 @@ absl::Status ClientHandler::HandleMessage(const proto::Request &req,
                            resp.mutable_upload_parameters(), c);
     break;
 
+  case proto::Request::kSendTelemetryCommand:
+    HandleSendTelemetryCommand(req.send_telemetry_command(),
+                               resp.mutable_send_telemetry_command(), c);
+    break;
+
   case proto::Request::REQUEST_NOT_SET:
     return absl::InternalError("Protocol error: unknown request");
   }
@@ -214,20 +229,21 @@ void ClientHandler::HandleAddCompute(const proto::AddComputeRequest &req,
   }
   Compute c2 = {compute.name(), toolbelt::InetAddress(addr),
                 std::move(cgroups)};
-  auto [compute_ptr, ok] = capcom_.AddCompute(compute.name(), c2);
+  auto[compute_ptr, ok] = capcom_.AddCompute(compute.name(), c2);
   if (!ok) {
     response->set_error(
         absl::StrFormat("Failed to add compute %s", compute.name()));
     return;
   }
 
-  // If this is a static compute connection, connect the umbilical now and keep it open.
+  // If this is a static compute connection, connect the umbilical now and keep
+  // it open.
   if (req.connection_policy() == proto::AddComputeRequest::STATIC) {
     capcom_.AddUmbilical(compute_ptr, c);
-    if (absl::Status status = capcom_.ConnectUmbilical(compute.name(), c); !status.ok()) {
-      response->set_error(
-          absl::StrFormat("Failed to connect to compute %s: %s", compute.name(),
-                          status.ToString()));
+    if (absl::Status status = capcom_.ConnectUmbilical(compute.name(), c);
+        !status.ok()) {
+      response->set_error(absl::StrFormat("Failed to connect to compute %s: %s",
+                                          compute.name(), status.ToString()));
     }
   }
 }
@@ -290,7 +306,8 @@ void ClientHandler::HandleAddSubsystem(const proto::AddSubsystemRequest &req,
 
   // Add the processes to the subsystem.
   for (auto &proc : req.processes()) {
-    const std::shared_ptr<Compute> compute = capcom_.FindCompute(proc.compute());
+    const std::shared_ptr<Compute> compute =
+        capcom_.FindCompute(proc.compute());
     if (compute == nullptr) {
       response->set_error(absl::StrFormat(
           "No such compute %s for process %s (have you added it?)",
@@ -298,8 +315,8 @@ void ClientHandler::HandleAddSubsystem(const proto::AddSubsystemRequest &req,
       return;
     }
 
-    // Record a reference to an umbilical for the compute.  It will not be connected
-    // until needed.
+    // Record a reference to an umbilical for the compute.  It will not be
+    // connected until needed.
     subsystem->AddUmbilicalReference(compute);
 
     if (absl::Status status = ValidateStreams(proc.streams()); !status.ok()) {
@@ -310,8 +327,8 @@ void ClientHandler::HandleAddSubsystem(const proto::AddSubsystemRequest &req,
     switch (proc.proc_case()) {
     case proto::Process::kStaticProcess:
       if (absl::Status status = subsystem->AddStaticProcess(
-              proc.static_process(), proc.options(), proc.streams(), compute->name,
-              proc.max_restarts(), c);
+              proc.static_process(), proc.options(), proc.streams(),
+              compute->name, proc.max_restarts(), c);
           !status.ok()) {
         response->set_error(
             absl::StrFormat("Failed to add static process %s: %s",
@@ -332,8 +349,8 @@ void ClientHandler::HandleAddSubsystem(const proto::AddSubsystemRequest &req,
       break;
     case proto::Process::kVirtualProcess:
       if (absl::Status status = subsystem->AddVirtualProcess(
-              proc.virtual_process(), proc.options(), proc.streams(), compute->name,
-              proc.max_restarts(), c);
+              proc.virtual_process(), proc.options(), proc.streams(),
+              compute->name, proc.max_restarts(), c);
           !status.ok()) {
         response->set_error(
             absl::StrFormat("Failed to add virtual process %s: %s",
@@ -663,4 +680,12 @@ void ClientHandler::HandleUploadParameters(
   }
 }
 
+void ClientHandler::HandleSendTelemetryCommand(
+    const proto::SendTelemetryCommandRequest &req,
+    proto::SendTelemetryCommandResponse *response, co::Coroutine *c) {
+  if (absl::Status status = capcom_.SendTelemetryCommand(req, c);
+      !status.ok()) {
+    response->set_error(status.ToString());
+  }
+}
 } // namespace adastra::capcom

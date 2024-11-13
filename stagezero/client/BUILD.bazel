@@ -11,6 +11,7 @@ cc_library(
     deps = [
         "//proto:config_cc_proto",
         "//proto:control_cc_proto",
+        "//stagezero/telemetry",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/status",
@@ -28,6 +29,7 @@ cc_test(
     srcs = ["client_test.cc"],
     data = [
         "//testdata:loop",
+        "//testdata:telemetry",
         "//testdata:echo",
         "//testdata:files",
         "//testdata:vars",

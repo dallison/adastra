@@ -124,6 +124,11 @@ absl::Status ClientHandler::HandleMessage(const control::Request &req,
                            resp.mutable_upload_parameters(), c);
     break;
 
+  case control::Request::kSendTelemetryCommand:
+    HandleSendTelemetryCommand(req.send_telemetry_command(),
+                               resp.mutable_send_telemetry_command(), c);
+    break;
+
   case control::Request::REQUEST_NOT_SET:
     return absl::InternalError("Protocol error: unknown request");
   }
@@ -364,6 +369,17 @@ absl::Status ClientHandler::SendParameterDeleteEvent(const std::string &name) {
   return QueueEvent(std::move(event));
 }
 
+absl::Status ClientHandler::SendTelemetryStatusEvent(
+    const adastra::proto::telemetry::Status &status) {
+  if ((event_mask_ & kTelemetryEvents) == 0) {
+    return absl::OkStatus();
+  }
+  auto event = std::make_shared<control::Event>();
+  auto t = event->mutable_telemetry();
+  *t = status;
+  return QueueEvent(std::move(event));
+}
+
 void ClientHandler::KillAllProcesses() {
   // Copy all processes out of the processes_ map as we will
   // be removing them as they are killed.
@@ -532,6 +548,16 @@ void ClientHandler::HandleUploadParameters(
       !status.ok()) {
     response->set_error(status.ToString());
     return;
+  }
+}
+
+void ClientHandler::HandleSendTelemetryCommand(
+    const control::SendTelemetryCommandRequest &req,
+    control::SendTelemetryCommandResponse *response, co::Coroutine *c) {
+  if (absl::Status status =
+          stagezero_.SendTelemetryCommand(req.process_id(), req.command(), c);
+      !status.ok()) {
+    response->set_error(status.ToString());
   }
 }
 } // namespace adastra::stagezero

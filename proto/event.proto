@@ -9,6 +9,7 @@ package adastra.proto;
 import "proto/subsystem_status.proto";
 import "proto/log.proto";
 import "proto/parameters.proto";
+import "proto/telemetry.proto";
 
 message Alarm {
   enum Type {
@@ -60,5 +61,6 @@ message Event {
     OutputEvent output = 3;
     LogMessage log = 4;
     parameters.ParameterEvent parameter = 5;
+    telemetry.Status telemetry = 6;
   }
 }

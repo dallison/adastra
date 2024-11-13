@@ -13,6 +13,7 @@ cc_library(
         "//proto:control_cc_proto",
         "//stagezero:symbols_lib",
         "//stagezero:cgroup_lib",
+        "//stagezero/telemetry",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/flags:flag",

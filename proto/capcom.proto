@@ -11,6 +11,7 @@ import "proto/event.proto";
 import "proto/stream.proto";
 import "proto/subsystem_status.proto";
 import "proto/parameters.proto";
+import "proto/telemetry.proto";
 
 message InitRequest {
   string client_name = 1;
@@ -199,6 +200,20 @@ message UploadParametersRequest {
 }
 message UploadParametersResponse { string error = 1; }
 
+message SendTelemetryCommandRequest {
+  message Process {
+    string process_id = 1;      // Process ID (not PID)
+    string subsystem = 2;       // Subsystem owning process.
+  }
+  oneof dest {
+    string subsystem = 1;   // Send to all processes in the subsystem.
+    Process process = 2;  // Send to particular process.
+  }
+  adastra.proto.telemetry.Command command = 3;
+}
+
+message SendTelemetryCommandResponse { string error = 1; }
+
 message Request {
   oneof request {
     InitRequest init = 1;
@@ -222,6 +237,7 @@ message Request {
     SetParameterRequest set_parameter = 20;
     DeleteParameterRequest delete_parameter = 21;
     UploadParametersRequest upload_parameters = 22;
+    SendTelemetryCommandRequest send_telemetry_command = 23;
   }
 }
 
@@ -248,5 +264,6 @@ message Response {
     SetParameterResponse set_parameter = 20;
     DeleteParameterResponse delete_parameter = 21;
     UploadParametersResponse upload_parameters = 22;
+    SendTelemetryCommandResponse send_telemetry_command = 23;
   }
 }

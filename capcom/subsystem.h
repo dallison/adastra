@@ -42,7 +42,8 @@ enum UmbilicalState {
 };
 
 struct Umbilical {
-  Umbilical(std::shared_ptr<Compute> compute, std::shared_ptr<stagezero::Client> client, bool is_static = false)
+  Umbilical(std::shared_ptr<Compute> compute,
+            std::shared_ptr<stagezero::Client> client, bool is_static = false)
       : compute(compute), client(client), is_static(is_static) {}
   std::shared_ptr<Compute> compute = nullptr;
   std::shared_ptr<stagezero::Client> client{};
@@ -167,6 +168,11 @@ public:
     return old_delay;
   }
 
+  absl::Status
+  SendTelemetryCommand(std::shared_ptr<Subsystem> subsystem,
+                       const adastra::proto::telemetry::Command &cmd,
+                       co::Coroutine *c);
+
 protected:
   void ParseOptions(const stagezero::config::ProcessOptions &options);
   void ParseStreams(
@@ -185,6 +191,7 @@ protected:
   int32_t sigint_shutdown_timeout_secs_;
   int32_t sigterm_shutdown_timeout_secs_;
   bool notify_;
+  bool telemetry_;
   int max_restarts_;
 
   bool running_ = false;
@@ -368,10 +375,15 @@ public:
   void AddUmbilicalReference(std::shared_ptr<Compute> compute);
   Umbilical *FindUmbilical(const std::string &compute);
   void RemoveUmbilicalReference(const std::string &compute);
-  
+
+  absl::Status
+  SendTelemetryCommand(const adastra::proto::telemetry::Command &cmd,
+                       co::Coroutine *c);
+
 private:
   friend class Process;
-
+  friend class Capcom;
+  
   enum class EventSource {
     kUnknown,
     kStageZero, // StageZero (process state or data).

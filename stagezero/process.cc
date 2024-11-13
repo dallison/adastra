@@ -143,6 +143,17 @@ Process::FindParametersStream(bool read) const {
   return nullptr;
 }
 
+const std::shared_ptr<StreamInfo>
+Process::FindTelemetryStream(bool read) const {
+  for (auto &stream : streams_) {
+    if (stream->disposition == (read ? proto::StreamControl::TELEMETRY_READ
+                                     : proto::StreamControl::TELEMETRY_WRITE)) {
+      return stream;
+    }
+  }
+  return nullptr;
+}
+
 StaticProcess::StaticProcess(
     co::CoroutineScheduler &scheduler, StageZero &stagezero,
     std::shared_ptr<ClientHandler> client,
@@ -164,7 +175,8 @@ StaticProcess::StaticProcess(
     }
   }
   SetSignalTimeouts(req.opts().sigint_shutdown_timeout_secs(),
-                    req.opts().sigterm_shutdown_timeout_secs());
+                    req.opts().sigterm_shutdown_timeout_secs(),
+                    req.opts().telemetry_shutdown_timeout_secs());
   SetUserAndGroup(req.opts().user(), req.opts().group());
   SetCgroup(req.opts().cgroup());
   SetDetached(req.opts().detached());
@@ -399,7 +411,7 @@ static void DefaultStreamDirections(std::shared_ptr<StreamInfo> stream) {
 
 absl::Status Process::BuildStreams(
     const google::protobuf::RepeatedPtrField<proto::StreamControl> &streams,
-    bool notify) {
+    bool notify, bool telemetry) {
   // If the process is going to notify us of startup, make a pipe
   // for it to use and build a StreamInfo for it.
   if (notify) {
@@ -452,6 +464,31 @@ absl::Status Process::BuildStreams(
     estream->fd = epipe->WriteFd().Fd();
     estream->pipe = std::move(*epipe);
     streams_.push_back(estream);
+  }
+
+  // Open telemetry streams.  These are from the point of view of the process.
+  if (telemetry) {
+    auto rstream = std::make_shared<StreamInfo>();
+    rstream->disposition = proto::StreamControl::TELEMETRY_READ;
+    rstream->direction = proto::StreamControl::INPUT;
+    absl::StatusOr<toolbelt::Pipe> rpipe = MakeFileDescriptors(false, nullptr);
+    if (!rpipe.ok()) {
+      return rpipe.status();
+    }
+    rstream->fd = rpipe->ReadFd().Fd();
+    rstream->pipe = std::move(*rpipe);
+    streams_.push_back(rstream);
+
+    auto wstream = std::make_shared<StreamInfo>();
+    wstream->disposition = proto::StreamControl::TELEMETRY_WRITE;
+    wstream->direction = proto::StreamControl::OUTPUT;
+    absl::StatusOr<toolbelt::Pipe> wpipe = MakeFileDescriptors(false, nullptr);
+    if (!wpipe.ok()) {
+      return wpipe.status();
+    }
+    wstream->fd = wpipe->WriteFd().Fd();
+    wstream->pipe = std::move(*wpipe);
+    streams_.push_back(wstream);
   }
 
   if (interactive_) {
@@ -724,6 +761,56 @@ void Process::RunParameterServer() {
   }));
 }
 
+void Process::RunTelemetryServer() {
+  std::cerr << "running telemetry server for " << Name() << std::endl;
+  std::shared_ptr<StreamInfo> tele_write_stream = FindTelemetryStream(false);
+  assert(tele_write_stream != nullptr);
+
+  client_->AddCoroutine(std::make_unique<co::Coroutine>(scheduler_, [
+    proc = shared_from_this(), tele_write_stream, client = client_
+  ](co::Coroutine * c) {
+    toolbelt::FileDescriptor &rfd = tele_write_stream->pipe.ReadFd();
+    while (rfd.Valid()) {
+      adastra::proto::telemetry::Status status;
+      {
+        uint32_t len;
+        int wait_fd = c->Wait(rfd.Fd(), POLLIN);
+        if (wait_fd != rfd.Fd()) {
+          return;
+        }
+        ssize_t n = ::read(rfd.Fd(), &len, sizeof(len));
+        if (n <= 0) {
+          return;
+        }
+        std::vector<char> buffer(len);
+        char *buf = buffer.data();
+        size_t remaining = len;
+        while (remaining > 0) {
+          int wait_fd = c->Wait(rfd.Fd(), POLLIN);
+          if (wait_fd != rfd.Fd()) {
+            return;
+          }
+          ssize_t n = ::read(rfd.Fd(), buf, remaining);
+          if (n <= 0) {
+            return;
+          }
+          remaining -= n;
+          buf += n;
+        }
+
+        if (!status.ParseFromArray(buffer.data(), buffer.size())) {
+          client->Log(proc->Name(), toolbelt::LogLevel::kError,
+                      "Failed to parse telemetry status message");
+          break;
+        }
+
+        proc->GetStageZero().HandleTelemetryServerStatus(proc, status, client,
+                                                         c);
+      }
+    }
+  }));
+}
+
 void Process::SendParameterUpdateEvent(const std::string &name,
                                        const parameters::Value &value,
                                        co::Coroutine *c) {
@@ -797,7 +884,8 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
   }
 
   // Set up streams.
-  if (absl::Status status = BuildStreams(req_.streams(), req_.opts().notify());
+  if (absl::Status status = BuildStreams(req_.streams(), req_.opts().notify(),
+                                         req_.opts().telemetry());
       !status.ok()) {
     return status;
   }
@@ -823,6 +911,9 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
 
   // Run a coroutine to process commands from the parameter stream.
   RunParameterServer();
+  if (UseTelemetry()) {
+    RunTelemetryServer();
+  }
 
 #if defined(__linux__)
   // On Linux we can use clone3 instead of fork if we have any namespace
@@ -886,7 +977,9 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
         if (stream->disposition != proto::StreamControl::NOTIFY &&
             stream->disposition != proto::StreamControl::PARAMETERS_READ &&
             stream->disposition != proto::StreamControl::PARAMETERS_WRITE &&
-            stream->disposition != proto::StreamControl::PARAMETERS_EVENTS) {
+            stream->disposition != proto::StreamControl::PARAMETERS_EVENTS &&
+            stream->disposition != proto::StreamControl::TELEMETRY_READ &&
+            stream->disposition != proto::StreamControl::TELEMETRY_WRITE) {
           if (stream->disposition == proto::StreamControl::FILENAME) {
             // For files, we have deferred the open until we know the pid
             // of the process.  This is because it's likely that the
@@ -937,7 +1030,9 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
             stream->disposition == proto::StreamControl::NOTIFY ||
             stream->disposition == proto::StreamControl::PARAMETERS_READ ||
             stream->disposition == proto::StreamControl::PARAMETERS_WRITE ||
-            stream->disposition == proto::StreamControl::PARAMETERS_EVENTS) {
+            stream->disposition == proto::StreamControl::PARAMETERS_EVENTS ||
+            stream->disposition == proto::StreamControl::TELEMETRY_READ ||
+            stream->disposition == proto::StreamControl::TELEMETRY_WRITE) {
           // Close the duplicated other end of the pipes.
           toolbelt::FileDescriptor &fd =
               stream->direction == proto::StreamControl::OUTPUT
@@ -1000,6 +1095,18 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
                         params_read_stream->pipe.ReadFd().Fd(),
                         params_write_stream->pipe.WriteFd().Fd(),
                         parameters_event_read_fd_.Fd()));
+
+    if (UseTelemetry()) {
+      // Tell the process what the telemetry stream is.
+      std::shared_ptr<StreamInfo> tele_read_stream = FindTelemetryStream(true);
+      std::shared_ptr<StreamInfo> tele_write_stream =
+          FindTelemetryStream(false);
+      assert(tele_read_stream != nullptr);
+      assert(tele_write_stream != nullptr);
+      env_strings.push_back(absl::StrFormat(
+          "STAGEZERO_TELEMETRY_FDS=%d:%d", tele_read_stream->pipe.ReadFd().Fd(),
+          tele_write_stream->pipe.WriteFd().Fd()));
+    }
 
     absl::flat_hash_map<std::string, Symbol *> env_vars =
         local_symbols_.GetEnvironmentSymbols();
@@ -1091,6 +1198,53 @@ int StaticProcess::Wait() {
   return status;
 }
 
+absl::Status Process::SendTelemetryCommand(const adastra::proto::telemetry::Command &command,
+                                           co::Coroutine *c) {
+  // We write to the telemetry read stream since that process is reading from
+  // it.
+  std::shared_ptr<StreamInfo> tele_read_stream = FindTelemetryStream(true);
+  assert(tele_read_stream != nullptr);
+
+  toolbelt::FileDescriptor &wfd = tele_read_stream->pipe.WriteFd();
+
+  uint64_t len = command.ByteSizeLong();
+  std::vector<char> cmd_buffer(len + sizeof(uint32_t));
+  char *cmdbuf = cmd_buffer.data() + 4;
+  if (!command.SerializeToArray(cmdbuf, uint32_t(len))) {
+    return absl::InternalError("Failed to serialize telemetry command");
+  }
+  // Copy length into buffer.
+  memcpy(cmd_buffer.data(), &len, sizeof(uint32_t));
+
+  // Write to pipe in a loop.
+  char *buf = cmd_buffer.data();
+  size_t remaining = len + sizeof(uint32_t);
+  while (remaining > 0) {
+    int wait_fd = c->Wait(wfd.Fd(), POLLOUT);
+    if (wait_fd != wfd.Fd()) {
+      break;
+    }
+    ssize_t n = ::write(wfd.Fd(), buf, remaining);
+    if (n <= 0) {
+      return absl::InternalError("Failed to write telemetry command");
+    }
+    remaining -= n;
+    buf += n;
+  }
+  return absl::OkStatus();
+}
+
+absl::Status Process::SendTelemetryShutdown(int exit_code, int timeout_secs,
+                                            co::Coroutine *c) {
+  adastra::proto::telemetry::ShutdownCommand shutdown;
+  shutdown.set_exit_code(exit_code);
+  shutdown.set_timeout_seconds(timeout_secs);
+  adastra::proto::telemetry::Command command;
+  command.set_code(adastra::proto::telemetry::SHUTDOWN_COMMAND);
+  command.mutable_data()->PackFrom(shutdown);
+  return SendTelemetryCommand(command, c);
+}
+
 absl::Status Process::Stop(co::Coroutine *c) {
   if (stopping_) {
     return absl::OkStatus();
@@ -1102,7 +1256,36 @@ absl::Status Process::Stop(co::Coroutine *c) {
         if (!proc->IsRunning()) {
           return;
         }
-        int timeout = proc->SigIntTimeoutSecs();
+
+        // If telemetry is enabled, send a shutdown command to the process.
+        int timeout = proc->TelemetryShutdownTimeoutSecs();
+        if (timeout > 0 && proc->UseTelemetry()) {
+          client->Log(proc->Name(), toolbelt::LogLevel::kDebug,
+                      "Sending shutdown telemetry command to process %s "
+                      "(timeout %d seconds)",
+                      proc->Name().c_str(), timeout);
+          absl::Status status = proc->SendTelemetryShutdown(0, timeout, c2);
+          if (!status.ok()) {
+            client->Log(
+                proc->Name(), toolbelt::LogLevel::kDebug,
+                "Failed to send shutdown telemetry command to process %s: %s",
+                proc->Name().c_str(), status.ToString().c_str());
+          } else {
+#if defined(__linux__) && HAVE_PIDFD
+            c2->Wait(proc->GetPidFd().Fd(), POLLIN,
+                     std::chrono::duration_cast<std::chrono::nanoseconds>(
+                         std::chrono::seconds(timeout))
+                         .count());
+#else
+            (void)proc->WaitLoop(c2, std::chrono::seconds(timeout));
+#endif
+            if (!proc->IsRunning()) {
+              return;
+            }
+          }
+        }
+
+        timeout = proc->SigIntTimeoutSecs();
         if (timeout > 0) {
           client->Log(proc->Name(), toolbelt::LogLevel::kDebug,
                       "Killing process %s with SIGINT (timeout %d seconds)",
@@ -1365,6 +1548,14 @@ Zygote::Spawn(const stagezero::control::LaunchVirtualProcessRequest &req,
       fds.push_back(stream->pipe.ReadFd());
       spawn.set_parameters_events_fd_index(fd_index++);
       break;
+    case proto::StreamControl::TELEMETRY_READ:
+      fds.push_back(stream->pipe.ReadFd());
+      spawn.set_telemetry_read_fd_index(fd_index++);
+      break;
+    case proto::StreamControl::TELEMETRY_WRITE:
+      fds.push_back(stream->pipe.WriteFd());
+      spawn.set_telemetry_write_fd_index(fd_index++);
+      break;
     default:
       if (stream->disposition != proto::StreamControl::STAGEZERO) {
         const toolbelt::FileDescriptor &fd =
@@ -1474,7 +1665,8 @@ VirtualProcess::VirtualProcess(
     local_symbols_.AddSymbol(var.name(), var.value(), var.exported());
   }
   SetSignalTimeouts(req.opts().sigint_shutdown_timeout_secs(),
-                    req.opts().sigterm_shutdown_timeout_secs());
+                    req.opts().sigterm_shutdown_timeout_secs(),
+                    req.opts().telemetry_shutdown_timeout_secs());
   SetUserAndGroup(req.opts().user(), req.opts().group());
   SetCgroup(req.opts().cgroup());
   SetDetached(req.opts().detached());
@@ -1506,7 +1698,8 @@ absl::Status VirtualProcess::Start(co::Coroutine *c) {
   if (absl::Status status = ValidateStreams(req_.streams()); !status.ok()) {
     return status;
   }
-  if (absl::Status status = BuildStreams(req_.streams(), req_.opts().notify());
+  if (absl::Status status = BuildStreams(req_.streams(), req_.opts().notify(),
+                                         req_.opts().telemetry());
       !status.ok()) {
     return status;
   }
@@ -1560,6 +1753,9 @@ absl::Status VirtualProcess::Start(co::Coroutine *c) {
 
   // Run a coroutine to process commands from the parameter stream.
   RunParameterServer();
+  if (UseTelemetry()) {
+    RunTelemetryServer();
+  }
 
   client_->AddCoroutine(std::make_unique<co::Coroutine>(scheduler_, [
     proc, vproc, zygote = zygote_, client = client_
@@ -1651,5 +1847,4 @@ absl::Status Process::AddToCgroup(int pid) {
   }
   return stagezero::AddToCgroup(Name(), cgroup_, pid, client_->GetLogger());
 }
-
 } // namespace adastra::stagezero

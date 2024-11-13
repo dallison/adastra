@@ -14,6 +14,7 @@
 #include "proto/config.pb.h"
 #include "proto/control.pb.h"
 #include "proto/parameters.pb.h"
+#include "proto/telemetry.pb.h"
 #include "stagezero/symbols.h"
 #include "toolbelt/fd.h"
 #include "toolbelt/pipe.h"
@@ -63,6 +64,8 @@ public:
   virtual bool IsZygote() const { return false; }
   virtual bool IsVirtual() const { return false; }
   absl::Status SendInput(int fd, const std::string &data, co::Coroutine *c);
+  absl::Status SendTelemetryCommand(const adastra::proto::telemetry::Command &cmd,
+                                    co::Coroutine *c);
 
   absl::Status CloseFileDescriptor(int fd);
 
@@ -82,6 +85,7 @@ public:
   void SetPid(int pid) { pid_ = pid; }
   void SetProcessId();
   virtual bool WillNotify() const = 0;
+  virtual bool UseTelemetry() const = 0;
   virtual int StartupTimeoutSecs() const = 0;
   bool IsCritical() const { return critical_; }
   void SetDetached(bool detached) { detached_ = detached; }
@@ -90,18 +94,21 @@ public:
 
   const std::shared_ptr<StreamInfo> FindNotifyStream() const;
   const std::shared_ptr<StreamInfo> FindParametersStream(bool read) const;
+  const std::shared_ptr<StreamInfo> FindTelemetryStream(bool read) const;
 
   const std::vector<std::shared_ptr<StreamInfo>> &GetStreams() const {
     return streams_;
   }
 
-  void SetSignalTimeouts(int sigint, int sigterm) {
+  void SetSignalTimeouts(int sigint, int sigterm, int telemetry) {
     sigint_timeout_secs_ = sigint;
     sigterm_timeout_secs_ = sigterm;
+    telemetry_shutdown_secs_ = telemetry;
   }
 
   int SigIntTimeoutSecs() const { return sigint_timeout_secs_; }
   int SigTermTimeoutSecs() const { return sigterm_timeout_secs_; }
+  int TelemetryShutdownTimeoutSecs() const { return telemetry_shutdown_secs_; }
 
   void SetUserAndGroup(const std::string &user, const std::string &group) {
     user_ = user;
@@ -119,6 +126,9 @@ public:
   void SetNamespace(Namespace ns) { ns_ = std::move(ns); }
 
   void RunParameterServer();
+  void RunTelemetryServer();
+
+  absl::Status SendTelemetryShutdown(int exit_code, int timeout_secs, co::Coroutine *c);
 
   parameters::ParameterServer &Parameters() { return local_parameters_; }
 
@@ -126,12 +136,12 @@ public:
 
   void SendParameterUpdateEvent(const std::string &name, const parameters::Value &value, co::Coroutine* c);
   void SendParameterDeleteEvent(const std::string &name, co::Coroutine* c);
-
+  
 protected:
   virtual int Wait() = 0;
   absl::Status BuildStreams(
       const google::protobuf::RepeatedPtrField<proto::StreamControl> &streams,
-      bool notify);
+      bool notify, bool telemetry);
 
   static int SafeKill(int pid, int sig) {
     if (pid > 0) {
@@ -156,6 +166,7 @@ protected:
   std::vector<std::shared_ptr<StreamInfo>> streams_;
   SymbolTable local_symbols_;
   parameters::ParameterServer local_parameters_;
+  int telemetry_shutdown_secs_ = 0;
   int sigint_timeout_secs_ = 0;
   int sigterm_timeout_secs_ = 0;
   std::string user_;
@@ -180,6 +191,8 @@ public:
 
   absl::Status Start(co::Coroutine *c) override;
   bool WillNotify() const override { return req_.opts().notify(); }
+  bool UseTelemetry() const override { return req_.opts().telemetry(); }
+
   int StartupTimeoutSecs() const override {
     return req_.opts().startup_timeout_secs();
   }
@@ -246,6 +259,7 @@ public:
 
   absl::Status Start(co::Coroutine *c) override;
   bool WillNotify() const override { return req_.opts().notify(); }
+  bool UseTelemetry() const override { return req_.opts().telemetry(); }
   int StartupTimeoutSecs() const override {
     return req_.opts().startup_timeout_secs();
   }

@@ -84,6 +84,7 @@ public:
     absl::Status s = client.Init(Addr(), name, event_mask);
     std::cout << "Init status: " << s << std::endl;
     ASSERT_TRUE(s.ok());
+    WaitForEvent(client, adastra::stagezero::control::Event::kConnect);
   }
 
   void WaitForEvent(adastra::stagezero::Client &client,
@@ -239,6 +240,66 @@ TEST_F(ClientTest, LaunchAndStopSigKill) {
   WaitForEvent(client, adastra::stagezero::control::Event::kStart);
   std::cout << "stopping process " << process_id << std::endl;
   absl::Status s = client.StopProcess(process_id);
+  ASSERT_TRUE(s.ok());
+  WaitForEvent(client, adastra::stagezero::control::Event::kStop);
+}
+
+TEST_F(ClientTest, LaunchAndStopTelemetry) {
+  adastra::stagezero::Client client;
+  InitClient(client, "foobar2");
+
+  absl::StatusOr<std::pair<std::string, int>> status =
+      client.LaunchStaticProcess("telemetry",
+                                 "${runfiles_dir}/_main/testdata/telemetry",
+                                 {
+                                     .notify = true, .telemetry = true,
+                                 });
+  ASSERT_TRUE(status.ok());
+  std::string process_id = status->first;
+  WaitForEvent(client, adastra::stagezero::control::Event::kStart);
+  std::cout << "stopping process " << process_id << std::endl;
+  absl::Status s = client.StopProcess(process_id);
+  ASSERT_TRUE(s.ok());
+  WaitForEvent(client, adastra::stagezero::control::Event::kStop);
+}
+
+TEST_F(ClientTest, LaunchAndStopNoTelemetry) {
+  adastra::stagezero::Client client;
+  InitClient(client, "foobar2");
+
+  absl::StatusOr<std::pair<std::string, int>> status =
+      client.LaunchStaticProcess("telemetry",
+                                 "${runfiles_dir}/_main/testdata/telemetry",
+                                 {
+                                     .telemetry_shutdown_timeout_secs = 0,
+                                     .notify = true,
+                                     .telemetry = true,
+                                 });
+  ASSERT_TRUE(status.ok());
+  std::string process_id = status->first;
+  WaitForEvent(client, adastra::stagezero::control::Event::kStart);
+  std::cout << "stopping process " << process_id << std::endl;
+  absl::Status s = client.StopProcess(process_id);
+  ASSERT_TRUE(s.ok());
+  WaitForEvent(client, adastra::stagezero::control::Event::kStop);
+}
+
+TEST_F(ClientTest, LaunchAndStopTelemetryCommand) {
+  adastra::stagezero::Client client;
+  InitClient(client, "foobar2");
+
+  absl::StatusOr<std::pair<std::string, int>> status =
+      client.LaunchStaticProcess("telemetry",
+                                 "${runfiles_dir}/_main/testdata/telemetry",
+                                 {
+                                     .notify = true, .telemetry = true,
+                                 });
+  ASSERT_TRUE(status.ok());
+  std::string process_id = status->first;
+  WaitForEvent(client, adastra::stagezero::control::Event::kStart);
+  std::cout << "stopping process " << process_id << std::endl;
+  stagezero::ShutdownCommand cmd(1, 2);
+  absl::Status s = client.SendTelemetryCommand(process_id, cmd);
   ASSERT_TRUE(s.ok());
   WaitForEvent(client, adastra::stagezero::control::Event::kStop);
 }

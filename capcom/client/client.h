@@ -17,6 +17,7 @@
 #include "coroutine.h"
 #include "proto/capcom.pb.h"
 #include "proto/config.pb.h"
+#include "stagezero/telemetry/telemetry.h"
 #include "toolbelt/sockets.h"
 #include <variant>
 
@@ -36,6 +37,7 @@ enum class RestartPolicy {
 static constexpr int kDefaultMaxRestarts = 3;
 
 constexpr int32_t kDefaultStartupTimeout = 2;
+constexpr int32_t kDefaultTelemetryShutdownTimeout = 2;
 constexpr int32_t kDefaultSigIntShutdownTimeout = 2;
 constexpr int32_t kDefaultSigTermShutdownTimeout = 4;
 
@@ -48,9 +50,11 @@ struct StaticProcess {
   std::vector<parameters::Parameter> parameters;
   std::vector<std::string> args;
   int32_t startup_timeout_secs = kDefaultStartupTimeout;
+  int32_t telemetry_shutdown_timeout_secs = kDefaultTelemetryShutdownTimeout;
   int32_t sigint_shutdown_timeout_secs = kDefaultSigIntShutdownTimeout;
   int32_t sigterm_shutdown_timeout_secs = kDefaultSigTermShutdownTimeout;
   bool notify = false;
+  bool telemetry = false;
   std::vector<Stream> streams;
   std::string user;
   std::string group;
@@ -68,6 +72,7 @@ struct Zygote {
   std::vector<Variable> vars;
   std::vector<std::string> args;
   int32_t startup_timeout_secs = kDefaultStartupTimeout;
+  int32_t telemetry_shutdown_secs = kDefaultTelemetryShutdownTimeout;
   int32_t sigint_shutdown_timeout_secs = kDefaultSigIntShutdownTimeout;
   int32_t sigterm_shutdown_timeout_secs = kDefaultSigTermShutdownTimeout;
   std::vector<Stream> streams;
@@ -88,9 +93,11 @@ struct VirtualProcess {
   std::vector<parameters::Parameter> parameters;
   std::vector<std::string> args;
   int32_t startup_timeout_secs = kDefaultStartupTimeout;
+  int32_t telemetry_shutdown_timeout_secs = kDefaultTelemetryShutdownTimeout;
   int32_t sigint_shutdown_timeout_secs = kDefaultSigIntShutdownTimeout;
   int32_t sigterm_shutdown_timeout_secs = kDefaultSigTermShutdownTimeout;
   bool notify = false;
+  bool telemetry = false;
   std::vector<Stream> streams;
   std::string user;
   std::string group;
@@ -138,7 +145,8 @@ public:
 
   absl::Status AddCompute(const std::string &name,
                           const toolbelt::InetAddress &addr,
-                          ComputeConnectionPolicy connection_policy = ComputeConnectionPolicy::kDynamic,
+                          ComputeConnectionPolicy connection_policy =
+                              ComputeConnectionPolicy::kDynamic,
                           const std::vector<Cgroup> &cgroups = {},
                           co::Coroutine *c = nullptr);
 
@@ -208,6 +216,15 @@ public:
                           co::Coroutine *co = nullptr);
   absl::Status KillCgroup(const std::string &compute, const std::string &cgroup,
                           co::Coroutine *co = nullptr);
+
+  absl::Status
+  SendTelemetryCommandToSubsystem(const std::string &subsystem,
+                                  const ::stagezero::TelemetryCommand &command,
+                                  co::Coroutine *c = nullptr);
+  absl::Status
+  SendTelemetryCommandToProcess(const std::string& subsystem, const std::string &process_id,
+                                const ::stagezero::TelemetryCommand &command,
+                                co::Coroutine *c = nullptr);
 
 private:
   absl::Status WaitForSubsystemState(const std::string &subsystem,

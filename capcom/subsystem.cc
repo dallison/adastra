@@ -69,10 +69,13 @@ void Subsystem::ConnectUmbilical(const std::string &compute) {
             umbilical->state = UmbilicalState::kUmbilicalConnected;
 
             // Connect the umbilical to the stagezero client.
-            if (absl::Status status = subsystem->capcom_.ConnectUmbilical(compute, c); !status.ok()) {
-              subsystem->capcom_.Log(subsystem->Name(), toolbelt::LogLevel::kError,
-                                     "Failed to connect capcom umbilical to %s: %s",
-                                     compute.c_str(), status.ToString().c_str());
+            if (absl::Status status =
+                    subsystem->capcom_.ConnectUmbilical(compute, c);
+                !status.ok()) {
+              subsystem->capcom_.Log(
+                  subsystem->Name(), toolbelt::LogLevel::kError,
+                  "Failed to connect capcom umbilical to %s: %s",
+                  compute.c_str(), status.ToString().c_str());
               umbilical->client->Close();
               umbilical->client->Reset();
               umbilical->state = UmbilicalState::kUmbilicalConnecting;
@@ -163,6 +166,23 @@ void Subsystem::DisconnectProcessesForCompute(const std::string &compute) {
       proc->Disconnect(subsystem);
     }
   }
+}
+
+absl::Status
+Subsystem::SendTelemetryCommand(const adastra::proto::telemetry::Command &cmd,
+                                co::Coroutine *c) {
+                                  if (oper_state_ != OperState::kOnline) {
+    return absl::InternalError(
+        absl::StrFormat("Subsystem %s is not online", name_));
+  }
+
+  for (auto& proc : processes_) {
+    if (absl::Status status = proc->SendTelemetryCommand(shared_from_this(), cmd, c);
+        !status.ok()) {
+      return status;
+    }
+  }
+  return absl::OkStatus();
 }
 
 void Subsystem::Run() {
@@ -646,6 +666,7 @@ void Process::ParseOptions(const stagezero::config::ProcessOptions &options) {
   sigint_shutdown_timeout_secs_ = options.sigint_shutdown_timeout_secs();
   sigterm_shutdown_timeout_secs_ = options.sigterm_shutdown_timeout_secs();
   notify_ = options.notify();
+  telemetry_ = options.telemetry();
   interactive_ = options.interactive();
   user_ = options.user();
   group_ = options.group();
@@ -696,6 +717,22 @@ void Process::ClearAlarm(Capcom &capcom) {
   alarm_raised_ = false;
 }
 
+absl::Status
+Process::SendTelemetryCommand(std::shared_ptr<Subsystem> subsystem,
+                              const adastra::proto::telemetry::Command &cmd,
+                              co::Coroutine *c) {
+  Umbilical *umbilical = subsystem->FindUmbilical(compute_);
+  if (umbilical == nullptr) {
+    return absl::InternalError(
+        absl::StrFormat("No umbilical found for compute %s", compute_));
+  }
+  if (!umbilical->client->IsConnected()) {
+    return absl::InternalError(
+        absl::StrFormat("Umbilical %s is not connected", compute_));
+  }
+  return umbilical->client->SendTelemetryCommand(process_id_, cmd, c);
+}
+
 StaticProcess::StaticProcess(
     Capcom &capcom, std::string name, const std::string &compute,
     std::string executable, const stagezero::config::ProcessOptions &options,
@@ -715,6 +752,7 @@ absl::Status StaticProcess::Launch(Subsystem *subsystem, co::Coroutine *c) {
       .sigint_shutdown_timeout_secs = sigint_shutdown_timeout_secs_,
       .sigterm_shutdown_timeout_secs = sigterm_shutdown_timeout_secs_,
       .notify = notify_,
+      .telemetry = telemetry_,
       .interactive = interactive_,
       .interactive_terminal = subsystem->InteractiveTerminal(),
       .user = user_,
@@ -765,6 +803,7 @@ absl::Status Zygote::Launch(Subsystem *subsystem, co::Coroutine *c) {
       .sigint_shutdown_timeout_secs = sigint_shutdown_timeout_secs_,
       .sigterm_shutdown_timeout_secs = sigterm_shutdown_timeout_secs_,
       .notify = notify_,
+      .telemetry = true,
       .user = user_,
       .group = group_,
       .critical = critical_,
@@ -819,6 +858,7 @@ absl::Status VirtualProcess::Launch(Subsystem *subsystem, co::Coroutine *c) {
       .sigint_shutdown_timeout_secs = sigint_shutdown_timeout_secs_,
       .sigterm_shutdown_timeout_secs = sigterm_shutdown_timeout_secs_,
       .notify = notify_,
+      .telemetry = telemetry_,
       .interactive = interactive_,
       .interactive_terminal = subsystem->InteractiveTerminal(),
       .user = user_,

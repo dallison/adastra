@@ -390,6 +390,17 @@ void Capcom::SendParameterDeleteEvent(const std::string &name) {
   }
 }
 
+void Capcom::SendTelemetryStatusEvent(
+    const adastra::proto::telemetry::Status &status) {
+  for (auto &handler : client_handlers_) {
+    if (absl::Status s = handler->SendTelemetryStatusEvent(status); !s.ok()) {
+      logger_.Log(toolbelt::LogLevel::kError,
+                  "Failed to send telemetry status event to client %s: %s",
+                  handler->GetClientName().c_str(), s.ToString().c_str());
+    }
+  }
+}
+
 void Capcom::SendAlarm(const Alarm &alarm) {
   for (auto &handler : client_handlers_) {
     if (absl::Status status = handler->SendAlarm(alarm); !status.ok()) {
@@ -454,15 +465,16 @@ absl::Status Capcom::Abort(const std::string &reason, bool emergency,
 
   // Now tell all computes (the stagezero running on them) to kill
   // all the processes.
-   for (auto & [ name, umbilical ] : stagezero_umbilicals_) {
+  for (auto & [ name, umbilical ] : stagezero_umbilicals_) {
     if (umbilical.client == nullptr || !umbilical.client->IsConnected()) {
       continue;
     }
 
-   absl::Status status = umbilical.client->Abort(reason, emergency, c);
+    absl::Status status = umbilical.client->Abort(reason, emergency, c);
     if (!status.ok()) {
-      result = absl::InternalError(absl::StrFormat(
-          "Failed to abort compute %s: %s", umbilical.compute->name, status.ToString()));
+      result = absl::InternalError(
+          absl::StrFormat("Failed to abort compute %s: %s",
+                          umbilical.compute->name, status.ToString()));
     }
   }
   if (emergency) {
@@ -701,4 +713,37 @@ absl::Status Capcom::KillCgroup(const std::string &compute,
   return umbilical->client->KillCgroup(cgroup, c);
 }
 
+absl::Status
+Capcom::SendTelemetryCommand(const proto::SendTelemetryCommandRequest &req,
+                             co::Coroutine *c) {
+  switch (req.dest_case()) {
+  case proto::SendTelemetryCommandRequest::kSubsystem: {
+    auto it = subsystems_.find(req.subsystem());
+    if (it == subsystems_.end()) {
+      return absl::InternalError(
+          absl::StrFormat("No such subsystem %s", req.subsystem()));
+    }
+    return it->second->SendTelemetryCommand(req.command(), c);
+  }
+
+  case proto::SendTelemetryCommandRequest::kProcess: {
+    auto subsystem_name = req.process().subsystem();
+    auto process_id = req.process().process_id();
+    auto it = subsystems_.find(subsystem_name);
+    if (it == subsystems_.end()) {
+      return absl::InternalError(
+          absl::StrFormat("No such subsystem %s", subsystem_name));
+    }
+    auto proc = it->second->FindProcess(process_id);
+    if (proc == nullptr) {
+      return absl::InternalError(absl::StrFormat(
+          "No such process %s in subsystem %s", process_id, subsystem_name));
+    }
+    return proc->SendTelemetryCommand(it->second, req.command(), c);
+  }
+  default:
+    return absl::InternalError(absl::StrFormat(
+        "Unknown telemetry command destination %d", req.dest_case()));
+  }
+}
 } // namespace adastra::capcom

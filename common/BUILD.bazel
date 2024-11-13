@@ -30,6 +30,7 @@ cc_library(
         "//proto:config_cc_proto",
         "//proto:event_cc_proto",
         "//proto:parameters_cc_proto",
+        "//proto:telemetry_cc_proto",
         "//proto:subsystem_status_cc_proto",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
@@ -38,6 +39,7 @@ cc_library(
         "@com_google_absl//absl/strings:str_format",
         "@coroutines//:co",
         "@toolbelt//toolbelt",
+        "//stagezero/telemetry",
     ],
 )
 

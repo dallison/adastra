@@ -490,4 +490,27 @@ void StageZero::HandleParameterServerRequest(
   }
 }
 
+void StageZero::HandleTelemetryServerStatus(
+    std::shared_ptr<Process> proc, const adastra::proto::telemetry::Status &s,
+    std::shared_ptr<ClientHandler> client, co::Coroutine *c) {
+  absl::Status status = client->SendTelemetryStatusEvent(s);
+  if (!status.ok()) {
+    logger_.Log(toolbelt::LogLevel::kError,
+                "Failed to send telemetry status event: %s",
+                status.ToString().c_str());
+  }
+}
+
+absl::Status
+StageZero::SendTelemetryCommand(const std::string &process_id,
+                                const adastra::proto::telemetry::Command &cmd,
+                                co::Coroutine *c) {
+  auto proc = FindProcess(process_id);
+  if (proc == nullptr) {
+    return absl::InternalError(
+        absl::StrFormat("Can't send telemetry command to %s: no such process", process_id));
+  }
+  return proc->SendTelemetryCommand(cmd, c);
+}
+
 } // namespace adastra::stagezero

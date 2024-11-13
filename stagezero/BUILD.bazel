@@ -19,6 +19,8 @@ cc_library(
         "//proto:config_cc_proto",
         "//proto:control_cc_proto",
         "//proto:log_cc_proto",
+        "//proto:telemetry_cc_proto",
+        "//stagezero/telemetry",
         "//stagezero/zygote:zygote_core",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",

@@ -8,11 +8,13 @@
 
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
-#include "common/subsystem_status.h"
 #include "common/parameters.h"
+#include "common/subsystem_status.h"
 #include "proto/event.pb.h"
-#include "proto/subsystem_status.pb.h"
 #include "proto/parameters.pb.h"
+#include "proto/subsystem_status.pb.h"
+#include "proto/telemetry.pb.h"
+#include "stagezero/telemetry/telemetry.h"
 
 namespace adastra {
 
@@ -25,6 +27,7 @@ constexpr int kAlarmEvents = 2;
 constexpr int kLogMessageEvents = 4;
 constexpr int kOutputEvents = 8;
 constexpr int kParameterEvents = 16;
+constexpr int kTelemetryEvents = 32;
 
 enum class EventType {
   kSubsystemStatus,
@@ -33,6 +36,7 @@ enum class EventType {
   kLog,
   kParameterUpdate,
   kParameterDelete,
+  kTelemetry,
 };
 
 // Alarm is defined in common/alarm.h
@@ -45,7 +49,10 @@ struct Output {
 
 struct Event {
   EventType type;
-  std::variant<SubsystemStatus, Alarm, Output, LogMessage, parameters::ParameterNode, std::string> event;
+  std::variant<SubsystemStatus, Alarm, Output, LogMessage,
+               parameters::ParameterNode, std::string,
+               ::stagezero::TelemetryStatus>
+      event;
 
   void ToProto(proto::Event *dest) const;
   absl::Status FromProto(const proto::Event &src);
@@ -63,6 +70,8 @@ struct Event {
     case EventType::kParameterUpdate:
     case EventType::kParameterDelete:
       return (mask & kParameterEvents) != 0;
+    case EventType::kTelemetry:
+      return (mask & kTelemetryEvents) != 0;
     }
   }
 };

@@ -216,6 +216,16 @@ private:
                                std::shared_ptr<ClientHandler> client,
                                co::Coroutine *c);
 
+  void
+  HandleTelemetryServerStatus(std::shared_ptr<Process> proc,
+                               const adastra::proto::telemetry::Status &s,
+                               std::shared_ptr<ClientHandler> client,
+                               co::Coroutine *c);
+
+  absl::Status SendTelemetryCommand(const std::string &process_id,
+                                    const adastra::proto::telemetry::Command &cmd,
+                                    co::Coroutine *c);
+                                    
   co::CoroutineScheduler &co_scheduler_;
   toolbelt::InetAddress addr_;
   std::string runfiles_dir_;

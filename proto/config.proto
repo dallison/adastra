@@ -54,7 +54,12 @@ message ProcessOptions {
   // seconds beteen sending SIGINT and SIGTERM.  -1 means no
   // SIGINT is sent.  Likewise, sigterm timeout is the number of
   // seconds between SIGTERM and SIGKILL.  A value of 0 means
-  // use reasonable defaults.©57
+  // use reasonable defaults.
+  //
+  // If 'telemetry' is true, the telemetry_shutdown_timeout_secs
+  // is used to the timeout after sending a shutdown command and
+  // before escalating to signals.
+  int32 telemetry_shutdown_timeout_secs = 20;
   int32 sigint_shutdown_timeout_secs = 5;
   int32 sigterm_shutdown_timeout_secs = 6;
 
@@ -94,6 +99,10 @@ message ProcessOptions {
 
   // Local parameters for the process.
   repeated adastra.proto.parameters.Parameter parameters = 18;
+
+  // The telemetry API allows the process to accept commands and send
+  // telemetry data through a pipe connected to StageZero.
+  bool telemetry = 19;   // Use telemetry API.
 }
 
 message StaticProcess { string executable = 1; }

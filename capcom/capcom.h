@@ -196,6 +196,7 @@ private:
   void SendParameterUpdateEvent(const std::string &name,
                                 const parameters::Value &value);
   void SendParameterDeleteEvent(const std::string &name);
+  void SendTelemetryStatusEvent(const adastra::proto::telemetry::Status &status);
 
   void SendAlarm(const Alarm &alarm);
 
@@ -237,7 +238,8 @@ private:
   absl::Status
   HandleParameterEvent(const adastra::proto::parameters::ParameterEvent &event,
                        co::Coroutine *c);
-
+  absl::Status SendTelemetryCommand(const proto::SendTelemetryCommandRequest &req,
+                                    co::Coroutine *c);       
 private:
   co::CoroutineScheduler &co_scheduler_;
   toolbelt::InetAddress addr_;
