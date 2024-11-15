@@ -70,10 +70,11 @@ private:
   void LoggerCoroutine(co::Coroutine *c);
   void LoggerFlushCoroutine(co::Coroutine *c);
   void FlushLogs();
-  void ConnectStaticUmbilical(std::shared_ptr<Compute> compute, co::Coroutine *c);
+  void ConnectStaticUmbilical(std::shared_ptr<Compute> compute,
+                              co::Coroutine *c);
 
-  std::pair<std::shared_ptr<Compute> , bool> AddCompute(std::string name,
-                                        const Compute &compute) {
+  std::pair<std::shared_ptr<Compute>, bool> AddCompute(std::string name,
+                                                       const Compute &compute) {
     auto[it, inserted] = computes_.emplace(
         std::make_pair(std::move(name), std::make_shared<Compute>(compute)));
     return {it->second, inserted};
@@ -196,7 +197,8 @@ private:
   void SendParameterUpdateEvent(const std::string &name,
                                 const parameters::Value &value);
   void SendParameterDeleteEvent(const std::string &name);
-  void SendTelemetryStatusEvent(const adastra::proto::telemetry::Status &status);
+  void
+  SendTelemetryStatusEvent(const adastra::proto::telemetry::Status &status);
 
   void SendAlarm(const Alarm &alarm);
 
@@ -208,7 +210,8 @@ private:
   absl::Status AddGlobalVariable(const Variable &var, co::Coroutine *c);
 
   absl::Status RegisterComputeCgroups(std::shared_ptr<stagezero::Client> client,
-                                      std::shared_ptr<Compute> compute, co::Coroutine *c);
+                                      std::shared_ptr<Compute> compute,
+                                      co::Coroutine *c);
 
   absl::Status PropagateParameterUpdate(const std::string &name,
                                         parameters::Value &value,
@@ -238,8 +241,10 @@ private:
   absl::Status
   HandleParameterEvent(const adastra::proto::parameters::ParameterEvent &event,
                        co::Coroutine *c);
-  absl::Status SendTelemetryCommand(const proto::SendTelemetryCommandRequest &req,
-                                    co::Coroutine *c);       
+  absl::Status
+  SendTelemetryCommand(const proto::SendTelemetryCommandRequest &req,
+                       co::Coroutine *c);
+
 private:
   co::CoroutineScheduler &co_scheduler_;
   toolbelt::InetAddress addr_;

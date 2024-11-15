@@ -9,6 +9,7 @@ cc_library(
         "client.h",
     ],
     deps = [
+        "//common",
         "//proto:config_cc_proto",
         "//proto:control_cc_proto",
         "//stagezero/telemetry",
@@ -19,7 +20,6 @@ cc_library(
         "@com_google_absl//absl/strings:str_format",
         "@coroutines//:co",
         "@toolbelt//toolbelt",
-        "//common",
     ],
 )
 
@@ -28,17 +28,18 @@ cc_test(
     size = "small",
     srcs = ["client_test.cc"],
     data = [
-        "//testdata:loop",
-        "//testdata:telemetry",
+        "//stagezero/zygote:standard_zygote",
         "//testdata:echo",
         "//testdata:files",
-        "//testdata:vars",
+        "//testdata:loop",
         "//testdata:module.so",
-        "//stagezero/zygote:standard_zygote",
+        "//testdata:telemetry",
+        "//testdata:vars",
     ],
     deps = [
         ":client",
         "//stagezero:stagezero_lib",
+        "//testdata:telemetry_cc_proto",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/status",

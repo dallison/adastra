@@ -171,15 +171,29 @@ void Subsystem::DisconnectProcessesForCompute(const std::string &compute) {
 absl::Status
 Subsystem::SendTelemetryCommand(const adastra::proto::telemetry::Command &cmd,
                                 co::Coroutine *c) {
-                                  if (oper_state_ != OperState::kOnline) {
-    return absl::InternalError(
-        absl::StrFormat("Subsystem %s is not online", name_));
-  }
 
-  for (auto& proc : processes_) {
-    if (absl::Status status = proc->SendTelemetryCommand(shared_from_this(), cmd, c);
-        !status.ok()) {
-      return status;
+  // Send the kSendTelemetryCommand message to the subsystem.
+  auto message = std::make_shared<Message>(
+      Message{.code = Message::kSendTelemetryCommand,
+              .sender = this,
+              .telemetry_command =
+                  std::make_shared<adastra::proto::telemetry::Command>(cmd)});
+  if (absl::Status status = SendMessage(message); !status.ok()) {
+    return absl::InternalError(
+        absl::StrFormat("Failed to send telemetry command to subsystem %s: %s",
+                        name_, status.ToString()));
+  }
+  return absl::OkStatus();
+}
+
+absl::Status
+Subsystem::PropagateTelemetryCommandMessage(std::shared_ptr<Message> message,
+                                            co::Coroutine *c) {
+  for (auto &child : children_) {
+    if (absl::Status status = child->SendMessage(message); !status.ok()) {
+      return absl::InternalError(absl::StrFormat(
+          "Failed to send telemetry command to subsystem %s: %s", child->Name(),
+          status.ToString()));
     }
   }
   return absl::OkStatus();

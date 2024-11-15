@@ -56,6 +56,7 @@ struct Umbilical {
 
 constexpr uint32_t kNoClient = -1U;
 
+
 // Messages are sent through the message pipe.
 struct Message {
   enum Code {
@@ -65,6 +66,7 @@ struct Message {
     kRestart,
     kRestartProcesses,
     kRestartCrashedProcesses,
+    kSendTelemetryCommand,
   };
   Code code;
   Subsystem *sender;
@@ -87,6 +89,9 @@ struct Message {
   // For Code::kRestartProcesses, these processes will be restarted.  If empty,
   // all processes will be restarted.
   std::vector<std::shared_ptr<Process>> processes;
+
+  // For kSendTelemetryCommand.
+  std::shared_ptr<adastra::proto::telemetry::Command> telemetry_command;
 };
 
 class Process {
@@ -380,10 +385,13 @@ public:
   SendTelemetryCommand(const adastra::proto::telemetry::Command &cmd,
                        co::Coroutine *c);
 
+  absl::Status
+  PropagateTelemetryCommandMessage(std::shared_ptr<Message> message,
+                       co::Coroutine *c);
 private:
   friend class Process;
   friend class Capcom;
-  
+
   enum class EventSource {
     kUnknown,
     kStageZero, // StageZero (process state or data).

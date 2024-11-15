@@ -4,58 +4,13 @@ package adastra.proto.telemetry;
 
 import "google/protobuf/any.proto";
 
-// Command codes are mostly meaningful to the receiver process.  
+message Command { google.protobuf.Any command = 1; }
 
-// The command codes defined by StageZero are:
-enum CommandCode {
-  UNKNOWN_COMMAND= 0;      // Unknown command.
-  SHUTDOWN_COMMAND = 1;      // Shutdown the process gracefully.
-  DIAGNOSTICS_COMMAND = 2;   // Run diagnostics.
-
-  // User defined commands start at 256.
-  USER_COMMAND_START = 256;
-}
-
-enum StatusCode {
-  UNKNOWN_STATUS = 0; // Unknown status.
-  DIAGNOSTIC_STATUS = 1;    // Diagnostic report.
-
-  // User defined status codes start at 256.
-  USER_STATUS_START = 256;
-}
+message Status { google.protobuf.Any status = 1; }
 
 // Shut down the process.  No status report is expected.
 message ShutdownCommand {
   int32 exit_code = 1; // Exit with this status code.
   int32 timeout_seconds =
       2; // You have this long to exit before a signal is sent.
-}
-
-// Run a diagnostic and send the results back.
-message DiagnosticCommand {
-  int32 id = 1;                 // Diagnostic ID.
-  google.protobuf.Any data = 2; // Diagnostic data.
-}
-
-message Command {
-  int32 code = 1;               // Command code.
-  google.protobuf.Any data = 2; // Command data (dependent on command code).
-}
-
-// Diagnostics are not defined by AdAstra.  Users can define meaningful
-// diagnostics for their own subsystems.
-message DiagnosticReport {
-  message Diagnostic {
-    int32 id = 1;
-    string name = 2;
-    string description = 3;
-    int32 result_percent = 4; // Percent success.
-    google.protobuf.Any details = 5;
-  }
-  repeated Diagnostic reports = 1;
-}
-
-message Status {
-  int32 code = 1;
-  google.protobuf.Any status = 2;     // Dependent on status code.
 }

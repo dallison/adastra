@@ -31,7 +31,14 @@ public:
       abort();
     }
   }
-  virtual ~TCPClientHandler() = default;
+  virtual ~TCPClientHandler() {
+    // Flush all events
+    while (!events_.empty()) {
+      std::shared_ptr<Event> event = std::move(events_.front());
+      events_.pop_front();
+      SendEvent(event, nullptr);
+    }
+  };
 
   void Run(co::Coroutine *c);
   void Stop();
@@ -87,6 +94,7 @@ public:
 
 protected:
   static constexpr size_t kMaxMessageSize = 4096;
+  void SendEvent(std::shared_ptr<Event> event, co::Coroutine *c);
 
   virtual absl::Status HandleMessage(const Request &req, Response &resp,
                                      co::Coroutine *c) = 0;
@@ -280,6 +288,28 @@ inline void TCPClientHandler<Request, Response, Event>::EventSenderCoroutine(
 }
 
 template <typename Request, typename Response, typename Event>
+inline void TCPClientHandler<Request, Response, Event>::SendEvent(
+    std::shared_ptr<Event> event, co::Coroutine *c) {
+  char *sendbuf = event_buffer_ + sizeof(int32_t);
+  constexpr size_t kSendBufLen = sizeof(event_buffer_) - sizeof(int32_t);
+  // std::cerr << "Sending event " << event->DebugString() << std::endl;
+  if (!event->SerializeToArray(sendbuf, kSendBufLen)) {
+    GetLogger().Log(toolbelt::LogLevel::kError, "Failed to serialize event");
+  } else {
+    size_t msglen = event->ByteSizeLong();
+    absl::StatusOr<ssize_t> n = event_socket_.SendMessage(sendbuf, msglen, c);
+    if (!n.ok()) {
+      // This isn't really an issue and can occur if the socket is
+      // closed on the remote end.  Switch debug on if you want to
+      // see why events aren't being delivered if  you think they
+      // should be.
+      GetLogger().Log(toolbelt::LogLevel::kDebug, "Failed to send event: %s",
+                      n.status().ToString().c_str());
+    }
+  }
+}
+
+template <typename Request, typename Response, typename Event>
 inline void
 TCPClientHandler<Request, Response, Event>::FlushEvents(co::Coroutine *c) {
   auto client = this->shared_from_this();
@@ -287,28 +317,7 @@ TCPClientHandler<Request, Response, Event>::FlushEvents(co::Coroutine *c) {
     // Remove event from the queue and send it.
     std::shared_ptr<Event> event = std::move(client->events_.front());
     client->events_.pop_front();
-
-    char *sendbuf = client->event_buffer_ + sizeof(int32_t);
-    constexpr size_t kSendBufLen =
-        sizeof(client->event_buffer_) - sizeof(int32_t);
-    // std::cerr << "Sending event " << event->DebugString() << std::endl;
-    if (!event->SerializeToArray(sendbuf, kSendBufLen)) {
-      client->GetLogger().Log(toolbelt::LogLevel::kError,
-                              "Failed to serialize event");
-    } else {
-      size_t msglen = event->ByteSizeLong();
-      absl::StatusOr<ssize_t> n =
-          client->event_socket_.SendMessage(sendbuf, msglen, c);
-      if (!n.ok()) {
-        // This isn't really an issue and can occur if the socket is
-        // closed on the remote end.  Switch debug on if you want to
-        // see why events aren't being delivered if  you think they
-        // should be.
-        client->GetLogger().Log(toolbelt::LogLevel::kDebug,
-                                "Failed to send event: %s",
-                                n.status().ToString().c_str());
-      }
-    }
+    SendEvent(event, c);
   }
 }
 

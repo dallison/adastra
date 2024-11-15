@@ -7,7 +7,9 @@
 #include "capcom/capcom.h"
 #include "capcom/client/client.h"
 #include "capcom/subsystem.h"
+#include "proto/telemetry.pb.h"
 #include "stagezero/stagezero.h"
+#include "testdata/proto/telemetry.pb.h"
 #include <gtest/gtest.h>
 
 #include <fstream>
@@ -58,6 +60,7 @@ public:
     if (stagezero_pid_ == 0) {
       signal(SIGTERM, StageZeroSignalHandler);
       signal(SIGINT, StageZeroSignalHandler);
+      signal(SIGSEGV, StageZeroSignalHandler);
       // Child process.
       absl::Status s = stagezero_->Run();
       if (!s.ok()) {
@@ -148,7 +151,8 @@ public:
                   const std::string &name,
                   int event_mask = adastra::kSubsystemStatusEvents |
                                    adastra::kOutputEvents |
-                                   adastra::kParameterEvents) {
+                                   adastra::kParameterEvents |
+                                   adastra::kTelemetryEvents) {
     absl::Status s = client.Init(CapcomAddr(), name, event_mask);
     std::cout << "Init status: " << s << std::endl;
     ASSERT_TRUE(s.ok());
@@ -275,6 +279,27 @@ public:
     }
     FAIL();
   }
+
+  std::unique_ptr<::adastra::proto::telemetry::Status>
+  WaitForTelemetryEvent(adastra::capcom::client::Client &client) {
+    std::cout << "waiting for telemetry event " << std::endl;
+    for (int retry = 0; retry < 10; retry++) {
+      absl::StatusOr<std::shared_ptr<adastra::Event>> e = client.WaitForEvent();
+
+      std::cout << e.status().ToString() << "\n";
+      EXPECT_TRUE(e.ok());
+      std::shared_ptr<adastra::Event> event = *e;
+
+      if (event->type == adastra::EventType::kTelemetry) {
+        return std::make_unique<::adastra::proto::telemetry::Status>(
+            std::get<::adastra::proto::telemetry::Status>(event->event));
+      }
+      return nullptr;
+    }
+    EXPECT_TRUE(false);
+    return nullptr;
+  }
+
   void SendInput(adastra::capcom::client::Client &client, std::string subsystem,
                  std::string process, int fd, std::string s) {
     absl::Status status = client.SendInput(subsystem, process, fd, s);
@@ -483,6 +508,116 @@ TEST_F(CapcomTest, StartSimpleSubsystem) {
 
   status = client.StopSubsystem("foobar1");
   ASSERT_TRUE(status.ok());
+
+  status = client.RemoveSubsystem("foobar1", false);
+  ASSERT_TRUE(status.ok());
+}
+
+TEST_F(CapcomTest, StartSimpleSubsystemTelemetry) {
+  adastra::capcom::client::Client client(ClientMode::kBlocking);
+  InitClient(client, "foobar1");
+
+  absl::Status status = client.AddSubsystem(
+      "foobar1", {.static_processes = {{
+                      .name = "telemetry",
+                      .executable = "${runfiles_dir}/_main/testdata/telemetry",
+                      .telemetry = true,
+                  }}});
+  ASSERT_TRUE(status.ok());
+
+  status = client.StartSubsystem("foobar1");
+  ASSERT_TRUE(status.ok());
+
+  status = client.StopSubsystem("foobar1");
+  ASSERT_TRUE(status.ok());
+
+  status = client.RemoveSubsystem("foobar1", false);
+  ASSERT_TRUE(status.ok());
+}
+
+TEST_F(CapcomTest, StartSimpleSubsystemTelemetryCommand) {
+  adastra::capcom::client::Client client(ClientMode::kNonBlocking);
+  InitClient(client, "foobar1");
+
+  absl::Status status = client.AddSubsystem(
+      "foobar1", {.static_processes = {{
+                      .name = "telemetry",
+                      .executable = "${runfiles_dir}/_main/testdata/telemetry",
+                      .telemetry = true,
+                  }}});
+  ASSERT_TRUE(status.ok());
+
+  status = client.StartSubsystem("foobar1");
+  ASSERT_TRUE(status.ok());
+  WaitForState(client, "foobar1", AdminState::kOnline, OperState::kOnline);
+
+  // This will cause the process to exit and it will be restarted.
+  stagezero::ShutdownCommand cmd(1, 2);
+  status = client.SendTelemetryCommandToSubsystem("foobar1", cmd);
+  WaitForState(client, "foobar1", AdminState::kOnline, OperState::kOnline);
+
+  status = client.StopSubsystem("foobar1");
+  ASSERT_TRUE(status.ok());
+  WaitForState(client, "foobar1", AdminState::kOffline, OperState::kOffline);
+
+  status = client.RemoveSubsystem("foobar1", false);
+  ASSERT_TRUE(status.ok());
+}
+
+struct PidCommand : public ::stagezero::TelemetryCommand {
+  PidCommand() = default;
+
+  void ToProto(adastra::proto::telemetry::Command &proto) const override {
+    proto.mutable_command()->PackFrom(
+        ::testdata::telemetry::PidTelemetryCommand());
+  }
+
+  bool FromProto(const adastra::proto::telemetry::Command &proto) override {
+    if (!proto.command().Is<::testdata::telemetry::PidTelemetryCommand>()) {
+      return false;
+    }
+    return true;
+  }
+};
+
+TEST_F(CapcomTest, StartSimpleSubsystemCustomTelemetryCommand) {
+  adastra::capcom::client::Client client(ClientMode::kNonBlocking);
+  InitClient(client, "foobar1");
+
+  absl::Status status = client.AddSubsystem(
+      "foobar1", {.static_processes = {{
+                      .name = "telemetry",
+                      .executable = "${runfiles_dir}/_main/testdata/telemetry",
+                      .telemetry = true,
+                  }}});
+  ASSERT_TRUE(status.ok());
+
+  status = client.StartSubsystem("foobar1");
+  ASSERT_TRUE(status.ok());
+  WaitForState(client, "foobar1", AdminState::kOnline, OperState::kOnline);
+
+  // Send a custom telemetry command to get the PID.
+  PidCommand cmd;
+  absl::Status s = client.SendTelemetryCommandToSubsystem("foobar1", cmd);
+
+  auto ts = WaitForTelemetryEvent(client);
+  ASSERT_TRUE(ts != nullptr);
+  ASSERT_TRUE(ts->status().Is<::testdata::telemetry::PidTelemetryStatus>());
+  std::cerr << ts->DebugString();
+
+  for (int i = 0; i < 10; i++) {
+    ts = WaitForTelemetryEvent(client);
+    if (ts->status().Is<::testdata::telemetry::TimeTelemetryStatus>()) {
+      ::testdata::telemetry::TimeTelemetryStatus status;
+      auto ok = ts->status().UnpackTo(&status);
+      ASSERT_TRUE(ok);
+      std::cout << "Time: " << status.time() << std::endl;
+    }
+  }
+
+  status = client.StopSubsystem("foobar1");
+  ASSERT_TRUE(status.ok());
+  WaitForState(client, "foobar1", AdminState::kOffline, OperState::kOffline);
 
   status = client.RemoveSubsystem("foobar1", false);
   ASSERT_TRUE(status.ok());
@@ -2011,12 +2146,12 @@ TEST_F(CapcomTest, CgroupOps) {
   cgroup.cpuset = std::make_unique<adastra::CgroupCpusetController>();
   cgroup.cpuset->cpus = "0:3";
 
-  absl::Status status =
-      client.AddCompute("compute1", toolbelt::InetAddress("localhost", 6522),
-                        adastra::capcom::client::ComputeConnectionPolicy::kStatic,
-                        {
-                            cgroup,
-                        });
+  absl::Status status = client.AddCompute(
+      "compute1", toolbelt::InetAddress("localhost", 6522),
+      adastra::capcom::client::ComputeConnectionPolicy::kStatic,
+      {
+          cgroup,
+      });
   ASSERT_TRUE(status.ok());
 
   status = client.FreezeCgroup("compute1", "test");

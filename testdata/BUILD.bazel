@@ -34,6 +34,7 @@ cc_binary(
         "@com_google_absl//absl/debugging:failure_signal_handler",
         "@com_google_absl//absl/debugging:symbolize",
         "@toolbelt//toolbelt",
+        ":telemetry_cc_proto",
     ],
 )
 
@@ -100,6 +101,16 @@ proto_library(
 cc_proto_library(
     name = "chat_cc_proto",
     deps = [":chat_proto"],
+)
+
+proto_library(
+    name = "telemetry_proto",
+    srcs = ["proto/telemetry.proto"],
+)
+
+cc_proto_library(
+    name = "telemetry_cc_proto",
+    deps = [":telemetry_proto"],
 )
 
 cc_binary(

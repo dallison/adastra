@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+package testdata.telemetry;
+
+// Command to cause emission of a PidTelemetryStatus message.
+message PidTelemetryCommand {}
+
+message PidTelemetryStatus { int32 pid = 1; }
+
+message TimeTelemetryStatus { uint64 time = 1; }

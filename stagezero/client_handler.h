@@ -42,7 +42,8 @@ public:
   absl::Status SendParameterUpdateEvent(const std::string &name,
                                         const parameters::Value &value);
   absl::Status SendParameterDeleteEvent(const std::string &name);
-  absl::Status SendTelemetryStatusEvent(const adastra::proto::telemetry::Status &status);
+  absl::Status
+  SendTelemetryStatusEvent(const adastra::proto::telemetry::Status &status);
 
   toolbelt::Logger &GetLogger() const override;
 
@@ -142,10 +143,11 @@ private:
                               control::UploadParametersResponse *response,
                               co::Coroutine *c);
 
-  void HandleSendTelemetryCommand(const control::SendTelemetryCommandRequest &req,
-                                  control::SendTelemetryCommandResponse *response,
-                                  co::Coroutine *c);
-                                  
+  void
+  HandleSendTelemetryCommand(const control::SendTelemetryCommandRequest &req,
+                             control::SendTelemetryCommandResponse *response,
+                             co::Coroutine *c);
+
   void AddProcess(const std::string &id, std::shared_ptr<Process> proc) {
     processes_.emplace(std::make_pair(id, std::move(proc)));
   }

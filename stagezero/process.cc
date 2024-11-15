@@ -762,7 +762,6 @@ void Process::RunParameterServer() {
 }
 
 void Process::RunTelemetryServer() {
-  std::cerr << "running telemetry server for " << Name() << std::endl;
   std::shared_ptr<StreamInfo> tele_write_stream = FindTelemetryStream(false);
   assert(tele_write_stream != nullptr);
 
@@ -1198,8 +1197,14 @@ int StaticProcess::Wait() {
   return status;
 }
 
-absl::Status Process::SendTelemetryCommand(const adastra::proto::telemetry::Command &command,
-                                           co::Coroutine *c) {
+absl::Status
+Process::SendTelemetryCommand(const adastra::proto::telemetry::Command &command,
+                              co::Coroutine *c) {
+  if (!UseTelemetry()) {
+    client_->Log(Name(), toolbelt::LogLevel::kError,
+                 "Telemetry is not enabled for process %s", Name().c_str());
+    return absl::OkStatus();
+  }
   // We write to the telemetry read stream since that process is reading from
   // it.
   std::shared_ptr<StreamInfo> tele_read_stream = FindTelemetryStream(true);
@@ -1240,8 +1245,7 @@ absl::Status Process::SendTelemetryShutdown(int exit_code, int timeout_secs,
   shutdown.set_exit_code(exit_code);
   shutdown.set_timeout_seconds(timeout_secs);
   adastra::proto::telemetry::Command command;
-  command.set_code(adastra::proto::telemetry::SHUTDOWN_COMMAND);
-  command.mutable_data()->PackFrom(shutdown);
+  command.mutable_command()->PackFrom(shutdown);
   return SendTelemetryCommand(command, c);
 }
 

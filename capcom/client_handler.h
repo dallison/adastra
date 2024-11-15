@@ -35,8 +35,8 @@ public:
                                         const parameters::Value &value);
 
   absl::Status SendParameterDeleteEvent(const std::string &name);
-  absl::Status SendTelemetryStatusEvent(
-      const adastra::proto::telemetry::Status &status);
+  absl::Status
+  SendTelemetryStatusEvent(const adastra::proto::telemetry::Status &status);
 
   co::CoroutineScheduler &GetScheduler() const override;
 

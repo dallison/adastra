@@ -40,7 +40,33 @@ ABSL_FLAG(std::vector<std::string>, vars, {}, "Variables (name=value) pairs");
 
 namespace adastra::stagezero {
 
-ZygoteCore::ZygoteCore(int argc, char **argv) : logger_("zygote_core") {
+class ZygoteSystemTelemetry : public ::stagezero::SystemTelemetry {
+public:
+  ZygoteSystemTelemetry(::stagezero::Telemetry &telemetry)
+      : SystemTelemetry(telemetry, "ZygoteCore::SystemTelemetry") {}
+
+  absl::Status
+  HandleCommand(std::unique_ptr<::stagezero::TelemetryCommand> command,
+                co::Coroutine *c) override {
+
+    switch (command->Code()) {
+    case ::stagezero::SystemTelemetry::kShutdownCommand: {
+      auto shutdown =
+          static_cast<::stagezero::ShutdownCommand *>(command.get());
+      std::cerr << "Zygote is shutting down due to telemetry command\n";
+      exit(shutdown->exit_code);
+      break;
+    }
+
+    default:
+      break;
+    }
+    return absl::OkStatus();
+  }
+};
+
+ZygoteCore::ZygoteCore(int argc, char **argv)
+    : logger_("zygote_core"), telemetry_(scheduler_) {
   absl::ParseCommandLine(argc, argv);
 
   for (int i = 0; i < argc; i++) {
@@ -91,35 +117,11 @@ absl::Status ZygoteCore::Run() {
                                       "ZygoteServer");
 
   if (telemetry_.IsOpen()) {
-    telemetry_monitor_ = std::make_unique<co::Coroutine>(
-        scheduler_,
-        [this](co::Coroutine *c) {
-          const toolbelt::FileDescriptor &tele_fd = telemetry_.GetCommandFD();
-          for (;;) {
-            int fd = c->Wait(tele_fd.Fd());
-            if (fd != tele_fd.Fd()) {
-              break;
-            }
-            absl::StatusOr<std::unique_ptr<::stagezero::TelemetryCommand>> cmd =
-                telemetry_.GetCommand();
-            if (!cmd.ok()) {
-              continue;
-            }
-            switch ((*cmd)->Code()) {
-            case ::stagezero::SystemTelemetry::kShutdownCommand: {
-              auto shutdown =
-                  dynamic_cast<::stagezero::ShutdownCommand *>(cmd->get());
-              std::cerr << "Zygote is shutting down due to telemetry command\n";
-              exit(shutdown->exit_code);
-              break;
-            }
+    auto zt = std::make_shared<ZygoteSystemTelemetry>(telemetry_);
+    telemetry_.AddModule(std::move(zt));
 
-            default:
-              break;
-            }
-          }
-        },
-        "TelemetryMonitor");
+    // Run the telemetry module as a coroutine in our scheduler.
+    telemetry_.Run();
   }
 
   monitor_ = std::make_unique<co::Coroutine>(
@@ -447,6 +449,11 @@ absl::Status ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
           !status.ok()) {
         return status;
       }
+    }
+
+    // Shutdown the telemetry in the zygote fork.
+    if (telemetry_.IsOpen()) {
+      telemetry_.Shutdown();
     }
     // Stop the coroutine scheduler in the child process.  This will cause
     // a return from its Run() function in ZygoteCore::Run, where we will

@@ -14,7 +14,6 @@
 #include "proto/parameters.pb.h"
 #include "proto/subsystem_status.pb.h"
 #include "proto/telemetry.pb.h"
-#include "stagezero/telemetry/telemetry.h"
 
 namespace adastra {
 
@@ -51,7 +50,7 @@ struct Event {
   EventType type;
   std::variant<SubsystemStatus, Alarm, Output, LogMessage,
                parameters::ParameterNode, std::string,
-               ::stagezero::TelemetryStatus>
+               ::adastra::proto::telemetry::Status>
       event;
 
   void ToProto(proto::Event *dest) const;

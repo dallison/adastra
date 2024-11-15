@@ -44,6 +44,7 @@ void StageZero::Stop() {
 void StageZero::CloseHandler(std::shared_ptr<ClientHandler> handler) {
   for (auto it = client_handlers_.begin(); it != client_handlers_.end(); it++) {
     if (*it == handler) {
+      std::cerr << "Closing handler\n";
       client_handlers_.erase(it);
       return;
     }
@@ -507,8 +508,8 @@ StageZero::SendTelemetryCommand(const std::string &process_id,
                                 co::Coroutine *c) {
   auto proc = FindProcess(process_id);
   if (proc == nullptr) {
-    return absl::InternalError(
-        absl::StrFormat("Can't send telemetry command to %s: no such process", process_id));
+    return absl::InternalError(absl::StrFormat(
+        "Can't send telemetry command to %s: no such process", process_id));
   }
   return proc->SendTelemetryCommand(cmd, c);
 }

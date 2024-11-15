@@ -1,35 +1,66 @@
 #pragma once
 
 #include "absl/container/flat_hash_map.h"
+#include "absl/container/flat_hash_set.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "coroutine.h"
 #include "proto/telemetry.pb.h"
 #include "toolbelt/sockets.h"
+#include "toolbelt/triggerfd.h"
+#include <chrono>
+#include <poll.h>
 
 namespace stagezero {
 
 class Telemetry;
 
-// Base class for telemetry commands.
+// Base class for telemetry commands.  These are sent from the StageZero client
+// to a running process.
 struct TelemetryCommand {
   virtual ~TelemetryCommand() = default;
-  virtual int Code() const = 0;
+
+  // The code can be used to distinguish between different commands.  There is
+  // no global code namspace, so each module should define its own codes if it
+  // needs to.
+  virtual int Code() const { return 0; }
+
+  // To and from proto methods are used to serialize and deserialize the
+  // command.
   virtual void ToProto(adastra::proto::telemetry::Command &proto) const {};
   virtual bool FromProto(const adastra::proto::telemetry::Command &proto) {
     return false;
   }
+
+  // Convenience method to convert to a proto and return it without needing a
+  // temporary object.
+  adastra::proto::telemetry::Command AsProto() const {
+    adastra::proto::telemetry::Command proto;
+    ToProto(proto);
+    return proto;
+  }
 };
 
-// Base class for telemetry status.
+// Base class for telemetry status.  These are sent from a process and will be
+// delivered as events from StageZero.
 struct TelemetryStatus {
   virtual ~TelemetryStatus() = default;
   virtual void ToProto(adastra::proto::telemetry::Status &proto) const {};
   virtual bool FromProto(const adastra::proto::telemetry::Status &proto) {
     return false;
   }
+
+  // Convenience method to convert to a proto and return it without needing a
+  // temporary object.
+  adastra::proto::telemetry::Status AsProto() const {
+    adastra::proto::telemetry::Status proto;
+    ToProto(proto);
+    return proto;
+  }
 };
 
+// This is the base for a telemetry module.  Users should subclass this to
+// provide application specific telemetry handling.
 class TelemetryModule {
 public:
   TelemetryModule(Telemetry &telemetry, std::string name)
@@ -38,29 +69,56 @@ public:
 
   const std::string Name() const { return name_; }
 
+  // Parse the protobuf command message and return a command object.  If the
+  // type is not recognized return nullptr.
+  // To check if the command is of a specific type, use the Is<> method as
+  // follows:
+  //   if (command.command().Is<PROTOBUF-TYPE>()) {
+  //
+  // For example:
+  // absl::StatusOr<std::unique_ptr<TelemetryCommand>>
+  // SystemTelemetry::ParseCommand(
+  //  const adastra::proto::telemetry::Command &command) {
+  //  if (command.command().Is<adastra::proto::telemetry::ShutdownCommand>()) {
+  //    adastra::proto::telemetry::ShutdownCommand shutdown;
+  //    if (!command.command().UnpackTo(&shutdown)) {
+  //      return absl::InternalError("Failed to unpack shutdown command");
+  //    }
+  //    return std::make_unique<ShutdownCommand>(shutdown.exit_code(),
+  //    shutdown.timeout_seconds());
+  //  }
+
   virtual absl::StatusOr<std::unique_ptr<TelemetryCommand>>
   ParseCommand(const adastra::proto::telemetry::Command &command) = 0;
+
+  // This is called when a command is received.  Subclasses should override this
+  // to provide implementation for the command.  For an example of how to
+  // use this, see the SystemTelemetry implementation in telemetry.cc.
+  virtual absl::Status HandleCommand(std::unique_ptr<TelemetryCommand> command,
+                                     co::Coroutine *c) {
+    return absl::OkStatus();
+  }
 
 protected:
   Telemetry &telemetry_;
   std::string name_;
 };
 
-struct DiagnosticReport;
-
+// This is the system telemetry module.  It provides a command to shutdown a
+// process without needing to send a signal.
 class SystemTelemetry : public TelemetryModule {
 public:
   static constexpr int kShutdownCommand = 1;
-  static constexpr int kDiagnosticsCommand = 2;
 
-  SystemTelemetry(Telemetry &telemetry)
-      : TelemetryModule(telemetry, "adstra::system") {}
+  SystemTelemetry(Telemetry &telemetry,
+                  const std::string &name = "adastra::system")
+      : TelemetryModule(telemetry, name) {}
 
   absl::StatusOr<std::unique_ptr<TelemetryCommand>>
   ParseCommand(const adastra::proto::telemetry::Command &command) override;
 
-  absl::Status SendDiagnosticReport(const DiagnosticReport &diag,
-                                    co::Coroutine *c = nullptr);
+  absl::Status HandleCommand(std::unique_ptr<TelemetryCommand> command,
+                             co::Coroutine *c) override;
 };
 
 // System telemetry command for process shutdown.
@@ -68,20 +126,20 @@ struct ShutdownCommand : public TelemetryCommand {
   ShutdownCommand(int exit_code, int timeout_secs)
       : exit_code(exit_code), timeout_secs(timeout_secs) {}
   int Code() const override { return SystemTelemetry::kShutdownCommand; }
+
   void ToProto(adastra::proto::telemetry::Command &proto) const override {
-    proto.set_code(adastra::proto::telemetry::SHUTDOWN_COMMAND);
     adastra::proto::telemetry::ShutdownCommand shutdown;
     shutdown.set_exit_code(exit_code);
     shutdown.set_timeout_seconds(timeout_secs);
-    proto.mutable_data()->PackFrom(shutdown);
+    proto.mutable_command()->PackFrom(shutdown);
   }
 
   bool FromProto(const adastra::proto::telemetry::Command &proto) override {
-    if (proto.code() != adastra::proto::telemetry::SHUTDOWN_COMMAND) {
+    if (!proto.command().Is<adastra::proto::telemetry::ShutdownCommand>()) {
       return false;
     }
     adastra::proto::telemetry::ShutdownCommand shutdown;
-    if (!proto.data().UnpackTo(&shutdown)) {
+    if (!proto.command().UnpackTo(&shutdown)) {
       return false;
     }
     exit_code = shutdown.exit_code();
@@ -93,80 +151,24 @@ struct ShutdownCommand : public TelemetryCommand {
   int timeout_secs; // You have this long to exit before you get a signal.
 };
 
-struct DiagnosticCommand : public TelemetryCommand {
-  int Code() const override { return SystemTelemetry::kDiagnosticsCommand; }
-  void ToProto(adastra::proto::telemetry::Command &proto) const override {
-    proto.set_code(adastra::proto::telemetry::DIAGNOSTICS_COMMAND);
-    adastra::proto::telemetry::DiagnosticCommand diag;
-    proto.mutable_data()->PackFrom(diag);
-  }
-  bool FromProto(const adastra::proto::telemetry::Command &proto) override {
-    if (proto.code() != adastra::proto::telemetry::DIAGNOSTICS_COMMAND) {
-      return false;
-    }
-    adastra::proto::telemetry::DiagnosticCommand diag;
-    if (!proto.data().UnpackTo(&diag)) {
-      return false;
-    }
-    return true;
-  }
-};
-
-struct Diagnostic {
-  int id;
-  std::string name;
-  std::string description;
-  int result_percent;
-  void
-  ToProto(adastra::proto::telemetry::DiagnosticReport_Diagnostic *proto) const {
-    proto->set_id(id);
-    proto->set_name(name);
-    proto->set_description(description);
-    proto->set_result_percent(result_percent);
-  }
-
-  bool FromProto(
-      const adastra::proto::telemetry::DiagnosticReport_Diagnostic &proto) {
-    id = proto.id();
-    name = proto.name();
-    description = proto.description();
-    result_percent = proto.result_percent();
-    return true;
-  }
-};
-
-struct DiagnosticReport : public TelemetryStatus {
-  std::vector<Diagnostic> diagnostics;
-
-  void ToProto(adastra::proto::telemetry::Status &proto) const override {
-    proto.set_code(adastra::proto::telemetry::DIAGNOSTIC_STATUS);
-    adastra::proto::telemetry::DiagnosticReport diag;
-    for (const auto &d : diagnostics) {
-      auto *proto_diag = diag.add_reports();
-      d.ToProto(proto_diag);
-    }
-    proto.mutable_status()->PackFrom(diag);
-  }
-
-  bool FromProto(const adastra::proto::telemetry::Status &proto) override {
-    if (proto.code() != adastra::proto::telemetry::DIAGNOSTIC_STATUS) {
-      return false;
-    }
-    adastra::proto::telemetry::DiagnosticReport diag;
-    proto.status().UnpackTo(&diag);
-    for (const auto &d : diag.reports()) {
-      Diagnostic diagnostic;
-      diagnostic.FromProto(d);
-      diagnostics.push_back(diagnostic);
-    }
-
-    return true;
-  }
-};
-
 class Telemetry {
 public:
-  Telemetry();
+  // Common case of telemetry running in our own scheduler, invisible to the
+  // user.  This can be used outside of coroutine-aware programs (like in a
+  // thread).  The Run() method will block until the telemetry system is
+  // shutdown.
+  Telemetry() { Init(local_scheduler_, &local_coroutines_); }
+
+  // Specialized case where the telemetry is running in the provided scheduler.
+  // You can pass 'coroutines' if your program holds onto coroutines in a
+  // container.  The Run() method will add a coroutine to the scheduler and
+  // return.
+  Telemetry(co::CoroutineScheduler &scheduler,
+            absl::flat_hash_set<std::unique_ptr<co::Coroutine>> *coroutines =
+                nullptr) {
+    Init(scheduler, coroutines);
+  }
+
   ~Telemetry() = default;
 
   // Not copyable or movable.
@@ -175,23 +177,69 @@ public:
   Telemetry(Telemetry &&) = delete;
   Telemetry &operator=(Telemetry &&) = delete;
 
+  // Run the telemetry system.  If this is running in its own scheduler, this
+  // will block until the system is shutdown.  If it's running in a user
+  // provided scheduler, it will just add a coroutine and return. See the
+  // constructors for details.
+  void Run();
+
+  // Ask the telemetry system to shutdown.  This will cause all our
+  // coroutines to stop and, if we are in our own scheduler, the Run() method to
+  // return.
+  void Shutdown() { shutdown_fd_.Trigger(); }
+
+  // Add a telemetry module to the system.
   void AddModule(std::shared_ptr<TelemetryModule> module) {
     modules_[module->Name()] = module;
   }
-  // Use this to poll for commands.
-  const toolbelt::FileDescriptor &GetCommandFD() const { return read_fd_; }
 
-  // Read a command.  This will block until an event is available.
-  absl::StatusOr<std::unique_ptr<TelemetryCommand>>
-  GetCommand(co::Coroutine *c = nullptr) const;
+  absl::Status SendStatus(const TelemetryStatus &status,
+                          co::Coroutine *c = nullptr) {
+    return SendStatus(status.AsProto(), c);
+  }
 
   absl::Status SendStatus(const adastra::proto::telemetry::Status &status,
                           co::Coroutine *c = nullptr);
+
   bool IsOpen() const { return read_fd_.Valid() && write_fd_.Valid(); }
 
+  // Call the callback every 'period' nanoseconds.
+  void CallEvery(std::chrono::nanoseconds period,
+                 std::function<void(co::Coroutine *)> callback);
+
+  // Call the callback once after 'timeout' nanoseconds.
+  void CallAfter(std::chrono::nanoseconds timeout,
+                 std::function<void(co::Coroutine *)> callback);
+
+  // Call the callback now (for some definiton of "now").
+  void CallNow(std::function<void(co::Coroutine *)> callback) {
+    CallAfter(std::chrono::nanoseconds(0), std::move(callback));
+  }
+
 private:
+  void Init(co::CoroutineScheduler &scheduler,
+            absl::flat_hash_set<std::unique_ptr<co::Coroutine>> *coroutines);
+
+  bool Wait(co::Coroutine *c);
+  absl::Status HandleCommand(co::Coroutine *c);
+
+  void AddCoroutine(std::unique_ptr<co::Coroutine> c) {
+    coroutines_->insert(std::move(c));
+  }
+
+  // If we are running our own scheduler, use this one.
+  co::CoroutineScheduler local_scheduler_;
+
+  // This is scheduler we are running on (might be local_scheduler_)
+  co::CoroutineScheduler *scheduler_ = nullptr;
+  absl::flat_hash_set<std::unique_ptr<co::Coroutine>> *coroutines_ = nullptr;
+
+  absl::flat_hash_set<std::unique_ptr<co::Coroutine>> local_coroutines_;
+
   toolbelt::FileDescriptor read_fd_;
   toolbelt::FileDescriptor write_fd_;
+  toolbelt::TriggerFd shutdown_fd_;
+  bool running_ = false;
   absl::flat_hash_map<std::string, std::shared_ptr<TelemetryModule>> modules_;
 };
 

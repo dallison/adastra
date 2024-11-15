@@ -276,6 +276,7 @@ void Subsystem::Offline(uint32_t client_id, co::Coroutine *c) {
           case Message::kRestart:
           case Message::kRestartProcesses:
           case Message::kRestartCrashedProcesses:
+          case Message::kSendTelemetryCommand:
             break;
           }
           break;
@@ -411,6 +412,8 @@ void Subsystem::Connecting(uint32_t client_id, co::Coroutine *c) {
               case Message::kRestartProcesses:
               case Message::kRestartCrashedProcesses:
                 return StateTransition::kStay;
+              case Message::kSendTelemetryCommand:
+                break;
               }
               break;
             }
@@ -554,6 +557,8 @@ void Subsystem::StartingChildren(uint32_t client_id, co::Coroutine *c) {
                 // into the starting processes state after the children are
                 // online.
                 return StateTransition::kStay;
+              case Message::kSendTelemetryCommand:
+                break;
               }
               break;
             }
@@ -754,6 +759,8 @@ void Subsystem::StartingProcesses(uint32_t client_id, co::Coroutine *c) {
                 subsystem->EnterState(OperState::kStartingProcesses,
                                       message->client_id);
                 return StateTransition::kLeave;
+              case Message::kSendTelemetryCommand:
+                break;
               }
               break;
             }
@@ -954,8 +961,32 @@ void Subsystem::Online(uint32_t client_id, co::Coroutine *c) {
                 subsystem->EnterState(OperState::kConnecting,
                                       message->client_id);
                 return StateTransition::kLeave;
+
+              case Message::kSendTelemetryCommand:
+                // Send message on to children.
+                if (absl::Status status =
+                        subsystem->PropagateTelemetryCommandMessage(message, c);
+                    !status.ok()) {
+                  subsystem->capcom_.Log(
+                      subsystem->Name(), toolbelt::LogLevel::kError,
+                      "Failed to send telemetry command to "
+                      "child subsystem %s: %s",
+                      subsystem->Name().c_str(), status.ToString().c_str());
+                }
+
+                // Now send it to all processes in this subsystem.
+                for (auto &process : subsystem->processes_) {
+                  if (absl::Status status = process->SendTelemetryCommand(
+                          subsystem, *message->telemetry_command, c);
+                      !status.ok()) {
+                    subsystem->capcom_.Log(
+                        subsystem->Name(), toolbelt::LogLevel::kError,
+                        "Failed to send telemetry command to process %s: %s",
+                        process->Name().c_str(), status.ToString().c_str());
+                  }
+                }
+                break;
               }
-              break;
             }
             case EventSource::kUnknown:
               break;
@@ -1088,6 +1119,8 @@ void Subsystem::StoppingProcesses(uint32_t client_id, co::Coroutine *c) {
           case Message::kRestart:
             subsystem->EnterState(OperState::kRestarting, client_id);
             return StateTransition::kLeave;
+          case Message::kSendTelemetryCommand:
+            break;
           case Message::kRestartProcesses:
           case Message::kRestartCrashedProcesses:
             // We are stopping our processes and got an event to restart
@@ -1253,6 +1286,8 @@ void Subsystem::StoppingChildren(uint32_t client_id, co::Coroutine *c) {
                 // restart delay and then asked to stop. We just ignore the
                 // request and continue stopping.
                 return StateTransition::kStay;
+              case Message::kSendTelemetryCommand:
+                break;
               }
               break;
             }
@@ -1408,6 +1443,8 @@ void Subsystem::WaitForRestart(co::Coroutine *c) {
                 // delay and then asked to restart. We just ignore the request
                 // and continue stopping.
                 return StateTransition::kStay;
+              case Message::kSendTelemetryCommand:
+                break;
               }
               break;
             }
@@ -1765,6 +1802,8 @@ void Subsystem::Restarting(uint32_t client_id, co::Coroutine *c) {
                 // delay and then asked to restart. We just ignore the
                 // request and continue stopping.
                 return StateTransition::kStay;
+              case Message::kSendTelemetryCommand:
+                break;
               }
               break;
             }
@@ -1931,6 +1970,8 @@ void Subsystem::RestartingProcesses(uint32_t client_id, co::Coroutine *c) {
                 // delay and then asked to restart. We just ignore the
                 // request and continue stopping.
                 return StateTransition::kStay;
+              case Message::kSendTelemetryCommand:
+                break;
               }
               break;
             }
@@ -1952,70 +1993,82 @@ void Subsystem::Broken(uint32_t client_id, co::Coroutine *c) {
   NotifyParents();
   capcom_.SendSubsystemStatusEvent(this);
   RunSubsystemInState(
-      c, [ subsystem = shared_from_this(),
-           client_id ](EventSource event_source,
-                       std::shared_ptr<stagezero::Client> stagezero_client,
-                       co::Coroutine * c)
-             ->StateTransition {
-               if (event_source == EventSource::kMessage) {
-                 // Incoming message.
-                 absl::StatusOr<std::shared_ptr<Message>> msg =
-                     subsystem->ReadMessage();
-                 if (!msg.ok()) {
-                   subsystem->capcom_.Log(subsystem->Name(),
-                                          toolbelt::LogLevel::kError, "%s",
-                                          msg.status().ToString().c_str());
-                 }
-                 auto message = *msg;
-                 switch (message->code) {
-                 case Message::kChangeAdmin:
-                 case Message::kRestart:
-                   subsystem->num_restarts_ = 0; // Reset restart counter.
-                   subsystem->restart_count_ = 0;
-                   subsystem->ResetProcessRestarts();
-                   if (message->state.admin == AdminState::kOnline ||
-                       message->code == Message::kRestart) {
-                     subsystem->active_clients_.Set(client_id);
-                     subsystem->EnterState(OperState::kStartingChildren,
-                                           client_id);
-                   } else {
-                     // Stop all children.
-                     subsystem->active_clients_.Clear(client_id);
-                     subsystem->admin_state_ = AdminState::kOffline;
-                     subsystem->EnterState(OperState::kStoppingChildren,
-                                           client_id);
-                   }
-                   return StateTransition::kLeave;
-                 case Message::kReportOper:
-                   subsystem->capcom_.Log(
-                       subsystem->Name(), toolbelt::LogLevel::kInfo,
-                       "Subsystem %s has reported oper state "
-                       "as %s while it is broken",
-                       message->sender->Name().c_str(),
-                       OperStateName(message->state.oper));
-                   break;
-                 case Message::kAbort:
-                   return subsystem->Abort(message->emergency_abort);
-                   break;
-                 case Message::kRestartProcesses:
-                   // Restarting processes while in broken state means the user
-                   // wants to recover the subsystem.
-                   subsystem->num_restarts_ = 0; // reset restart counter.
-                   subsystem->restart_count_ = 0;
-                   subsystem->ResetProcessRestarts();
-                   subsystem->active_clients_.Set(client_id);
-                   subsystem->EnterState(OperState::kConnecting, client_id);
-                   return StateTransition::kLeave;
+      c,
+      [ subsystem = shared_from_this(),
+        client_id ](EventSource event_source,
+                    std::shared_ptr<stagezero::Client> stagezero_client,
+                    co::Coroutine * c)
+          ->StateTransition {
+            if (event_source == EventSource::kMessage) {
+              // Incoming message.
+              absl::StatusOr<std::shared_ptr<Message>> msg =
+                  subsystem->ReadMessage();
+              if (!msg.ok()) {
+                subsystem->capcom_.Log(subsystem->Name(),
+                                       toolbelt::LogLevel::kError, "%s",
+                                       msg.status().ToString().c_str());
+              }
+              auto message = *msg;
+              switch (message->code) {
+              case Message::kChangeAdmin:
+              case Message::kRestart:
+                subsystem->num_restarts_ = 0; // Reset restart counter.
+                subsystem->restart_count_ = 0;
+                subsystem->ResetProcessRestarts();
+                if (message->state.admin == AdminState::kOnline ||
+                    message->code == Message::kRestart) {
+                  subsystem->active_clients_.Set(client_id);
+                  subsystem->EnterState(OperState::kStartingChildren,
+                                        client_id);
+                } else {
+                  // Stop all children.
+                  subsystem->active_clients_.Clear(client_id);
+                  subsystem->admin_state_ = AdminState::kOffline;
+                  subsystem->EnterState(OperState::kStoppingChildren,
+                                        client_id);
+                }
+                return StateTransition::kLeave;
+              case Message::kReportOper:
+                subsystem->capcom_.Log(subsystem->Name(),
+                                       toolbelt::LogLevel::kInfo,
+                                       "Subsystem %s has reported oper state "
+                                       "as %s while it is broken",
+                                       message->sender->Name().c_str(),
+                                       OperStateName(message->state.oper));
+                break;
+              case Message::kAbort:
+                return subsystem->Abort(message->emergency_abort);
+                break;
+              case Message::kRestartProcesses:
+                // Restarting processes while in broken state means the user
+                // wants to recover the subsystem.
+                subsystem->num_restarts_ = 0; // reset restart counter.
+                subsystem->restart_count_ = 0;
+                subsystem->ResetProcessRestarts();
+                subsystem->active_clients_.Set(client_id);
+                subsystem->EnterState(OperState::kConnecting, client_id);
+                return StateTransition::kLeave;
 
-                 case Message::kRestartCrashedProcesses:
-                   // We are broken and got an event to restart crashed
-                   // processes. This can happen if a process was in its restart
-                   // delay.
-                   return StateTransition::kStay;
-                 }
-               }
-               return StateTransition::kStay;
-             });
+              case Message::kRestartCrashedProcesses:
+                // We are broken and got an event to restart crashed
+                // processes. This can happen if a process was in its restart
+                // delay.
+                return StateTransition::kStay;
+              case Message::kSendTelemetryCommand:
+                if (absl::Status status =
+                        subsystem->PropagateTelemetryCommandMessage(message, c);
+                    !status.ok()) {
+                  subsystem->capcom_.Log(
+                      subsystem->Name(), toolbelt::LogLevel::kError,
+                      "Failed to send telemetry command to "
+                      "child subsystem %s: %s",
+                      subsystem->Name().c_str(), status.ToString().c_str());
+                }
+                break;
+              }
+            }
+            return StateTransition::kStay;
+          });
 }
 
 } // namespace adastra::capcom
