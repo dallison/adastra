@@ -79,14 +79,22 @@ A feature of the StageZero client is the ability to receive `events`.  These are
 2. StopEvent
 3. OutputEvent
 4. LogMessage
+5. Parameter change or deletion
+6. Connection successful
+7. Connection disconnected
+8. Telemetry status
 
-The user can specify whether the OutputEvent and LogMessage events will be sent through the client or not when the client is initialized.
+The user can specify whether the OutputEvent, LogMessage, Parameter, and Telemetry events will be sent through the client or not when the client is initialized.
 
 `StartEvent` and `StopEvent` events inform the client's user of the startup or shutdown of a process.  A successful process start will result in a StartEvent.  A StopEvent is sent when a process terminates, for whatever reason (exit or signal), whether intention or not.
 
 Output events are redirected output streams from a process.
 
 LogMessage events contain formatted log message emitted from StageZero or processes and are described below.
+
+The `Connect` and `disconnect` events are used to inform the client that the connection to StageZero is up or down.
+
+The `Telemetry` events are discussed later in the Telemetry section.
 
 ### Log Messages
 A log message is a formatted user-readable message.  It contains the following attributes:
@@ -97,6 +105,308 @@ A log message is a formatted user-readable message.  It contains the following a
 4. Text: text the log message
 
 They are sent through the API (if masked in).
+
+### Telemetry
+The telemetry facility is a way for a StageZero client to send commands and receive status messages from running
+processes.  It works by creating two pipes to the process (if it's enabled).  The `commamnd pipe` is written to by StageZero and read by the process, and the 'status pipe` is read by StageZero and written by the process.
+
+A simple example of a system-provided telemetry command is the `ShutdownCommand` which can be sent by StageZero
+to stop a process running by causing it to exit with a given code.  If the process is not able to accept
+this telemetry command, StageZero will use signals to tell the process to exit.  The telemetry command is a
+better way to ask a process to terminate.
+
+A process must explicitly enable the telemetry facility in order for StageZero to set it up for that process.
+
+#### Telemetry protobuf messages
+The telemetry system uses protobuf messages as its transport.  In particular, it uses the `google.proto.Any` special
+message to transport arbitrary command and status messages.
+
+The basic command and status messages are defined in `proto/telemetry.proto` as follows:
+
+```
+package adastra.proto.telemetry;
+
+message Command { google.protobuf.Any command = 1; }
+
+message Status { google.protobuf.Any status = 1; }
+```
+
+That is, the contents of a `Command` and `Status` message is any other message.  The `google.protobuf.Any` type
+is a special type that contains two fields:
+
+```
+string type_url
+bytes value
+```
+The `type_url` is a string that contains (in URL form for some reason) the fully qualified protobuf type
+name of the message contained in the `value` field.
+
+The protobuf compiler (and my Phaser protobuf backend) adds special code to handle the `google.protobuf.Any`
+type.  Take a look at Google's documentation for how to use it.
+
+The telemetry facility provides two C++ base classes to wrap the protobuf `Command` and `Status` messages.  They
+provide a way for a process to convert to and from the protobuf classes.  They are:
+
+```c++
+// Base class for telemetry commands.  These are sent from the StageZero client
+// to a running process.
+struct TelemetryCommand {
+  virtual ~TelemetryCommand() = default;
+
+  // The code can be used to distinguish between different commands.  There is
+  // no global code namspace, so each module should define its own codes if it
+  // needs to.
+  virtual int Code() const { return 0; }
+
+  // To and from proto methods are used to serialize and deserialize the
+  // command.
+  virtual void ToProto(adastra::proto::telemetry::Command &proto) const {};
+  virtual bool FromProto(const adastra::proto::telemetry::Command &proto) {
+    return false;
+  }
+
+  // Convenience method to convert to a proto and return it without needing a
+  // temporary object.
+  adastra::proto::telemetry::Command AsProto() const {
+    adastra::proto::telemetry::Command proto;
+    ToProto(proto);
+    return proto;
+  }
+};
+
+// Base class for telemetry status.  These are sent from a process and will be
+// delivered as events from StageZero.
+struct TelemetryStatus {
+  virtual ~TelemetryStatus() = default;
+  virtual void ToProto(adastra::proto::telemetry::Status &proto) const {};
+  virtual bool FromProto(const adastra::proto::telemetry::Status &proto) {
+    return false;
+  }
+
+  // Convenience method to convert to a proto and return it without needing a
+  // temporary object.
+  adastra::proto::telemetry::Status AsProto() const {
+    adastra::proto::telemetry::Status proto;
+    ToProto(proto);
+    return proto;
+  }
+};
+```
+
+As an example, here is how the `ShutdownCommand` is implemented:
+```c++
+// System telemetry command for process shutdown.
+struct ShutdownCommand : public TelemetryCommand {
+  ShutdownCommand(int exit_code, int timeout_secs)
+      : exit_code(exit_code), timeout_secs(timeout_secs) {}
+  int Code() const override { return SystemTelemetry::kShutdownCommand; }
+
+  void ToProto(adastra::proto::telemetry::Command &proto) const override {
+    adastra::proto::telemetry::ShutdownCommand shutdown;
+    shutdown.set_exit_code(exit_code);
+    shutdown.set_timeout_seconds(timeout_secs);
+    proto.mutable_command()->PackFrom(shutdown);
+  }
+
+  bool FromProto(const adastra::proto::telemetry::Command &proto) override {
+    if (!proto.command().Is<adastra::proto::telemetry::ShutdownCommand>()) {
+      return false;
+    }
+    adastra::proto::telemetry::ShutdownCommand shutdown;
+    if (!proto.command().UnpackTo(&shutdown)) {
+      return false;
+    }
+    exit_code = shutdown.exit_code();
+    timeout_secs = shutdown.timeout_seconds();
+    return true;
+  }
+
+  int exit_code;    // Exit with this status.
+  int timeout_secs; // You have this long to exit before you get a signal.
+};
+```
+The `Code` function returns an integer that is meaningful to the telemetry module, `SystemTelemetry` in 
+this case.  It is a convenient way to distinguish between various commands in the module.
+
+
+
+#### Telemetry Modules
+The library `//stagezero/telemetry` provides a process-side telemetry module facility.  This comprises of a `Telemetry`
+class to which a process can add its own `TelemetryModule` instances.
+
+For most use-cases, the process would create an instance of a `stagezero::Telemetry` class with no arguments,
+add its telemetry modules and then call the `Run()` function, probably in a thread.  The `Run` function will not
+return until the telemetry system is shut down.  The telemetry system will poll the input pipe for commands and allows
+the process to send status events back to StageZero.  If the process is coroutine aware and has its own coroutine
+scheduler, it can tell the telemetry system to use that instead, in which case the `Run` function will not
+block and instead will add a coroutine to the given scheduler.  This is pretty specialized use though.
+
+A telemetry module is a class derived from `::stagezero::TelemetryModule`:
+
+```c++
+// This is the base for a telemetry module.  Users should subclass this to
+// provide application specific telemetry handling.
+class TelemetryModule {
+public:
+  TelemetryModule(Telemetry &telemetry, std::string name)
+      : telemetry_(telemetry), name_(std::move(name)) {}
+  virtual ~TelemetryModule() = default;
+
+  const std::string Name() const { return name_; }
+
+  // Parse the protobuf command message and return a command object.  If the
+  // type is not recognized return nullptr.
+  // To check if the command is of a specific type, use the Is<> method as
+  // follows:
+  //   if (command.command().Is<PROTOBUF-TYPE>()) {
+  //
+  // For example:
+  // absl::StatusOr<std::unique_ptr<TelemetryCommand>>
+  // SystemTelemetry::ParseCommand(
+  //  const adastra::proto::telemetry::Command &command) {
+  //  if (command.command().Is<adastra::proto::telemetry::ShutdownCommand>()) {
+  //    adastra::proto::telemetry::ShutdownCommand shutdown;
+  //    if (!command.command().UnpackTo(&shutdown)) {
+  //      return absl::InternalError("Failed to unpack shutdown command");
+  //    }
+  //    return std::make_unique<ShutdownCommand>(shutdown.exit_code(),
+  //    shutdown.timeout_seconds());
+  //  }
+
+  virtual absl::StatusOr<std::unique_ptr<TelemetryCommand>>
+  ParseCommand(const adastra::proto::telemetry::Command &command) = 0;
+
+  // This is called when a command is received.  Subclasses should override this
+  // to provide implementation for the command.  For an example of how to
+  // use this, see the SystemTelemetry implementation in telemetry.cc.
+  virtual absl::Status HandleCommand(std::unique_ptr<TelemetryCommand> command,
+                                     co::Coroutine *c) {
+    return absl::OkStatus();
+  }
+
+protected:
+  Telemetry &telemetry_;
+  std::string name_;
+};
+```
+The idea is that when an incoming command is received, it is passed around all the registered
+telemetry modules in the process asking for one that knows about it.  This is done by calling
+the `Parse` command virtual function.  If the module knows about the command type it should
+parse the contents of the `google.protobuf.Any` field in the command and return it as a
+`std::unique_ptr`.  If it doesn't know about the command, it should return `nullptr`.
+
+If the command is known, the telemetry system will then call `HandleCommand` in the module
+that knows about it.  This is where the actual command handling is done.
+
+For example, to take our `ShutdownCommamnd` a stage further, here is how the `SystemTelemetry`
+module handles it:
+
+```c++
+absl::Status
+SystemTelemetry::HandleCommand(std::unique_ptr<TelemetryCommand> command,
+                               co::Coroutine *c) {
+  switch (command->Code()) {
+  case SystemTelemetry::kShutdownCommand: {
+    auto shutdown = dynamic_cast<ShutdownCommand *>(command.get());
+    exit(shutdown->exit_code);
+    break;
+  }
+
+  default:
+    return absl::InternalError(absl::StrFormat(
+        "Unknown system telemetry command code: %d", command->Code()));
+  }
+  return absl::OkStatus();
+}
+
+```
+If a process wants to do things other than just call `exit` on a `ShutdownCommand`, it can derive
+a new class from `SystemTelemetry` and provide its own version of `HandleCommand`.
+
+For completeness, here is the class declaration for `SystemTelemetry`:
+```c++
+// This is the system telemetry module.  It provides a command to shutdown a
+// process without needing to send a signal.
+class SystemTelemetry : public TelemetryModule {
+public:
+  static constexpr int kShutdownCommand = 1;
+
+  SystemTelemetry(Telemetry &telemetry,
+                  const std::string &name = "adastra::system")
+      : TelemetryModule(telemetry, name) {}
+
+  absl::StatusOr<std::unique_ptr<TelemetryCommand>>
+  ParseCommand(const adastra::proto::telemetry::Command &command) override;
+
+  absl::Status HandleCommand(std::unique_ptr<TelemetryCommand> command,
+                             co::Coroutine *c) override;
+};
+
+```
+The `ParseCommand` is defined as:
+```c++
+// System telemetry module.
+absl::StatusOr<std::unique_ptr<TelemetryCommand>> SystemTelemetry::ParseCommand(
+    const adastra::proto::telemetry::Command &command) {
+  if (command.command().Is<adastra::proto::telemetry::ShutdownCommand>()) {
+    adastra::proto::telemetry::ShutdownCommand shutdown;
+    if (!command.command().UnpackTo(&shutdown)) {
+      return absl::InternalError("Failed to unpack shutdown command");
+    }
+    return std::make_unique<ShutdownCommand>(
+        ShutdownCommand(shutdown.exit_code(), shutdown.timeout_seconds()));
+  }
+  return nullptr;
+}
+```
+Pretty simple.
+
+#### Sending telemetry status messages
+The `SendStatus` function in the `Telemetry` class allows a process to send its status messages as events to
+StageZero client.
+
+It can do this in reponse to an incoming `Command` or it can use one of the three `Call...` functions:
+```c++
+ // Call the callback every 'period' nanoseconds.
+  void CallEvery(std::chrono::nanoseconds period,
+                 std::function<void(co::Coroutine *)> callback);
+
+  // Call the callback once after 'timeout' nanoseconds.
+  void CallAfter(std::chrono::nanoseconds timeout,
+                 std::function<void(co::Coroutine *)> callback);
+
+  // Call the callback now (for some definiton of "now").
+  void CallNow(std::function<void(co::Coroutine *)> callback);
+```
+These functions will call the `callback` function (typically a lambda) under various conditions which
+should be self evident.  The callbacks are called from within a coroutine context and are passed a
+pointer to the coroutine in which they are running.  You can most likely ignore that if you are
+not coroutine based, but there are certain things you might need to know about:
+
+1. You can't block the process inside these functions (don't call a blocking `read` for example)
+2. You only have a 64K stack to play with.
+
+As an example of how to use these, take a gander at the file `testdata/telemetry.cc`.
+
+The status messages you send from processes appear as events at the StageZero client.  The contents of the
+message are available in their protobuf form (as `adastra::proto::telemetry::Status` messages).  You can use
+the regular `google.protobuf.Any` access methods to get the contents of the individual messages.
+
+For example, if you have received an event from the client (in `ts`), you can decode it like this:
+```c++
+   if (ts->status().Is<::testdata::telemetry::TimeTelemetryStatus>()) {
+      ::testdata::telemetry::TimeTelemetryStatus status;
+      auto ok = ts->status().UnpackTo(&status);
+      std::cout << "Time: " << status.time() << std::endl;
+```
+In this case the telemetry status is a message of the form:
+
+```
+package testdata.telemetry;
+
+message TimeTelemetryStatus { uint64 time = 1; }
+```
+
 
 ## Capcom
 Capcom talks to StageZero processes via their client API.  There is only one Capcom process that talks to all StageZero processes.  It does not launch the StageZero servers on the computers.  Capcom deals with `subsystems` comprising of a set of processes.  Subsystems can have dependencies on other subsystems, building up a DAG.  Capcom is a server process (launched on one computer via systemd or something), and a client library that is used to communicate with it.  The server process opens a TCP/IP port
