@@ -718,26 +718,61 @@ absl::Status Client::SetParameter(const std::string &name,
   return absl::OkStatus();
 }
 
-absl::Status Client::DeleteParameter(const std::string &name,
-                                     co::Coroutine *co) {
+absl::Status Client::DeleteParameters(const std::vector<std::string> &names,
+                                      co::Coroutine *co) {
   if (co == nullptr) {
     co = co_;
   }
   adastra::capcom::proto::Request req;
-  auto x = req.mutable_delete_parameter();
-  x->set_name(name);
+  auto x = req.mutable_delete_parameters();
+  for (auto &name : names) {
+    x->add_names(name);
+  }
 
   adastra::capcom::proto::Response resp;
   if (absl::Status status = SendRequestReceiveResponse(req, resp, co);
       !status.ok()) {
     return status;
   }
-  auto &kill_resp = resp.delete_parameter();
-  if (!kill_resp.error().empty()) {
+  auto &del_resp = resp.delete_parameters();
+  if (!del_resp.error().empty()) {
     return absl::InternalError(
-        absl::StrFormat("Failed to delete parameter: %s", kill_resp.error()));
+        absl::StrFormat("Failed to delete parameters: %s", del_resp.error()));
   }
   return absl::OkStatus();
+}
+
+absl::StatusOr<std::vector<parameters::Parameter>>
+Client::GetParameters(const std::vector<std::string> &names, co::Coroutine *co) {
+  if (co == nullptr) {
+    co = co_;
+  }
+  adastra::capcom::proto::Request req;
+  auto x = req.mutable_get_parameters();
+  for (auto &name : names) {
+    x->add_names(name);
+  }
+
+  adastra::capcom::proto::Response resp;
+  if (absl::Status status = SendRequestReceiveResponse(req, resp, co);
+      !status.ok()) {
+    return status;
+  }
+  auto &get_resp = resp.get_parameters();
+  if (!get_resp.error().empty()) {
+    return absl::InternalError(
+        absl::StrFormat("Failed to get parameters: %s", get_resp.error()));
+  }
+
+  std::vector<parameters::Parameter> result;
+  result.reserve(get_resp.parameters_size());
+  for (auto &param : get_resp.parameters()) {
+    parameters::Parameter p;
+    p.name = param.name();
+    p.value.FromProto(param.value());
+    result.push_back(std::move(p));
+  }
+  return result;
 }
 
 absl::Status
@@ -790,9 +825,9 @@ absl::Status Client::SendTelemetryCommandToSubsystem(
   return absl::OkStatus();
 }
 
-absl::Status Client::SendTelemetryCommandToProcess(const std::string& subsystem, const std::string &process_id,
-                                  const ::stagezero::TelemetryCommand &command,
-                                  co::Coroutine *co) {
+absl::Status Client::SendTelemetryCommandToProcess(
+    const std::string &subsystem, const std::string &process_id,
+    const ::stagezero::TelemetryCommand &command, co::Coroutine *co) {
   if (co == nullptr) {
     co = co_;
   }

@@ -50,7 +50,7 @@ struct Event {
   EventType type;
   std::variant<SubsystemStatus, Alarm, Output, LogMessage,
                parameters::ParameterNode, std::string,
-               ::adastra::proto::telemetry::Status>
+               ::adastra::proto::TelemetryEvent>
       event;
 
   void ToProto(proto::Event *dest) const;

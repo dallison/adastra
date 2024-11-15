@@ -108,7 +108,7 @@ They are sent through the API (if masked in).
 
 ### Telemetry
 The telemetry facility is a way for a StageZero client to send commands and receive status messages from running
-processes.  It works by creating two pipes to the process (if it's enabled).  The `commamnd pipe` is written to by StageZero and read by the process, and the 'status pipe` is read by StageZero and written by the process.
+processes.  It works by creating two pipes to the process (if it's enabled).  The `command pipe` is written to by StageZero and read by the process, and the 'status pipe` is read by StageZero and written by the process.
 
 A simple example of a system-provided telemetry command is the `ShutdownCommand` which can be sent by StageZero
 to stop a process running by causing it to exit with a given code.  If the process is not able to accept
@@ -388,15 +388,26 @@ not coroutine based, but there are certain things you might need to know about:
 
 As an example of how to use these, take a gander at the file `testdata/telemetry.cc`.
 
-The status messages you send from processes appear as events at the StageZero client.  The contents of the
-message are available in their protobuf form (as `adastra::proto::telemetry::Status` messages).  You can use
-the regular `google.protobuf.Any` access methods to get the contents of the individual messages.
+The status messages you send from processes appear as events at the StageZero client as the following
+protobuf message:
+```
+message TelemetryEvent {
+  string process_id = 1; // Source process ID
+  uint64 timestamp = 2;
+  string compute = 3; // Compute instance
+  adastra.proto.telemetry.Status telemetry = 4;
+}
+```
+The `process_id` is the ID of the process that sent the event.  The actual telemetry status is in the
+`telemetry` field.
+You can use the regular `google.protobuf.Any` access methods to get the contents of the individual telemetry status
+messages.
 
 For example, if you have received an event from the client (in `ts`), you can decode it like this:
 ```c++
-   if (ts->status().Is<::testdata::telemetry::TimeTelemetryStatus>()) {
+   if (ts->telemetry().status().Is<::testdata::telemetry::TimeTelemetryStatus>()) {
       ::testdata::telemetry::TimeTelemetryStatus status;
-      auto ok = ts->status().UnpackTo(&status);
+      auto ok = ts->telemetry().status().UnpackTo(&status);
       std::cout << "Time: " << status.time() << std::endl;
 ```
 In this case the telemetry status is a message of the form:
@@ -433,6 +444,11 @@ The Capcom client provides the following API functions:
 11. Abort
 12. CloseFd
 13. GetAlarms
+14. SetParameter
+15. DeleteParameter
+16. UploadParameters
+17. SendTelemetryCommandToProcess
+18. SendTelemetryCommandToSubsystem
 
 Capcom needs to be told what `computes` are available.  A compute is another name for a computer that is in a robot.  Subsystems contain processes that are assigned to a compute.  Each compute must be running a StageZero server process.
 
@@ -456,6 +472,9 @@ A feature of the Capcom client is the ability to receive `events`.  These are ob
 2. Alarm
 3. Output
 4. LogMessage
+5. ParameterUpdate
+6. ParameterDelete
+7. Telemetry
 
 When the client is initialized, the user can pass an `event mask` specifying what type of events they want to see. 
 
@@ -466,6 +485,23 @@ Alarms are descibed below.
 Output events are redirected output streams from one of the subsystem's processes.
 
 LogMessage events contain formatted log message emitted from StageZero, processes or Capcom and are described above.
+
+Any parameter updates or deletions (from a process) are sent as `ParameterUpdate` or `ParameterDelete` events.
+
+`Telemetry` events are `::adastra::proto::TelemetryEvent` messages that come from processes that have enabled telemetry.  See the [Telemetry](#telemetry) section for details.  The message is defined as:
+
+```
+message TelemetryEvent {
+  string subsystem = 1;
+  string process_id = 2;
+  telemetry.Status telemetry = 3;
+  uint64 timestamp = 4;
+}
+
+```
+This is basically the same event that was sent from StageZero for telemetry status, but also includes the `subsystem` that
+the process is part of.
+
 
 ### Alarms
 Alarms are reports of problems, like a process crashing.  An alarm is an object with the following attributes:
@@ -484,36 +520,30 @@ Capcom writes all log messages to a file on disk.  The file is in `/tmp` by defa
 
 You can switch this off if you don't want the log messages saved to disk by passing the command line flag `--log_file=/dev/null`.
 
-## Modules
-A module is a component that runs as a virtual process and communicates with other modules using `Subspace` IPC.  Each module runs in a separate process spawned from a `zygote`.
+### Umbilicals
+Although stretching the analogy somewhat, Capcom connects to StageZero through `umbilicals`, which are reference counted
+TCP connections from Capcom to the StageZero listening ports on the `compute` instances.
 
-Modules use a template libary that takes message types and registers publishers and subscribers for Subspace messages.  Modules can use `serializing` publishers/subscribers or `zero-copy` protocols that require no serialization.  A `protobuf` specialization for the general module template is provided.
-This uses Google's Protocol Buffers as a serialization system.
+There is one main `umbilical` for Capcom itself which is used to convey global variables, parameters and cgroups.  There is also one umbilical per subsystem that is connected to the StageZero instances that the subsystem needs to run its processes.  Generally, the subsystem umbilicals will be connected on demand when it needs to start a process.  When all 
+the processes have been stopped for that subsystem on a compute, the umbilical will be disconnected.
 
-Modules have the following facilities available:
+The main Capcom umbilical can be either connected dynamically when the first subsystem umbilical is connected or
+it can be connected statically when the `Compute` is added.  This is specified when the `Compute` is added to 
+Capcom as a parameter with the following type:
 
-1. RegisterSerializingSubscriber
-2. RegisterSerializingPublisher
-3. RegisterZeroCopySubscriber
-4. RegisterZeroCopyPublisher
-5. RemovePublisher
-6. RemoveSubscriber
-7. RunPeriodically
-8. RunAfterDelay
-9. RunNow
-10. RunOnEvent
-11. RunOnEventWithTimeout
+```c++
+enum class ComputeConnectionPolicy {
+  kDynamic,
+  kStatic,
+};
 
-The first 4 register publishers and subscribers.  Both reliable and unreliable forms of both are available.  The next 2 allow publishers and subscribers to be removed.
+```
+If the value is `kDynamic`, the Capcom will only try to connect to the compute when it needs to.  This allows the
+computers in your robot to start up at different times.  If `kStatic` is specified, Capcom will try to connect
+to the StageZero on the compute when you add it, which means it must already be running.
 
-The `Run...` functions allow lambda to be executed under various conditions.  You can run the lambda at a given frequency; once only, immediately or after a delay; or on receipt of an `event` from a file descriptor (when a file descriptor is available for read).
-
-This module system is intended for single-threaded operation, and makes use of `coroutines` to provide parallelization.  It is important that modules do not block the process for any significant length of time.  Coroutines use file descriptors and the poll(2) system call to allow cooperative
-sharing of the CPU.  A `coroutine` pointer is available in all functions for use by that function if it needs to perform I/O.
-
-To define a module, derive a class from `adastra::module::Module` and in its `Init` function register the publishers and subscribers you need, specifying their types.  Assuming you are fine with protobuf, you can derive your module's class from `adastra::module::ProtobufModule` and it will automatically use protobuf for serialiation.
- 
-It is important to register your module by calling `DEFINE_MODULE` in the module's code.  This will define a module that is loaded dynamically after the zygote forks.  You can also, if you want, link the module with a zygote and use `DEFINE_EMBEDDED_MODULE` to define it.
+The default (and expected to be the most common) is dynamic connections where Capcom will connect and disconnect
+to StageZero when it needs to and the computer can come and go.
 
 ### Parameters
 Parameters are a way to pass runtime information to processes run by `AdAstra`.  ROS has a global parameter server inside its `roscore` process that is used by most ROS programs to pass runtime parameters to nodes.  AdAstra provides a similar facility in the form of a global parameter server running in `Capcom` which is distrubuted to all `StageZero` instances.  The processes can access parameters via a pipe to StageZero.  Alongside global parameters which are seen by all processes, a process can have a set of local parameters that are known only to that process.  ROS has a notional concept of local parameters, but they are just global parameters that are prefixed by a node's name.
@@ -732,8 +762,15 @@ functions you can use to create or modify parameters in the Capcom client API:
   absl::Status SetParameter(const std::string &name, const parameters::Value &v,
                             co::Coroutine *c = nullptr);
 
-  absl::Status DeleteParameter(const std::string &name,
+  absl::Status DeleteParameters(const std::vector<std::string> &names = {},
                                co::Coroutine *c = nullptr);
+
+  absl::StatusOr<std::vector<parameters::Parameter>>
+  GetParameters(const std::vector<std::string> &names = {},
+                co::Coroutine *c = nullptr);
+
+  absl::StatusOr<parameters::Value> GetParameter(const std::string &name,
+                                                 co::Coroutine *c = nullptr);
 
   absl::Status
   UploadParameters(const std::vector<parameters::Parameter> &params,
@@ -741,7 +778,10 @@ functions you can use to create or modify parameters in the Capcom client API:
 ```
 The `SetParameter` function will create the parameter if it doesn't exist.  If the value is a map, a tree will be created.  If it does exist, the parameter value will be set.
 
-The `DeleteParameter` will delete a parameter or a tree of them.
+The `DeleteParameters` will delete a set of parameters or a tree of them.  If the `names` is empty all parameters will
+be deleted.
+
+The `GetParameters` and `GetParameter` functions allow the client to read the values of parameters;  If `names` is empty, it will read all the parameters.
 
 The `UploadParameters` allows a whole set of parameters to be sent to Capcom at once.
 
@@ -795,6 +835,37 @@ The program is simple and has the following commands:
   flight log - show live text log
   flight log <filename>- show recorded text log from file
 ```
+
+## Modules
+A module is a component that runs as a virtual process and communicates with other modules using `Subspace` IPC.  Each module runs in a separate process spawned from a `zygote`.
+
+Modules use a template libary that takes message types and registers publishers and subscribers for Subspace messages.  Modules can use `serializing` publishers/subscribers or `zero-copy` protocols that require no serialization.  A `protobuf` specialization for the general module template is provided.
+This uses Google's Protocol Buffers as a serialization system.
+
+Modules have the following facilities available:
+
+1. RegisterSerializingSubscriber
+2. RegisterSerializingPublisher
+3. RegisterZeroCopySubscriber
+4. RegisterZeroCopyPublisher
+5. RemovePublisher
+6. RemoveSubscriber
+7. RunPeriodically
+8. RunAfterDelay
+9. RunNow
+10. RunOnEvent
+11. RunOnEventWithTimeout
+
+The first 4 register publishers and subscribers.  Both reliable and unreliable forms of both are available.  The next 2 allow publishers and subscribers to be removed.
+
+The `Run...` functions allow lambda to be executed under various conditions.  You can run the lambda at a given frequency; once only, immediately or after a delay; or on receipt of an `event` from a file descriptor (when a file descriptor is available for read).
+
+This module system is intended for single-threaded operation, and makes use of `coroutines` to provide parallelization.  It is important that modules do not block the process for any significant length of time.  Coroutines use file descriptors and the poll(2) system call to allow cooperative
+sharing of the CPU.  A `coroutine` pointer is available in all functions for use by that function if it needs to perform I/O.
+
+To define a module, derive a class from `adastra::module::Module` and in its `Init` function register the publishers and subscribers you need, specifying their types.  Assuming you are fine with protobuf, you can derive your module's class from `adastra::module::ProtobufModule` and it will automatically use protobuf for serialiation.
+ 
+It is important to register your module by calling `DEFINE_MODULE` in the module's code.  This will define a module that is loaded dynamically after the zygote forks.  You can also, if you want, link the module with a zygote and use `DEFINE_EMBEDDED_MODULE` to define it.
 
 ## FDO (fido)
 The Flight Dynamics Operator (FDO, pronounced "fido") monitors the mission from a console in mission control.  In this software it is a program that displays a retro-style terminal console that shows a live display of:

@@ -139,7 +139,7 @@ public:
     abort();
   }
 
-  std::unique_ptr<adastra::proto::telemetry::Status>
+  std::unique_ptr<adastra::stagezero::control::TelemetryEvent>
   WaitForTelemetryEvent(adastra::stagezero::Client &client) {
     std::cout << "waiting for telemetry event " << std::endl;
     for (int retry = 0; retry < 10; retry++) {
@@ -154,7 +154,9 @@ public:
       }
       if (event->event_case() ==
           adastra::stagezero::control::Event::kTelemetry) {
-        return std::make_unique<adastra::proto::telemetry::Status>(
+            std::cerr << "Got telemetry event " << event->DebugString()
+                      << std::endl;
+        return std::make_unique<adastra::stagezero::control::TelemetryEvent>(
             event->telemetry());
       }
       std::cerr << "Waiting for telemetry, got " << event->DebugString()
@@ -373,10 +375,10 @@ TEST_F(ClientTest, LaunchAndStopCustomTelemetryCommand) {
   PidCommand cmd;
   absl::Status s = client.SendTelemetryCommand(process_id, cmd);
 
-  auto ts = WaitForTelemetryEvent(client);
-  if (ts->status().Is<::testdata::telemetry::PidTelemetryStatus>()) {
+  auto ts_event = WaitForTelemetryEvent(client);
+  if (ts_event->telemetry().status().Is<::testdata::telemetry::PidTelemetryStatus>()) {
     ::testdata::telemetry::PidTelemetryStatus status;
-    auto ok = ts->status().UnpackTo(&status);
+    auto ok = ts_event->telemetry().status().UnpackTo(&status);
     ASSERT_TRUE(ok);
     std::cout << "PID: " << status.pid() << std::endl;
   }
@@ -401,10 +403,10 @@ TEST_F(ClientTest, LaunchAndStopCustomTelemetryStatus) {
   WaitForEvent(client, adastra::stagezero::control::Event::kStart);
 
   for (int i = 0; i < 5; i++) {
-    auto ts = WaitForTelemetryEvent(client);
-    if (ts->status().Is<::testdata::telemetry::TimeTelemetryStatus>()) {
+    auto ts_event = WaitForTelemetryEvent(client);
+    if (ts_event->telemetry().status().Is<::testdata::telemetry::TimeTelemetryStatus>()) {
       ::testdata::telemetry::TimeTelemetryStatus status;
-      auto ok = ts->status().UnpackTo(&status);
+      auto ok = ts_event->telemetry().status().UnpackTo(&status);
       ASSERT_TRUE(ok);
       std::cout << "Time: " << status.time() << std::endl;
     }

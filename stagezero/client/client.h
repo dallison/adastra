@@ -144,12 +144,11 @@ public:
                           co::Coroutine *co = nullptr);
   absl::Status KillCgroup(const std::string &cgroup,
                           co::Coroutine *co = nullptr);
-  absl::Status SetParameter(const std::string &name, parameters::Value &v,
+  absl::Status SetParameter(const std::string &name, const parameters::Value &v,
                             co::Coroutine *c = nullptr);
 
-  absl::Status DeleteParameter(const std::string &name,
+  absl::Status DeleteParameters(const std::vector<std::string> &name,
                                co::Coroutine *c = nullptr);
-
   absl::Status
   UploadParameters(const std::vector<parameters::Parameter> &params,
                    co::Coroutine *c = nullptr);

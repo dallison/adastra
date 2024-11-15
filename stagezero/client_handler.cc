@@ -13,12 +13,11 @@
 
 namespace adastra::stagezero {
 
+  ClientHandler::ClientHandler(StageZero &stagezero, toolbelt::TCPSocket socket)
+      : TCPClientHandler(stagezero.logger_, std::move(socket)), stagezero_(stagezero) {}
+
 SymbolTable *ClientHandler::GetGlobalSymbols() const {
   return &stagezero_.global_symbols_;
-}
-
-toolbelt::Logger &ClientHandler::GetLogger() const {
-  return stagezero_.logger_;
 }
 
 co::CoroutineScheduler &ClientHandler::GetScheduler() const {
@@ -114,9 +113,9 @@ absl::Status ClientHandler::HandleMessage(const control::Request &req,
     HandleSetParameter(req.set_parameter(), resp.mutable_set_parameter(), c);
     break;
 
-  case control::Request::kDeleteParameter:
-    HandleDeleteParameter(req.delete_parameter(),
-                          resp.mutable_delete_parameter(), c);
+  case control::Request::kDeleteParameters:
+    HandleDeleteParameters(req.delete_parameters(),
+                          resp.mutable_delete_parameters(), c);
     break;
 
   case control::Request::kUploadParameters:
@@ -370,13 +369,17 @@ absl::Status ClientHandler::SendParameterDeleteEvent(const std::string &name) {
 }
 
 absl::Status ClientHandler::SendTelemetryStatusEvent(
+  const std::string& process_id, const std::string& compute,
     const adastra::proto::telemetry::Status &status) {
   if ((event_mask_ & kTelemetryEvents) == 0) {
     return absl::OkStatus();
   }
   auto event = std::make_shared<control::Event>();
   auto t = event->mutable_telemetry();
-  *t = status;
+  t->set_process_id(process_id);
+  t->set_compute(compute);
+  t->set_timestamp(toolbelt::Now());
+  *t->mutable_telemetry() = status;
   return QueueEvent(std::move(event));
 }
 
@@ -524,10 +527,14 @@ void ClientHandler::HandleSetParameter(const control::SetParameterRequest &req,
   }
 }
 
-void ClientHandler::HandleDeleteParameter(
-    const control::DeleteParameterRequest &req,
-    control::DeleteParameterResponse *response, co::Coroutine *c) {
-  if (absl::Status status = stagezero_.DeleteParameter(req.name(), c);
+void ClientHandler::HandleDeleteParameters(
+    const control::DeleteParametersRequest &req,
+    control::DeleteParametersResponse *response, co::Coroutine *c) {
+  std::vector<std::string> names;
+  for (auto &n : req.names()) {
+    names.push_back(n);
+  }
+  if (absl::Status status = stagezero_.DeleteParameters(names, c);
       !status.ok()) {
     response->set_error(status.ToString());
   }

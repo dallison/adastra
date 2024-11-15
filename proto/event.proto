@@ -54,6 +54,13 @@ message OutputEvent {
   int32 fd = 3; // What fd sent it
 }
 
+message TelemetryEvent {
+  string subsystem = 1;
+  string process_id = 2;
+  telemetry.Status telemetry = 3;
+  uint64 timestamp = 4;
+}
+
 message Event {
   oneof event {
     SubsystemStatus subsystem_status = 1;
@@ -61,6 +68,6 @@ message Event {
     OutputEvent output = 3;
     LogMessage log = 4;
     parameters.ParameterEvent parameter = 5;
-    telemetry.Status telemetry = 6;
+    TelemetryEvent telemetry = 6;
   }
 }

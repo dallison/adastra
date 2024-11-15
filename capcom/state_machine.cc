@@ -213,7 +213,8 @@ void Subsystem::Offline(uint32_t client_id, co::Coroutine *c) {
             }
             break;
           case adastra::stagezero::control::Event::kTelemetry:
-            subsystem->capcom_.SendTelemetryStatusEvent(event->telemetry());
+            subsystem->capcom_.SendTelemetryEvent(subsystem->Name(),
+                                                  event->telemetry());
             break;
           case adastra::stagezero::control::Event::EVENT_NOT_SET:
             break;
@@ -237,9 +238,6 @@ void Subsystem::Offline(uint32_t client_id, co::Coroutine *c) {
                 *message, OperState::kStartingChildren, OperState::kOffline);
             if (next_state == OperState::kStartingChildren) {
               subsystem->admin_state_ = AdminState::kOnline;
-              subsystem->capcom_.Log(subsystem->Name(),
-                                     toolbelt::LogLevel::kInfo,
-                                     "Sending admin to children");
               subsystem->SendToChildren(message->state.admin,
                                         message->client_id);
             }
@@ -363,7 +361,8 @@ void Subsystem::Connecting(uint32_t client_id, co::Coroutine *c) {
                 }
                 break;
               case adastra::stagezero::control::Event::kTelemetry:
-                subsystem->capcom_.SendTelemetryStatusEvent(event->telemetry());
+                subsystem->capcom_.SendTelemetryEvent(subsystem->Name(),
+                                                      event->telemetry());
                 break;
               case adastra::stagezero::control::Event::EVENT_NOT_SET:
                 break;
@@ -497,7 +496,8 @@ void Subsystem::StartingChildren(uint32_t client_id, co::Coroutine *c) {
                 }
                 break;
               case adastra::stagezero::control::Event::kTelemetry:
-                subsystem->capcom_.SendTelemetryStatusEvent(event->telemetry());
+                subsystem->capcom_.SendTelemetryEvent(subsystem->Name(),
+                                                      event->telemetry());
                 break;
               case adastra::stagezero::control::Event::EVENT_NOT_SET:
                 break;
@@ -619,163 +619,164 @@ void Subsystem::StartingProcesses(uint32_t client_id, co::Coroutine *c) {
 
   OperState next_state = OperState::kOnline;
   RunSubsystemInState(
-      c,
-      [ subsystem = shared_from_this(), &client_id,
-        &next_state ](EventSource event_source,
-                      std::shared_ptr<stagezero::Client> stagezero_client,
-                      co::Coroutine * c)
-          ->StateTransition {
-            switch (event_source) {
-            case EventSource::kStageZero: {
-              // Event from stagezero.
-              absl::StatusOr<
-                  std::shared_ptr<adastra::stagezero::control::Event>>
-                  e = stagezero_client->ReadEvent(c);
-              if (!e.ok()) {
-                subsystem->capcom_.Log(
-                    subsystem->Name(), toolbelt::LogLevel::kError,
-                    "Failed to read event %s", e.status().ToString().c_str());
-              }
-              std::shared_ptr<adastra::stagezero::control::Event> event = *e;
-              switch (event->event_case()) {
-              case adastra::stagezero::control::Event::kConnect:
-                break;
-              case adastra::stagezero::control::Event::kDisconnect:
-                // Can't get this here because we haven't started any
-                // processes so the umbililcal won't be connected.
-                break;
-              case adastra::stagezero::control::Event::kStart: {
-                std::shared_ptr<Process> proc =
-                    subsystem->FindProcess(event->start().process_id());
-                if (proc != nullptr) {
-                  proc->SetRunning();
-                  proc->ClearAlarm(subsystem->capcom_);
-                }
-                break;
-              }
-              case adastra::stagezero::control::Event::kStop: {
-                // Process failed to start.
-                if (!subsystem->capcom_.IsEmergencyAborting()) {
-                  const stagezero::control::StopEvent &stop = event->stop();
-                  std::shared_ptr<Process> proc =
-                      subsystem->FindProcess(stop.process_id());
-                  if (proc == nullptr) {
-                    subsystem->capcom_.Log(
-                        subsystem->Name(), toolbelt::LogLevel::kError,
-                        "Can't find process", stop.process_id().c_str());
-                    return StateTransition::kStay;
-                  }
-                  int signal_or_status = stop.sig_or_status();
-                  bool exited =
-                      stop.reason() != stagezero::control::StopEvent::SIGNAL;
-                  if (proc->IsOneShot()) {
-                    // A oneshot that exits while in this state is counted as
-                    // a process that is running for the purposes of leaving
-                    // the state.
-                    if (exited) {
-                      proc->SetStopped();
-                      subsystem->DeleteProcessId(proc->GetProcessId());
-                      proc->SetExit(exited, signal_or_status);
-                      break;
-                    }
-                    subsystem->capcom_.Log(
-                        subsystem->Name(), toolbelt::LogLevel::kError,
-                        "Process %s has crashed", stop.process_id().c_str());
-                  }
-                  return subsystem->RestartIfPossibleAfterProcessCrash(
-                      stop.process_id(), client_id, exited, signal_or_status,
-                      c);
-                }
-                break;
-              }
-              case adastra::stagezero::control::Event::kOutput:
-                subsystem->SendOutput(event->output().fd(),
-                                      event->output().data(), c);
-                break;
-              case adastra::stagezero::control::Event::kLog:
-                subsystem->capcom_.Log(event->log());
-                break;
-              case adastra::stagezero::control::Event::kParameter:
-                if (absl::Status status =
-                        subsystem->capcom_.HandleParameterEvent(
-                            event->parameter(), c);
-                    !status.ok()) {
-                  subsystem->capcom_.Log(subsystem->Name(),
-                                         toolbelt::LogLevel::kError, "%s",
-                                         status.ToString().c_str());
-                }
-                break;
-              case adastra::stagezero::control::Event::kTelemetry:
-                subsystem->capcom_.SendTelemetryStatusEvent(event->telemetry());
-                break;
-              case adastra::stagezero::control::Event::EVENT_NOT_SET:
-                break;
-              }
-              break;
-            }
-            case EventSource::kMessage: {
-              // Incoming message.
-              absl::StatusOr<std::shared_ptr<Message>> msg =
-                  subsystem->ReadMessage();
-              if (!msg.ok()) {
-                subsystem->capcom_.Log(subsystem->Name(),
-                                       toolbelt::LogLevel::kError, "%s",
-                                       msg.status().ToString().c_str());
-              }
-              auto message = *msg;
-              switch (message->code) {
-              case Message::kChangeAdmin:
-                next_state = subsystem->HandleAdminCommand(
-                    *message, OperState::kOnline,
-                    OperState::kStoppingProcesses);
-                subsystem->SendToChildren(message->state.admin,
-                                          message->client_id);
-                client_id = message->client_id;
-                if (next_state == OperState::kStoppingProcesses) {
-                  subsystem->admin_state_ = AdminState::kOffline;
-                }
-                break;
-              case Message::kReportOper:
-                subsystem->capcom_.Log(
-                    subsystem->Name(), toolbelt::LogLevel::kDebug,
-                    "Subsystem %s has reported oper state as %s (%s in oper "
-                    "state %s)",
-                    message->sender->Name().c_str(),
-                    OperStateName(message->state.oper),
-                    subsystem->Name().c_str(),
-                    OperStateName(subsystem->oper_state_));
-                subsystem->NotifyParents();
-                break;
-              case Message::kAbort:
-                return subsystem->Abort(message->emergency_abort);
-              case Message::kRestart:
-                subsystem->EnterState(OperState::kRestarting, client_id);
-                return StateTransition::kLeave;
-              case Message::kRestartProcesses:
-              case Message::kRestartCrashedProcesses:
-                // If we get this event while we are restarting processes we
-                // have more processes to restart.  Re-enter the state to
-                // pick them up.
-                subsystem->EnterState(OperState::kStartingProcesses,
-                                      message->client_id);
-                return StateTransition::kLeave;
-              case Message::kSendTelemetryCommand:
-                break;
-              }
-              break;
-            }
-            case EventSource::kUnknown:
-              break;
-            }
-            // If all our processes are running we can go online.  We also
-            // count oneshots that exit successfully.
-            if (!subsystem->AllProcessesRunning()) {
-              return StateTransition::kStay;
-            }
+      c, [ subsystem = shared_from_this(), &client_id,
+           &next_state ](EventSource event_source,
+                         std::shared_ptr<stagezero::Client> stagezero_client,
+                         co::Coroutine * c)
+             ->StateTransition {
+               switch (event_source) {
+               case EventSource::kStageZero: {
+                 // Event from stagezero.
+                 absl::StatusOr<
+                     std::shared_ptr<adastra::stagezero::control::Event>>
+                     e = stagezero_client->ReadEvent(c);
+                 if (!e.ok()) {
+                   subsystem->capcom_.Log(subsystem->Name(),
+                                          toolbelt::LogLevel::kError,
+                                          "Failed to read event %s",
+                                          e.status().ToString().c_str());
+                 }
+                 std::shared_ptr<adastra::stagezero::control::Event> event = *e;
+                 switch (event->event_case()) {
+                 case adastra::stagezero::control::Event::kConnect:
+                   break;
+                 case adastra::stagezero::control::Event::kDisconnect:
+                   // Can't get this here because we haven't started any
+                   // processes so the umbililcal won't be connected.
+                   break;
+                 case adastra::stagezero::control::Event::kStart: {
+                   std::shared_ptr<Process> proc =
+                       subsystem->FindProcess(event->start().process_id());
+                   if (proc != nullptr) {
+                     proc->SetRunning();
+                     proc->ClearAlarm(subsystem->capcom_);
+                   }
+                   break;
+                 }
+                 case adastra::stagezero::control::Event::kStop: {
+                   // Process failed to start.
+                   if (!subsystem->capcom_.IsEmergencyAborting()) {
+                     const stagezero::control::StopEvent &stop = event->stop();
+                     std::shared_ptr<Process> proc =
+                         subsystem->FindProcess(stop.process_id());
+                     if (proc == nullptr) {
+                       subsystem->capcom_.Log(
+                           subsystem->Name(), toolbelt::LogLevel::kError,
+                           "Can't find process", stop.process_id().c_str());
+                       return StateTransition::kStay;
+                     }
+                     int signal_or_status = stop.sig_or_status();
+                     bool exited =
+                         stop.reason() != stagezero::control::StopEvent::SIGNAL;
+                     if (proc->IsOneShot()) {
+                       // A oneshot that exits while in this state is counted as
+                       // a process that is running for the purposes of leaving
+                       // the state.
+                       if (exited) {
+                         proc->SetStopped();
+                         subsystem->DeleteProcessId(proc->GetProcessId());
+                         proc->SetExit(exited, signal_or_status);
+                         break;
+                       }
+                       subsystem->capcom_.Log(
+                           subsystem->Name(), toolbelt::LogLevel::kError,
+                           "Process %s has crashed", stop.process_id().c_str());
+                     }
+                     return subsystem->RestartIfPossibleAfterProcessCrash(
+                         stop.process_id(), client_id, exited, signal_or_status,
+                         c);
+                   }
+                   break;
+                 }
+                 case adastra::stagezero::control::Event::kOutput:
+                   subsystem->SendOutput(event->output().fd(),
+                                         event->output().data(), c);
+                   break;
+                 case adastra::stagezero::control::Event::kLog:
+                   subsystem->capcom_.Log(event->log());
+                   break;
+                 case adastra::stagezero::control::Event::kParameter:
+                   if (absl::Status status =
+                           subsystem->capcom_.HandleParameterEvent(
+                               event->parameter(), c);
+                       !status.ok()) {
+                     subsystem->capcom_.Log(subsystem->Name(),
+                                            toolbelt::LogLevel::kError, "%s",
+                                            status.ToString().c_str());
+                   }
+                   break;
+                 case adastra::stagezero::control::Event::kTelemetry:
+                   subsystem->capcom_.SendTelemetryEvent(subsystem->Name(),
+                                                         event->telemetry());
+                   break;
+                 case adastra::stagezero::control::Event::EVENT_NOT_SET:
+                   break;
+                 }
+                 break;
+               }
+               case EventSource::kMessage: {
+                 // Incoming message.
+                 absl::StatusOr<std::shared_ptr<Message>> msg =
+                     subsystem->ReadMessage();
+                 if (!msg.ok()) {
+                   subsystem->capcom_.Log(subsystem->Name(),
+                                          toolbelt::LogLevel::kError, "%s",
+                                          msg.status().ToString().c_str());
+                 }
+                 auto message = *msg;
+                 switch (message->code) {
+                 case Message::kChangeAdmin:
+                   next_state = subsystem->HandleAdminCommand(
+                       *message, OperState::kOnline,
+                       OperState::kStoppingProcesses);
+                   subsystem->SendToChildren(message->state.admin,
+                                             message->client_id);
+                   client_id = message->client_id;
+                   if (next_state == OperState::kStoppingProcesses) {
+                     subsystem->admin_state_ = AdminState::kOffline;
+                   }
+                   break;
+                 case Message::kReportOper:
+                   subsystem->capcom_.Log(
+                       subsystem->Name(), toolbelt::LogLevel::kDebug,
+                       "Subsystem %s has reported oper state as %s (%s in oper "
+                       "state %s)",
+                       message->sender->Name().c_str(),
+                       OperStateName(message->state.oper),
+                       subsystem->Name().c_str(),
+                       OperStateName(subsystem->oper_state_));
+                   subsystem->NotifyParents();
+                   break;
+                 case Message::kAbort:
+                   return subsystem->Abort(message->emergency_abort);
+                 case Message::kRestart:
+                   subsystem->EnterState(OperState::kRestarting, client_id);
+                   return StateTransition::kLeave;
+                 case Message::kRestartProcesses:
+                 case Message::kRestartCrashedProcesses:
+                   // If we get this event while we are restarting processes we
+                   // have more processes to restart.  Re-enter the state to
+                   // pick them up.
+                   subsystem->EnterState(OperState::kStartingProcesses,
+                                         message->client_id);
+                   return StateTransition::kLeave;
+                 case Message::kSendTelemetryCommand:
+                   break;
+                 }
+                 break;
+               }
+               case EventSource::kUnknown:
+                 break;
+               }
+               // If all our processes are running we can go online.  We also
+               // count oneshots that exit successfully.
+               if (!subsystem->AllProcessesRunning()) {
+                 return StateTransition::kStay;
+               }
 
-            subsystem->EnterState(next_state, client_id);
-            return StateTransition::kLeave;
-          });
+               subsystem->EnterState(next_state, client_id);
+               return StateTransition::kLeave;
+             });
 }
 
 void Subsystem::Online(uint32_t client_id, co::Coroutine *c) {
@@ -887,7 +888,8 @@ void Subsystem::Online(uint32_t client_id, co::Coroutine *c) {
                 }
                 break;
               case adastra::stagezero::control::Event::kTelemetry:
-                subsystem->capcom_.SendTelemetryStatusEvent(event->telemetry());
+                subsystem->capcom_.SendTelemetryEvent(subsystem->Name(),
+                                                      event->telemetry());
                 break;
               case adastra::stagezero::control::Event::EVENT_NOT_SET:
                 break;
@@ -1081,7 +1083,8 @@ void Subsystem::StoppingProcesses(uint32_t client_id, co::Coroutine *c) {
             }
             break;
           case adastra::stagezero::control::Event::kTelemetry:
-            subsystem->capcom_.SendTelemetryStatusEvent(event->telemetry());
+            subsystem->capcom_.SendTelemetryEvent(subsystem->Name(),
+                                                  event->telemetry());
             break;
           case adastra::stagezero::control::Event::EVENT_NOT_SET:
             break;
@@ -1219,7 +1222,8 @@ void Subsystem::StoppingChildren(uint32_t client_id, co::Coroutine *c) {
                 }
                 break;
               case adastra::stagezero::control::Event::kTelemetry:
-                subsystem->capcom_.SendTelemetryStatusEvent(event->telemetry());
+                subsystem->capcom_.SendTelemetryEvent(subsystem->Name(),
+                                                      event->telemetry());
                 break;
               case adastra::stagezero::control::Event::EVENT_NOT_SET:
                 break;
@@ -1402,7 +1406,8 @@ void Subsystem::WaitForRestart(co::Coroutine *c) {
                 }
                 break;
               case adastra::stagezero::control::Event::kTelemetry:
-                subsystem->capcom_.SendTelemetryStatusEvent(event->telemetry());
+                subsystem->capcom_.SendTelemetryEvent(subsystem->Name(),
+                                                      event->telemetry());
                 break;
               case adastra::stagezero::control::Event::EVENT_NOT_SET:
                 break;
@@ -1700,133 +1705,134 @@ void Subsystem::Restarting(uint32_t client_id, co::Coroutine *c) {
   // Wait for all our processes to stop, then notify the parents that
   // we've stopped and are ready to be restarted.
   RunSubsystemInState(
-      c,
-      [ subsystem = shared_from_this(),
-        client_id ](EventSource event_source,
-                    std::shared_ptr<stagezero::Client> stagezero_client,
-                    co::Coroutine * c)
-          ->StateTransition {
-            switch (event_source) {
-            case EventSource::kStageZero: {
-              // Event from stagezero.
-              absl::StatusOr<
-                  std::shared_ptr<adastra::stagezero::control::Event>>
-                  e = stagezero_client->ReadEvent(c);
-              if (!e.ok()) {
-                subsystem->capcom_.Log(
-                    subsystem->Name(), toolbelt::LogLevel::kError,
-                    "Failed to read event %s", e.status().ToString().c_str());
-              }
-              std::shared_ptr<adastra::stagezero::control::Event> event = *e;
-              switch (event->event_case()) {
-              case adastra::stagezero::control::Event::kConnect:
-              case adastra::stagezero::control::Event::kDisconnect:
-                break;
-              case adastra::stagezero::control::Event::kStart: {
-                // This might happen if a process crashed while others are
-                // starting up.  Ignore it, as it will be replaced by a
-                // kStop event when the process is killed.
-                break;
-              }
-              case adastra::stagezero::control::Event::kStop: {
-                std::shared_ptr<Process> proc =
-                    subsystem->FindProcess(event->stop().process_id());
-                if (proc != nullptr) {
-                  proc->SetStopped();
-                  subsystem->DeleteProcessId(proc->GetProcessId());
-                }
-                break;
-              }
-              case adastra::stagezero::control::Event::kOutput:
-                subsystem->SendOutput(event->output().fd(),
-                                      event->output().data(), c);
-                break;
-              case adastra::stagezero::control::Event::kLog:
-                subsystem->capcom_.Log(event->log());
-                break;
-              case adastra::stagezero::control::Event::kParameter:
-                if (absl::Status status =
-                        subsystem->capcom_.HandleParameterEvent(
-                            event->parameter(), c);
-                    !status.ok()) {
-                  subsystem->capcom_.Log(subsystem->Name(),
-                                         toolbelt::LogLevel::kError, "%s",
-                                         status.ToString().c_str());
-                }
-                break;
-              case adastra::stagezero::control::Event::kTelemetry:
-                subsystem->capcom_.SendTelemetryStatusEvent(event->telemetry());
-                break;
-              case adastra::stagezero::control::Event::EVENT_NOT_SET:
-                break;
-              }
-              break;
-            }
-            case EventSource::kMessage: {
-              // Incoming message.
-              absl::StatusOr<std::shared_ptr<Message>> msg =
-                  subsystem->ReadMessage();
-              if (!msg.ok()) {
-                subsystem->capcom_.Log(subsystem->Name(),
-                                       toolbelt::LogLevel::kError, "%s",
-                                       msg.status().ToString().c_str());
-              }
-              auto message = *msg;
-              switch (message->code) {
-              case Message::kChangeAdmin:
-                if (message->state.admin == AdminState::kOnline) {
-                  // We are restarting and have been asked to go online.
-                  subsystem->RestartNow(client_id);
-                  return StateTransition::kLeave;
-                }
-                subsystem->NotifyParents();
-                break;
-              case Message::kReportOper:
-                // Notification from a child while in restarting state.  We
-                // shouldn't get this.
-                subsystem->capcom_.Log(subsystem->Name(),
-                                       toolbelt::LogLevel::kError,
-                                       "Subsystem %s has reported oper state "
-                                       "as %s while in restarting state",
-                                       message->sender->Name().c_str(),
-                                       OperStateName(message->state.oper));
-                break;
-              case Message::kAbort:
-                return subsystem->Abort(message->emergency_abort);
-              case Message::kRestart:
-                return StateTransition::kStay;
-              case Message::kRestartProcesses:
-              case Message::kRestartCrashedProcesses:
-                // We are restarting and got an event to restart crashed
-                // processes. This can happen if a process was in its restart
-                // delay and then asked to restart. We just ignore the
-                // request and continue stopping.
-                return StateTransition::kStay;
-              case Message::kSendTelemetryCommand:
-                break;
-              }
-              break;
-            }
-            case EventSource::kUnknown:
-              break;
-            }
-            // If all our processes are not stopped we can notify our
-            // parents.  We stay in this state.
-            if (!subsystem->AllProcessesStopped()) {
-              return StateTransition::kStay;
-            }
+      c, [ subsystem = shared_from_this(),
+           client_id ](EventSource event_source,
+                       std::shared_ptr<stagezero::Client> stagezero_client,
+                       co::Coroutine * c)
+             ->StateTransition {
+               switch (event_source) {
+               case EventSource::kStageZero: {
+                 // Event from stagezero.
+                 absl::StatusOr<
+                     std::shared_ptr<adastra::stagezero::control::Event>>
+                     e = stagezero_client->ReadEvent(c);
+                 if (!e.ok()) {
+                   subsystem->capcom_.Log(subsystem->Name(),
+                                          toolbelt::LogLevel::kError,
+                                          "Failed to read event %s",
+                                          e.status().ToString().c_str());
+                 }
+                 std::shared_ptr<adastra::stagezero::control::Event> event = *e;
+                 switch (event->event_case()) {
+                 case adastra::stagezero::control::Event::kConnect:
+                 case adastra::stagezero::control::Event::kDisconnect:
+                   break;
+                 case adastra::stagezero::control::Event::kStart: {
+                   // This might happen if a process crashed while others are
+                   // starting up.  Ignore it, as it will be replaced by a
+                   // kStop event when the process is killed.
+                   break;
+                 }
+                 case adastra::stagezero::control::Event::kStop: {
+                   std::shared_ptr<Process> proc =
+                       subsystem->FindProcess(event->stop().process_id());
+                   if (proc != nullptr) {
+                     proc->SetStopped();
+                     subsystem->DeleteProcessId(proc->GetProcessId());
+                   }
+                   break;
+                 }
+                 case adastra::stagezero::control::Event::kOutput:
+                   subsystem->SendOutput(event->output().fd(),
+                                         event->output().data(), c);
+                   break;
+                 case adastra::stagezero::control::Event::kLog:
+                   subsystem->capcom_.Log(event->log());
+                   break;
+                 case adastra::stagezero::control::Event::kParameter:
+                   if (absl::Status status =
+                           subsystem->capcom_.HandleParameterEvent(
+                               event->parameter(), c);
+                       !status.ok()) {
+                     subsystem->capcom_.Log(subsystem->Name(),
+                                            toolbelt::LogLevel::kError, "%s",
+                                            status.ToString().c_str());
+                   }
+                   break;
+                 case adastra::stagezero::control::Event::kTelemetry:
+                   subsystem->capcom_.SendTelemetryEvent(subsystem->Name(),
+                                                         event->telemetry());
+                   break;
+                 case adastra::stagezero::control::Event::EVENT_NOT_SET:
+                   break;
+                 }
+                 break;
+               }
+               case EventSource::kMessage: {
+                 // Incoming message.
+                 absl::StatusOr<std::shared_ptr<Message>> msg =
+                     subsystem->ReadMessage();
+                 if (!msg.ok()) {
+                   subsystem->capcom_.Log(subsystem->Name(),
+                                          toolbelt::LogLevel::kError, "%s",
+                                          msg.status().ToString().c_str());
+                 }
+                 auto message = *msg;
+                 switch (message->code) {
+                 case Message::kChangeAdmin:
+                   if (message->state.admin == AdminState::kOnline) {
+                     // We are restarting and have been asked to go online.
+                     subsystem->RestartNow(client_id);
+                     return StateTransition::kLeave;
+                   }
+                   subsystem->NotifyParents();
+                   break;
+                 case Message::kReportOper:
+                   // Notification from a child while in restarting state.  We
+                   // shouldn't get this.
+                   subsystem->capcom_.Log(
+                       subsystem->Name(), toolbelt::LogLevel::kError,
+                       "Subsystem %s has reported oper state "
+                       "as %s while in restarting state",
+                       message->sender->Name().c_str(),
+                       OperStateName(message->state.oper));
+                   break;
+                 case Message::kAbort:
+                   return subsystem->Abort(message->emergency_abort);
+                 case Message::kRestart:
+                   return StateTransition::kStay;
+                 case Message::kRestartProcesses:
+                 case Message::kRestartCrashedProcesses:
+                   // We are restarting and got an event to restart crashed
+                   // processes. This can happen if a process was in its restart
+                   // delay and then asked to restart. We just ignore the
+                   // request and continue stopping.
+                   return StateTransition::kStay;
+                 case Message::kSendTelemetryCommand:
+                   break;
+                 }
+                 break;
+               }
+               case EventSource::kUnknown:
+                 break;
+               }
+               // If all our processes are not stopped we can notify our
+               // parents.  We stay in this state.
+               if (!subsystem->AllProcessesStopped()) {
+                 return StateTransition::kStay;
+               }
 
-            // All our processes are down.  Notify the parents that we have
-            // stopped everything and are in kRestarting state.
-            if (subsystem->parents_.empty()) {
-              // We have no parents.  Restart now and leave this state.
-              subsystem->RestartNow(client_id);
-              return StateTransition::kLeave;
-            }
-            // Notify the parents and stay in kRestarting state.
-            subsystem->NotifyParents();
-            return StateTransition::kStay;
-          });
+               // All our processes are down.  Notify the parents that we have
+               // stopped everything and are in kRestarting state.
+               if (subsystem->parents_.empty()) {
+                 // We have no parents.  Restart now and leave this state.
+                 subsystem->RestartNow(client_id);
+                 return StateTransition::kLeave;
+               }
+               // Notify the parents and stay in kRestarting state.
+               subsystem->NotifyParents();
+               return StateTransition::kStay;
+             });
 }
 
 void Subsystem::RestartingProcesses(uint32_t client_id, co::Coroutine *c) {
@@ -1848,145 +1854,146 @@ void Subsystem::RestartingProcesses(uint32_t client_id, co::Coroutine *c) {
   // it could happen.
   absl::flat_hash_set<std::shared_ptr<Process>> started_processes;
   RunSubsystemInState(
-      c,
-      [ subsystem = shared_from_this(), client_id, &started_processes ](
-          EventSource event_source,
-          std::shared_ptr<stagezero::Client> stagezero_client,
-          co::Coroutine * c2)
-          ->StateTransition {
-            switch (event_source) {
-            case EventSource::kStageZero: {
-              // Event from stagezero.
-              absl::StatusOr<
-                  std::shared_ptr<adastra::stagezero::control::Event>>
-                  e = stagezero_client->ReadEvent(c2);
-              if (!e.ok()) {
-                subsystem->capcom_.Log(
-                    subsystem->Name(), toolbelt::LogLevel::kError,
-                    "Failed to read event %s", e.status().ToString().c_str());
-                return StateTransition::kStay;
-              }
-              std::shared_ptr<adastra::stagezero::control::Event> event = *e;
-              switch (event->event_case()) {
-              case adastra::stagezero::control::Event::kConnect:
-              case adastra::stagezero::control::Event::kDisconnect:
-                break;
-              case adastra::stagezero::control::Event::kStart: {
-                // If a process starts up very quickly after we've stopped it
-                // we might get the start event here.
-                std::shared_ptr<Process> proc =
-                    subsystem->FindProcess(event->start().process_id());
-                if (proc != nullptr) {
-                  proc->SetRunning();
-                  proc->ClearAlarm(subsystem->capcom_);
-                  started_processes.insert(proc);
-                }
+      c, [ subsystem = shared_from_this(), client_id, &started_processes ](
+             EventSource event_source,
+             std::shared_ptr<stagezero::Client> stagezero_client,
+             co::Coroutine * c2)
+             ->StateTransition {
+               switch (event_source) {
+               case EventSource::kStageZero: {
+                 // Event from stagezero.
+                 absl::StatusOr<
+                     std::shared_ptr<adastra::stagezero::control::Event>>
+                     e = stagezero_client->ReadEvent(c2);
+                 if (!e.ok()) {
+                   subsystem->capcom_.Log(subsystem->Name(),
+                                          toolbelt::LogLevel::kError,
+                                          "Failed to read event %s",
+                                          e.status().ToString().c_str());
+                   return StateTransition::kStay;
+                 }
+                 std::shared_ptr<adastra::stagezero::control::Event> event = *e;
+                 switch (event->event_case()) {
+                 case adastra::stagezero::control::Event::kConnect:
+                 case adastra::stagezero::control::Event::kDisconnect:
+                   break;
+                 case adastra::stagezero::control::Event::kStart: {
+                   // If a process starts up very quickly after we've stopped it
+                   // we might get the start event here.
+                   std::shared_ptr<Process> proc =
+                       subsystem->FindProcess(event->start().process_id());
+                   if (proc != nullptr) {
+                     proc->SetRunning();
+                     proc->ClearAlarm(subsystem->capcom_);
+                     started_processes.insert(proc);
+                   }
 
-                break;
-              }
-              case adastra::stagezero::control::Event::kStop: {
-                std::shared_ptr<Process> proc =
-                    subsystem->FindProcess(event->stop().process_id());
-                if (proc != nullptr) {
-                  if (started_processes.contains(proc)) {
-                    // If the processes started quickly and then died again
-                    // we need to treat it as a crash.  We stay in this state
-                    // and try to restart the process.
-                    started_processes.erase(proc);
-                    return subsystem->RestartIfPossibleAfterProcessCrash(
-                        proc->GetProcessId(), client_id, /*exited=*/false, 0,
-                        c2);
-                  }
-                  proc->SetStopped();
-                  subsystem->DeleteProcessId(proc->GetProcessId());
-                }
-                break;
-              }
-              case adastra::stagezero::control::Event::kOutput:
-                subsystem->SendOutput(event->output().fd(),
-                                      event->output().data(), c2);
-                break;
-              case adastra::stagezero::control::Event::kLog:
-                subsystem->capcom_.Log(event->log());
-                break;
-              case adastra::stagezero::control::Event::kParameter:
-                if (absl::Status status =
-                        subsystem->capcom_.HandleParameterEvent(
-                            event->parameter(), c2);
-                    !status.ok()) {
-                  subsystem->capcom_.Log(subsystem->Name(),
-                                         toolbelt::LogLevel::kError, "%s",
-                                         status.ToString().c_str());
-                }
-                break;
-              case adastra::stagezero::control::Event::kTelemetry:
-                subsystem->capcom_.SendTelemetryStatusEvent(event->telemetry());
-                break;
-              case adastra::stagezero::control::Event::EVENT_NOT_SET:
-                break;
-              }
-              break;
-            }
-            case EventSource::kMessage: {
-              // Incoming message.
-              absl::StatusOr<std::shared_ptr<Message>> msg =
-                  subsystem->ReadMessage();
-              if (!msg.ok()) {
-                subsystem->capcom_.Log(subsystem->Name(),
-                                       toolbelt::LogLevel::kError, "%s",
-                                       msg.status().ToString().c_str());
-              }
-              auto message = *msg;
-              switch (message->code) {
-              case Message::kChangeAdmin:
-                if (message->state.admin == AdminState::kOnline) {
-                  // We are restarting processes and have been asked to go
-                  // online.
-                  subsystem->EnterState(OperState::kConnecting, client_id);
-                  return StateTransition::kLeave;
-                }
-                subsystem->NotifyParents();
-                break;
-              case Message::kReportOper:
-                // Notification from a child while in restarting state.  We
-                // shouldn't get this.
-                subsystem->capcom_.Log(
-                    subsystem->Name(), toolbelt::LogLevel::kError,
-                    "Subsystem %s has reported oper state "
-                    "as %s while in restarting processes state",
-                    message->sender->Name().c_str(),
-                    OperStateName(message->state.oper));
-                break;
-              case Message::kAbort:
-                return subsystem->Abort(message->emergency_abort);
-              case Message::kRestart:
-                return StateTransition::kStay;
-              case Message::kRestartProcesses:
-                // Ignore as we are already restarting processes.
-                break;
-              case Message::kRestartCrashedProcesses:
-                // We are restarting and got an event to restart crashed
-                // processes. This can happen if a process was in its restart
-                // delay and then asked to restart. We just ignore the
-                // request and continue stopping.
-                return StateTransition::kStay;
-              case Message::kSendTelemetryCommand:
-                break;
-              }
-              break;
-            }
-            case EventSource::kUnknown:
-              break;
-            }
-            if (!subsystem->AllProcessesStopped(
-                    subsystem->processes_to_restart_)) {
-              return StateTransition::kStay;
-            }
+                   break;
+                 }
+                 case adastra::stagezero::control::Event::kStop: {
+                   std::shared_ptr<Process> proc =
+                       subsystem->FindProcess(event->stop().process_id());
+                   if (proc != nullptr) {
+                     if (started_processes.contains(proc)) {
+                       // If the processes started quickly and then died again
+                       // we need to treat it as a crash.  We stay in this state
+                       // and try to restart the process.
+                       started_processes.erase(proc);
+                       return subsystem->RestartIfPossibleAfterProcessCrash(
+                           proc->GetProcessId(), client_id, /*exited=*/false, 0,
+                           c2);
+                     }
+                     proc->SetStopped();
+                     subsystem->DeleteProcessId(proc->GetProcessId());
+                   }
+                   break;
+                 }
+                 case adastra::stagezero::control::Event::kOutput:
+                   subsystem->SendOutput(event->output().fd(),
+                                         event->output().data(), c2);
+                   break;
+                 case adastra::stagezero::control::Event::kLog:
+                   subsystem->capcom_.Log(event->log());
+                   break;
+                 case adastra::stagezero::control::Event::kParameter:
+                   if (absl::Status status =
+                           subsystem->capcom_.HandleParameterEvent(
+                               event->parameter(), c2);
+                       !status.ok()) {
+                     subsystem->capcom_.Log(subsystem->Name(),
+                                            toolbelt::LogLevel::kError, "%s",
+                                            status.ToString().c_str());
+                   }
+                   break;
+                 case adastra::stagezero::control::Event::kTelemetry:
+                   subsystem->capcom_.SendTelemetryEvent(subsystem->Name(),
+                                                         event->telemetry());
+                   break;
+                 case adastra::stagezero::control::Event::EVENT_NOT_SET:
+                   break;
+                 }
+                 break;
+               }
+               case EventSource::kMessage: {
+                 // Incoming message.
+                 absl::StatusOr<std::shared_ptr<Message>> msg =
+                     subsystem->ReadMessage();
+                 if (!msg.ok()) {
+                   subsystem->capcom_.Log(subsystem->Name(),
+                                          toolbelt::LogLevel::kError, "%s",
+                                          msg.status().ToString().c_str());
+                 }
+                 auto message = *msg;
+                 switch (message->code) {
+                 case Message::kChangeAdmin:
+                   if (message->state.admin == AdminState::kOnline) {
+                     // We are restarting processes and have been asked to go
+                     // online.
+                     subsystem->EnterState(OperState::kConnecting, client_id);
+                     return StateTransition::kLeave;
+                   }
+                   subsystem->NotifyParents();
+                   break;
+                 case Message::kReportOper:
+                   // Notification from a child while in restarting state.  We
+                   // shouldn't get this.
+                   subsystem->capcom_.Log(
+                       subsystem->Name(), toolbelt::LogLevel::kError,
+                       "Subsystem %s has reported oper state "
+                       "as %s while in restarting processes state",
+                       message->sender->Name().c_str(),
+                       OperStateName(message->state.oper));
+                   break;
+                 case Message::kAbort:
+                   return subsystem->Abort(message->emergency_abort);
+                 case Message::kRestart:
+                   return StateTransition::kStay;
+                 case Message::kRestartProcesses:
+                   // Ignore as we are already restarting processes.
+                   break;
+                 case Message::kRestartCrashedProcesses:
+                   // We are restarting and got an event to restart crashed
+                   // processes. This can happen if a process was in its restart
+                   // delay and then asked to restart. We just ignore the
+                   // request and continue stopping.
+                   return StateTransition::kStay;
+                 case Message::kSendTelemetryCommand:
+                   break;
+                 }
+                 break;
+               }
+               case EventSource::kUnknown:
+                 break;
+               }
+               if (!subsystem->AllProcessesStopped(
+                       subsystem->processes_to_restart_)) {
+                 return StateTransition::kStay;
+               }
 
-            // All processes down, bring them back up again.
-            subsystem->EnterState(OperState::kConnecting, client_id);
-            return StateTransition::kLeave;
-          });
+               // All processes down, bring them back up again.
+               subsystem->EnterState(OperState::kConnecting, client_id);
+               return StateTransition::kLeave;
+             });
 }
 
 void Subsystem::Broken(uint32_t client_id, co::Coroutine *c) {

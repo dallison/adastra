@@ -293,6 +293,7 @@ public:
   absl::StatusOr<std::vector<std::string>> ListParameters();
   std::vector<Parameter> GetAllParameters();
 
+  void Clear() { nodes_.clear(); }
   void Dump(std::ostream &os);
 
 private:

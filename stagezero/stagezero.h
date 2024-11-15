@@ -204,7 +204,7 @@ private:
 
   absl::Status SetParameter(const std::string &name,
                             const parameters::Value &value, co::Coroutine *c);
-  absl::Status DeleteParameter(const std::string &name, co::Coroutine *c);
+  absl::Status DeleteParameters(const std::vector<std::string> &names, co::Coroutine *c);
   absl::Status
   UploadParameters(const std::vector<parameters::Parameter> &params,
                    co::Coroutine *c);
@@ -225,7 +225,7 @@ private:
   absl::Status SendTelemetryCommand(const std::string &process_id,
                                     const adastra::proto::telemetry::Command &cmd,
                                     co::Coroutine *c);
-                                    
+
   co::CoroutineScheduler &co_scheduler_;
   toolbelt::InetAddress addr_;
   std::string runfiles_dir_;

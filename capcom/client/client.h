@@ -180,8 +180,24 @@ public:
   absl::Status SetParameter(const std::string &name, const parameters::Value &v,
                             co::Coroutine *c = nullptr);
 
-  absl::Status DeleteParameter(const std::string &name,
-                               co::Coroutine *c = nullptr);
+  absl::Status DeleteParameters(const std::vector<std::string> &names = {},
+                                co::Coroutine *c = nullptr);
+
+  absl::StatusOr<std::vector<parameters::Parameter>>
+  GetParameters(const std::vector<std::string> &names = {},
+                co::Coroutine *c = nullptr);
+
+  absl::StatusOr<parameters::Value> GetParameter(const std::string &name,
+                                                 co::Coroutine *c = nullptr) {
+    auto paras = GetParameters({name}, c);
+    if (!paras.ok()) {
+      return paras.status();
+    }
+    if (paras->empty()) {
+      return absl::InternalError("Parameter not found");
+    }
+    return paras->front().value;
+  }
 
   absl::Status
   UploadParameters(const std::vector<parameters::Parameter> &params,
@@ -221,10 +237,9 @@ public:
   SendTelemetryCommandToSubsystem(const std::string &subsystem,
                                   const ::stagezero::TelemetryCommand &command,
                                   co::Coroutine *c = nullptr);
-  absl::Status
-  SendTelemetryCommandToProcess(const std::string& subsystem, const std::string &process_id,
-                                const ::stagezero::TelemetryCommand &command,
-                                co::Coroutine *c = nullptr);
+  absl::Status SendTelemetryCommandToProcess(
+      const std::string &subsystem, const std::string &process_id,
+      const ::stagezero::TelemetryCommand &command, co::Coroutine *c = nullptr);
 
 private:
   absl::Status WaitForSubsystemState(const std::string &subsystem,

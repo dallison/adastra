@@ -24,8 +24,8 @@ template <typename Request, typename Response, typename Event>
 class TCPClientHandler : public std::enable_shared_from_this<
                              TCPClientHandler<Request, Response, Event>> {
 public:
-  TCPClientHandler(toolbelt::TCPSocket socket)
-      : command_socket_(std::move(socket)) {
+  TCPClientHandler(toolbelt::Logger &logger, toolbelt::TCPSocket socket)
+      : logger_(logger), command_socket_(std::move(socket)) {
     if (absl::Status status = stop_trigger_.Open(); !status.ok()) {
       std::cerr << "Failed to open stop trigger: " << status << std::endl;
       abort();
@@ -52,7 +52,7 @@ public:
 
   const std::string &GetClientName() const { return client_name_; }
 
-  virtual toolbelt::Logger &GetLogger() const = 0;
+  toolbelt::Logger &GetLogger() const {return logger_;};
 
   virtual co::CoroutineScheduler &GetScheduler() const = 0;
 
@@ -110,6 +110,8 @@ protected:
   // Coroutine spawned by Init to send events in the order queued by
   // QueueEvent.
   void EventSenderCoroutine(co::Coroutine *c);
+
+  toolbelt::Logger& logger_;
 
   toolbelt::TCPSocket command_socket_;
   std::string client_name_ = "unknown";

@@ -193,20 +193,31 @@ message SetParameterRequest {
 
 message SetParameterResponse { string error = 1; }
 
-message DeleteParameterRequest { string name = 1; }
-message DeleteParameterResponse { string error = 1; }
+message DeleteParametersRequest {
+  repeated string names = 1; // Empty means all.
+}
+message DeleteParametersResponse { string error = 1; }
 message UploadParametersRequest {
   repeated adastra.proto.parameters.Parameter parameters = 1;
 }
 message UploadParametersResponse { string error = 1; }
 
+message GetParametersRequest {
+  repeated string names = 1; // Empty means all.
+}
+
+message GetParametersResponse {
+  string error = 1;
+  repeated adastra.proto.parameters.Parameter parameters = 2;
+}
+
 message SendTelemetryCommandRequest {
   message Process {
-    string process_id = 1;      // Process ID (not PID)
-    string subsystem = 2;       // Subsystem owning process.
+    string process_id = 1; // Process ID (not PID)
+    string subsystem = 2;  // Subsystem owning process.
   }
   oneof dest {
-    string subsystem = 1;   // Send to all processes in the subsystem.
+    string subsystem = 1; // Send to all processes in the subsystem.
     Process process = 2;  // Send to particular process.
   }
   adastra.proto.telemetry.Command command = 3;
@@ -235,9 +246,10 @@ message Request {
     KillCgroupRequest kill_cgroup = 17;
     RestartProcessesRequest restart_processes = 19;
     SetParameterRequest set_parameter = 20;
-    DeleteParameterRequest delete_parameter = 21;
+    DeleteParametersRequest delete_parameters = 21;
     UploadParametersRequest upload_parameters = 22;
-    SendTelemetryCommandRequest send_telemetry_command = 23;
+    GetParametersRequest get_parameters = 23;
+    SendTelemetryCommandRequest send_telemetry_command = 24;
   }
 }
 
@@ -262,8 +274,9 @@ message Response {
     KillCgroupResponse kill_cgroup = 17;
     RestartProcessesResponse restart_processes = 19;
     SetParameterResponse set_parameter = 20;
-    DeleteParameterResponse delete_parameter = 21;
+    DeleteParametersResponse delete_parameters = 21;
     UploadParametersResponse upload_parameters = 22;
-    SendTelemetryCommandResponse send_telemetry_command = 23;
+    GetParametersResponse get_parameters = 23;
+    SendTelemetryCommandResponse send_telemetry_command = 24;
   }
 }

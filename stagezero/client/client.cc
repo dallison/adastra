@@ -350,7 +350,8 @@ absl::Status Client::KillCgroup(const std::string &cgroup, co::Coroutine *co) {
   }
   return absl::OkStatus();
 }
-absl::Status Client::SetParameter(const std::string &name, parameters::Value &v,
+
+absl::Status Client::SetParameter(const std::string &name, const parameters::Value &v,
                                   co::Coroutine *co) {
   if (co == nullptr) {
     co = co_;
@@ -373,21 +374,23 @@ absl::Status Client::SetParameter(const std::string &name, parameters::Value &v,
   return absl::OkStatus();
 }
 
-absl::Status Client::DeleteParameter(const std::string &name,
+absl::Status Client::DeleteParameters(const std::vector<std::string> &name,
                                      co::Coroutine *co) {
   if (co == nullptr) {
     co = co_;
   }
   adastra::stagezero::control::Request req;
-  auto x = req.mutable_delete_parameter();
-  x->set_name(name);
+  auto x = req.mutable_delete_parameters();
+  for (auto& name : name) {
+    x->add_names(name);
+  }
 
   adastra::stagezero::control::Response resp;
   if (absl::Status status = SendRequestReceiveResponse(req, resp, co);
       !status.ok()) {
     return status;
   }
-  auto &kill_resp = resp.delete_parameter();
+  auto &kill_resp = resp.delete_parameters();
   if (!kill_resp.error().empty()) {
     return absl::InternalError(
         absl::StrFormat("Failed to delete parameter: %s", kill_resp.error()));

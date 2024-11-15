@@ -118,8 +118,10 @@ message SetParameterRequest {
 
 message SetParameterResponse { string error = 1; }
 
-message DeleteParameterRequest { string name = 1; }
-message DeleteParameterResponse { string error = 1; }
+message DeleteParametersRequest {
+  repeated string names = 1; // Empty means all.
+}
+message DeleteParametersResponse { string error = 1; }
 message UploadParametersRequest {
   repeated adastra.proto.parameters.Parameter parameters = 1;
 }
@@ -150,7 +152,7 @@ message Request {
     ThawCgroupRequest thaw_cgroup = 14;
     KillCgroupRequest kill_cgroup = 15;
     SetParameterRequest set_parameter = 16;
-    DeleteParameterRequest delete_parameter = 17;
+    DeleteParametersRequest delete_parameters = 17;
     UploadParametersRequest upload_parameters = 18;
     SendTelemetryCommandRequest send_telemetry_command = 19;
   }
@@ -172,7 +174,7 @@ message Response {
     ThawCgroupResponse thaw_cgroup = 12;
     KillCgroupResponse kill_cgroup = 13;
     SetParameterResponse set_parameter = 14;
-    DeleteParameterResponse delete_parameter = 15;
+    DeleteParametersResponse delete_parameters = 15;
     UploadParametersResponse upload_parameters = 16;
     SendTelemetryCommandResponse send_telemetry_command = 17;
   }
@@ -201,6 +203,13 @@ message ConnectEvent {}
 
 message DisconnectEvent { string compute = 1; }
 
+message TelemetryEvent {
+  string process_id = 1; // Source process ID
+  uint64 timestamp = 2;
+  string compute = 3; // Compute instance
+  adastra.proto.telemetry.Status telemetry = 4;
+}
+
 message Event {
   oneof event {
     StartEvent start = 51;
@@ -210,7 +219,7 @@ message Event {
     adastra.proto.parameters.ParameterEvent parameter = 55;
     ConnectEvent connect = 56;
     DisconnectEvent disconnect = 57;
-    adastra.proto.telemetry.Status telemetry = 58;
+    TelemetryEvent telemetry = 58;
   }
 }
 

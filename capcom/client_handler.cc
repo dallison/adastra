@@ -13,6 +13,11 @@
 
 namespace adastra::capcom {
 
+ClientHandler::ClientHandler(Capcom &capcom, toolbelt::TCPSocket socket,
+                             uint32_t id)
+    : TCPClientHandler(capcom.logger_, std::move(socket)), capcom_(capcom),
+      id_(id) {}
+
 ClientHandler::~ClientHandler() {}
 
 co::CoroutineScheduler &ClientHandler::GetScheduler() const {
@@ -20,8 +25,6 @@ co::CoroutineScheduler &ClientHandler::GetScheduler() const {
 }
 
 void ClientHandler::Shutdown() {}
-
-toolbelt::Logger &ClientHandler::GetLogger() const { return capcom_.logger_; }
 
 void ClientHandler::AddCoroutine(std::unique_ptr<co::Coroutine> c) {
   capcom_.AddCoroutine(std::move(c));
@@ -61,14 +64,14 @@ absl::Status ClientHandler::SendParameterDeleteEvent(const std::string &name) {
   return QueueEvent(std::move(event));
 }
 
-absl::Status ClientHandler::SendTelemetryStatusEvent(
-    const adastra::proto::telemetry::Status &status) {
+absl::Status
+ClientHandler::SendTelemetryEvent(const adastra::proto::TelemetryEvent &event) {
   if ((event_mask_ & kTelemetryEvents) == 0) {
     return absl::OkStatus();
   }
-  auto event = std::make_shared<adastra::proto::Event>();
-  *event->mutable_telemetry() = status;
-  return QueueEvent(std::move(event));
+  auto e = std::make_shared<adastra::proto::Event>();
+  *e->mutable_telemetry() = event;
+  return QueueEvent(std::move(e));
 }
 
 absl::Status ClientHandler::SendAlarm(const Alarm &alarm) {
@@ -171,9 +174,13 @@ absl::Status ClientHandler::HandleMessage(const proto::Request &req,
     HandleSetParameter(req.set_parameter(), resp.mutable_set_parameter(), c);
     break;
 
-  case proto::Request::kDeleteParameter:
-    HandleDeleteParameter(req.delete_parameter(),
-                          resp.mutable_delete_parameter(), c);
+  case proto::Request::kDeleteParameters:
+    HandleDeleteParameters(req.delete_parameters(),
+                           resp.mutable_delete_parameters(), c);
+    break;
+
+  case proto::Request::kGetParameters:
+    HandleGetParameters(req.get_parameters(), resp.mutable_get_parameters(), c);
     break;
 
   case proto::Request::kUploadParameters:
@@ -655,11 +662,35 @@ void ClientHandler::HandleSetParameter(const proto::SetParameterRequest &req,
   }
 }
 
-void ClientHandler::HandleDeleteParameter(
-    const proto::DeleteParameterRequest &req,
-    proto::DeleteParameterResponse *response, co::Coroutine *c) {
-  if (absl::Status status = capcom_.DeleteParameter(req.name()); !status.ok()) {
+void ClientHandler::HandleDeleteParameters(
+    const proto::DeleteParametersRequest &req,
+    proto::DeleteParametersResponse *response, co::Coroutine *c) {
+  std::vector<std::string> names;
+  for (auto &name : req.names()) {
+    names.push_back(name);
+  }
+  if (absl::Status status = capcom_.DeleteParameters(names, c); !status.ok()) {
     response->set_error(status.ToString());
+  }
+}
+
+void ClientHandler::HandleGetParameters(const proto::GetParametersRequest &req,
+                                        proto::GetParametersResponse *response,
+                                        co::Coroutine *c) {
+  std::vector<std::string> names;
+  for (auto &name : req.names()) {
+    names.push_back(name);
+  }
+  absl::StatusOr<std::vector<parameters::Parameter>> status =
+      capcom_.GetParameters(names);
+  if (!status.ok()) {
+    response->set_error(status.status().ToString());
+    return;
+  }
+  for (auto &p : status.value()) {
+    auto *param = response->add_parameters();
+    param->set_name(p.name);
+    p.value.ToProto(param->mutable_value());
   }
 }
 

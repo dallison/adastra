@@ -170,6 +170,15 @@ absl::Status Capcom::ConnectUmbilical(const std::string &compute,
   // Upload all the parameters to stagezero.
   std::vector<parameters::Parameter> parameters =
       parameters_.GetAllParameters();
+  if (parameters.empty()) {
+    // No parameters, but StageZero might have some from the last time we
+    // connected, delete them.
+    if (absl::Status s = umbilical->client->DeleteParameters({}, c); !s.ok()) {
+      return absl::InternalError(absl::StrFormat(
+          "Failed to delete parameters from compute %s: %s",
+          umbilical->compute->name.c_str(), s.ToString().c_str()));
+    }
+  }
   // Send the parameters to the client.
   if (absl::Status status = umbilical->client->UploadParameters(parameters, c);
       !status.ok()) {
@@ -379,21 +388,30 @@ void Capcom::SendParameterUpdateEvent(const std::string &name,
   }
 }
 
-void Capcom::SendParameterDeleteEvent(const std::string &name) {
+void Capcom::SendParameterDeleteEvent(const std::vector<std::string> &names) {
   for (auto &handler : client_handlers_) {
-    if (absl::Status status = handler->SendParameterDeleteEvent(name);
-        !status.ok()) {
-      logger_.Log(toolbelt::LogLevel::kError,
-                  "Failed to send parameter event to client %s: %s",
-                  handler->GetClientName().c_str(), status.ToString().c_str());
+    for (auto &name : names) {
+      if (absl::Status status = handler->SendParameterDeleteEvent(name);
+          !status.ok()) {
+        logger_.Log(toolbelt::LogLevel::kError,
+                    "Failed to send parameter event to client %s: %s",
+                    handler->GetClientName().c_str(),
+                    status.ToString().c_str());
+      }
     }
   }
 }
 
-void Capcom::SendTelemetryStatusEvent(
-    const adastra::proto::telemetry::Status &status) {
+void Capcom::SendTelemetryEvent(
+    const std::string &subsystem,
+    const adastra::stagezero::control::TelemetryEvent &event) {
+  adastra::proto::TelemetryEvent capcom_event;
+  capcom_event.set_subsystem(subsystem);
+  capcom_event.mutable_telemetry()->CopyFrom(event.telemetry());
+  capcom_event.set_process_id(event.process_id());
+  capcom_event.set_timestamp(event.timestamp());
   for (auto &handler : client_handlers_) {
-    if (absl::Status s = handler->SendTelemetryStatusEvent(status); !s.ok()) {
+    if (absl::Status s = handler->SendTelemetryEvent(capcom_event); !s.ok()) {
       logger_.Log(toolbelt::LogLevel::kError,
                   "Failed to send telemetry status event to client %s: %s",
                   handler->GetClientName().c_str(), s.ToString().c_str());
@@ -505,7 +523,7 @@ absl::Status Capcom::AddGlobalVariable(const Variable &var, co::Coroutine *c) {
 }
 
 absl::Status Capcom::PropagateParameterUpdate(const std::string &name,
-                                              parameters::Value &value,
+                                              const parameters::Value &value,
                                               co::Coroutine *c) {
   absl::Status result = absl::OkStatus();
 
@@ -525,8 +543,9 @@ absl::Status Capcom::PropagateParameterUpdate(const std::string &name,
   return result;
 }
 
-absl::Status Capcom::PropagateParameterDelete(const std::string &name,
-                                              co::Coroutine *c) {
+absl::Status
+Capcom::PropagateParameterDelete(const std::vector<std::string> &names,
+                                 co::Coroutine *c) {
 
   absl::Status result = absl::OkStatus();
 
@@ -535,7 +554,7 @@ absl::Status Capcom::PropagateParameterDelete(const std::string &name,
       continue;
     }
 
-    absl::Status status = umbilical.client->DeleteParameter(name, c);
+    absl::Status status = umbilical.client->DeleteParameters(names, c);
     if (!status.ok()) {
       // This will fail on the stagezero that deleted the parameter.
     }
@@ -550,14 +569,44 @@ absl::Status Capcom::SetParameter(const std::string &name,
       !status.ok()) {
     return status;
   }
-  return absl::OkStatus();
+  SendParameterUpdateEvent(name, value);
+
+  return PropagateParameterUpdate(name, value, nullptr);
 }
 
-absl::Status Capcom::DeleteParameter(const std::string &name) {
-  if (absl::Status status = parameters_.DeleteParameter(name); !status.ok()) {
-    return status;
+absl::Status Capcom::DeleteParameters(const std::vector<std::string> &names,
+                                      co::Coroutine *c) {
+  if (names.empty()) {
+    parameters_.Clear();
+  } else {
+    for (auto &name : names) {
+      if (absl::Status status = parameters_.DeleteParameter(name);
+          !status.ok()) {
+        return status;
+      }
+    }
   }
-  return absl::OkStatus();
+  SendParameterDeleteEvent(names);
+
+  return PropagateParameterDelete(names, c);
+}
+
+absl::StatusOr<std::vector<parameters::Parameter>>
+Capcom::GetParameters(const std::vector<std::string> &names) {
+  if (names.empty()) {
+    return parameters_.GetAllParameters();
+  }
+
+  std::vector<parameters::Parameter> result;
+  for (auto &name : names) {
+    absl::StatusOr<parameters::Value> value =
+        parameters_.GetParameter(name);
+    if (!value.ok()) {
+      return value.status();
+    }
+    result.push_back({name, *value});
+  }
+  return result;
 }
 
 absl::Status
@@ -581,23 +630,14 @@ absl::Status Capcom::HandleParameterEvent(
         !status.ok()) {
       return status;
     }
-    if (absl::Status status =
-            PropagateParameterUpdate(event.update().name(), value, c);
-        !status.ok()) {
-      return status;
-    }
     SendParameterUpdateEvent(event.update().name(), value);
     break;
   }
   case adastra::proto::parameters::ParameterEvent::kDelete: {
-    if (absl::Status status = DeleteParameter(event.delete_()); !status.ok()) {
-      return status;
-    }
-    if (absl::Status status = PropagateParameterDelete(event.delete_(), c);
+    if (absl::Status status = DeleteParameters({event.delete_()}, c);
         !status.ok()) {
       return status;
     }
-    SendParameterDeleteEvent(event.delete_());
     break;
   }
   default:

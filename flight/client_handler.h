@@ -27,16 +27,13 @@ class ClientHandler : public common::TCPClientHandler<flight::proto::Request,
                                                       flight::proto::Response,
                                                       adastra::proto::Event> {
 public:
-  ClientHandler(FlightDirector &flight, toolbelt::TCPSocket socket)
-      : TCPClientHandler(std::move(socket)), flight_(flight) {}
+  ClientHandler(FlightDirector &flight, toolbelt::TCPSocket socket);
   ~ClientHandler();
 
   absl::Status SendSubsystemStatusEvent(Subsystem *subsystem);
   absl::Status SendAlarm(const Alarm &alarm);
 
   co::CoroutineScheduler &GetScheduler() const override;
-
-  toolbelt::Logger &GetLogger() const override;
 
   void AddCoroutine(std::unique_ptr<co::Coroutine> c) override;
 

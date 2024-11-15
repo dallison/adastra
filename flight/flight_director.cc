@@ -683,8 +683,10 @@ void FlightDirector::FlattenSubsystemGraph(
 
 absl::Status FlightDirector::RegisterCompute(const Compute &compute,
                                              co::Coroutine *c) {
-  return capcom_client_.AddCompute(compute.name, compute.addr, compute.cgroups,
-                                   c);
+  return capcom_client_.AddCompute(
+      compute.name, compute.addr,
+      adastra::capcom::client::ComputeConnectionPolicy::kDynamic,
+      compute.cgroups, c);
 }
 
 absl::Status FlightDirector::RegisterGlobalVariable(const Variable &var,
@@ -758,7 +760,7 @@ absl::Status FlightDirector::RegisterSubsystem(Subsystem *subsystem,
           .user = src->user,
           .group = src->group,
           .cgroup = src->cgroup,
-     });
+      });
       break;
     }
     }

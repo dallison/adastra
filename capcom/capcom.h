@@ -196,9 +196,9 @@ private:
   void SendSubsystemStatusEvent(Subsystem *subsystem);
   void SendParameterUpdateEvent(const std::string &name,
                                 const parameters::Value &value);
-  void SendParameterDeleteEvent(const std::string &name);
+  void SendParameterDeleteEvent(const std::vector<std::string> &names);
   void
-  SendTelemetryStatusEvent(const adastra::proto::telemetry::Status &status);
+  SendTelemetryEvent(const std::string& subsystem, const adastra::stagezero::control::TelemetryEvent &event);
 
   void SendAlarm(const Alarm &alarm);
 
@@ -214,9 +214,9 @@ private:
                                       co::Coroutine *c);
 
   absl::Status PropagateParameterUpdate(const std::string &name,
-                                        parameters::Value &value,
+                                        const parameters::Value &value,
                                         co::Coroutine *c);
-  absl::Status PropagateParameterDelete(const std::string &name,
+  absl::Status PropagateParameterDelete(const std::vector<std::string> &names,
                                         co::Coroutine *c);
 
   void Log(const std::string &source, toolbelt::LogLevel level, const char *fmt,
@@ -234,10 +234,12 @@ private:
 
   absl::Status SetParameter(const std::string &name,
                             const parameters::Value &value);
-  absl::Status DeleteParameter(const std::string &name);
+  absl::Status DeleteParameters(const std::vector<std::string> &names, co::Coroutine* c);
   absl::Status
   SetAllParameters(const std::vector<parameters::Parameter> &params);
-
+  absl::StatusOr<std::vector<parameters::Parameter>> GetParameters(
+      const std::vector<std::string> &names);
+      
   absl::Status
   HandleParameterEvent(const adastra::proto::parameters::ParameterEvent &event,
                        co::Coroutine *c);

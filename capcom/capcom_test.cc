@@ -21,6 +21,7 @@
 #include <thread>
 
 ABSL_FLAG(bool, start_capcom, true, "Start capcom");
+ABSL_FLAG(bool, start_stagezero, true, "Start stagezero");
 
 using AdminState = adastra::AdminState;
 using OperState = adastra::OperState;
@@ -45,6 +46,9 @@ public:
   }
 
   static void StartStageZero(int port = 6522) {
+    if (!absl::GetFlag(FLAGS_start_stagezero)) {
+      return;
+    }
     fprintf(stderr, "Starting StageZero process\n");
 
     // Capcom will write to this pipe to notify us when it
@@ -60,7 +64,6 @@ public:
     if (stagezero_pid_ == 0) {
       signal(SIGTERM, StageZeroSignalHandler);
       signal(SIGINT, StageZeroSignalHandler);
-      signal(SIGSEGV, StageZeroSignalHandler);
       // Child process.
       absl::Status s = stagezero_->Run();
       if (!s.ok()) {
@@ -280,7 +283,7 @@ public:
     FAIL();
   }
 
-  std::unique_ptr<::adastra::proto::telemetry::Status>
+  std::unique_ptr<::adastra::proto::TelemetryEvent>
   WaitForTelemetryEvent(adastra::capcom::client::Client &client) {
     std::cout << "waiting for telemetry event " << std::endl;
     for (int retry = 0; retry < 10; retry++) {
@@ -291,8 +294,8 @@ public:
       std::shared_ptr<adastra::Event> event = *e;
 
       if (event->type == adastra::EventType::kTelemetry) {
-        return std::make_unique<::adastra::proto::telemetry::Status>(
-            std::get<::adastra::proto::telemetry::Status>(event->event));
+        return std::make_unique<::adastra::proto::TelemetryEvent>(
+            std::get<::adastra::proto::TelemetryEvent>(event->event));
       }
       return nullptr;
     }
@@ -602,14 +605,17 @@ TEST_F(CapcomTest, StartSimpleSubsystemCustomTelemetryCommand) {
 
   auto ts = WaitForTelemetryEvent(client);
   ASSERT_TRUE(ts != nullptr);
-  ASSERT_TRUE(ts->status().Is<::testdata::telemetry::PidTelemetryStatus>());
+  ASSERT_TRUE(
+      ts->telemetry().status().Is<::testdata::telemetry::PidTelemetryStatus>());
   std::cerr << ts->DebugString();
 
   for (int i = 0; i < 10; i++) {
     ts = WaitForTelemetryEvent(client);
-    if (ts->status().Is<::testdata::telemetry::TimeTelemetryStatus>()) {
+    if (ts->telemetry()
+            .status()
+            .Is<::testdata::telemetry::TimeTelemetryStatus>()) {
       ::testdata::telemetry::TimeTelemetryStatus status;
-      auto ok = ts->status().UnpackTo(&status);
+      auto ok = ts->telemetry().status().UnpackTo(&status);
       ASSERT_TRUE(ok);
       std::cout << "Time: " << status.time() << std::endl;
     }
@@ -682,11 +688,10 @@ TEST_F(CapcomTest, StartSimpleSubsystemNoStageZeroAbort) {
 
   status = client.RemoveSubsystem("foobar1", false);
   ASSERT_TRUE(status.ok());
+  StartStageZero();
 }
 
 TEST_F(CapcomTest, StartSimpleSubsystemStageZeroDisconnect) {
-  StopStageZero();
-  StartStageZero();
   adastra::capcom::client::Client client(ClientMode::kNonBlocking);
   InitClient(client, "foobar1");
 
@@ -2190,7 +2195,10 @@ TEST_F(CapcomTest, Parameters) {
   adastra::capcom::client::Client client(ClientMode::kBlocking);
   InitClient(client, "foobar1");
 
-  absl::Status status = client.SetParameter("/foo/bar", "value1");
+  absl::Status status = client.DeleteParameters();
+  ASSERT_TRUE(status.ok());
+
+  status = client.SetParameter("/foo/bar", "value1");
   ASSERT_TRUE(status.ok());
 
   status = client.SetParameter("/foo/baz", "value2");
@@ -2228,7 +2236,10 @@ TEST_F(CapcomTest, LocalParameters) {
   adastra::capcom::client::Client client(ClientMode::kBlocking);
   InitClient(client, "foobar1");
 
-  absl::Status status = client.SetParameter("/foo/bar", "global-value1");
+  absl::Status status = client.DeleteParameters();
+  ASSERT_TRUE(status.ok());
+
+  status = client.SetParameter("/foo/bar", "global-value1");
   ASSERT_TRUE(status.ok());
 
   status = client.AddSubsystem(
@@ -2262,7 +2273,9 @@ TEST_F(CapcomTest, ParametersWithUpdate) {
   adastra::capcom::client::Client client(ClientMode::kBlocking);
   InitClient(client, "foobar1");
 
-  absl::Status status = client.SetParameter("/foo/bar", "value1");
+  absl::Status status = client.DeleteParameters();
+  ASSERT_TRUE(status.ok());
+  status = client.SetParameter("/foo/bar", "value1");
   ASSERT_TRUE(status.ok());
 
   status = client.SetParameter("/foo/baz", "value2");
@@ -2301,7 +2314,10 @@ TEST_F(CapcomTest, LocalParametersWithEvents) {
   adastra::capcom::client::Client client(ClientMode::kBlocking);
   InitClient(client, "foobar1");
 
-  absl::Status status = client.SetParameter("/foo/bar", "global-value1");
+  absl::Status status = client.DeleteParameters();
+  ASSERT_TRUE(status.ok());
+
+  status = client.SetParameter("/foo/bar", "global-value1");
   ASSERT_TRUE(status.ok());
 
   status = client.AddSubsystem(
@@ -2337,6 +2353,9 @@ TEST_F(CapcomTest, ParameterPerformance) {
   adastra::capcom::client::Client client(ClientMode::kBlocking);
   InitClient(client, "foobar1");
 
+  absl::Status status = client.DeleteParameters();
+  ASSERT_TRUE(status.ok());
+
   // Add a lot of global parameters.
   for (int i = 0; i < 10; i++) {
     for (int j = 0; j < 10; j++) {
@@ -2359,7 +2378,7 @@ TEST_F(CapcomTest, ParameterPerformance) {
       }
     }
   }
-  absl::Status status = client.AddSubsystem(
+  status = client.AddSubsystem(
       "param", {
                    .static_processes = {{
                        .name = "params",
@@ -2388,7 +2407,10 @@ TEST_F(CapcomTest, AllParameterTypes) {
   adastra::capcom::client::Client client(ClientMode::kBlocking);
   InitClient(client, "foobar1");
 
-  absl::Status status = client.SetParameter("/parameter/int32", int32_t(1234));
+  absl::Status status = client.DeleteParameters();
+  ASSERT_TRUE(status.ok());
+
+  status = client.SetParameter("/parameter/int32", int32_t(1234));
   ASSERT_TRUE(status.ok());
 
   status = client.SetParameter("/parameter/int64", int64_t(4321));
@@ -2418,7 +2440,7 @@ TEST_F(CapcomTest, AllParameterTypes) {
   std::vector<adastra::parameters::Value> values;
   values.push_back(int32_t(1234));
   values.push_back(int64_t(4321));
-  values.push_back("string1");
+  values.push_back(std::string("string1"));
 
   status = client.SetParameter("/parameter/vector", values);
   ASSERT_TRUE(status.ok());
@@ -2426,7 +2448,7 @@ TEST_F(CapcomTest, AllParameterTypes) {
   std::map<std::string, adastra::parameters::Value> map;
   map["int32"] = int32_t(1234);
   map["int64"] = int64_t(4321);
-  map["string"] = "string1";
+  map["string"] = std::string("string1");
 
   status = client.SetParameter("/parameter/map", map);
   ASSERT_TRUE(status.ok());
@@ -2445,6 +2467,57 @@ TEST_F(CapcomTest, AllParameterTypes) {
   // Start the subsystem
   status = client.StartSubsystem("param");
   ASSERT_TRUE(status.ok());
+
+  // Get all the parameters.
+  auto params = client.GetParameters();
+  ASSERT_TRUE(params.ok());
+  ASSERT_EQ(12, params->size());
+
+  // Print the parameters.
+  for (auto &p : *params) {
+    std::cerr << p.name << " = " << p.value << std::endl;
+  }  
+
+  struct {
+    std::string name;
+    adastra::parameters::Value value;
+  } expected_parameters[] = {
+      {"/parameter/int32", int32_t(1234)},
+      {"/parameter/int64", int64_t(4321)},
+      {"/parameter/string1", "string1"},
+      {"/parameter/string2", "string2"},
+      {"/parameter/double", 3.14159265},
+      {"/parameter/bool", true},
+      {"/parameter/bytes", bytes},
+      {"/parameter/timespec", ts},
+      {"/parameter/vector", values},
+      {"/parameter/map/int32", int32_t(1234)},
+      {"/parameter/map/int64", int64_t(4321)},
+      {"/parameter/map/string", "string1"},
+  };
+  // Check the parameters against the expected values.
+  for (auto &p : expected_parameters) {
+    std::cerr << "Checking " << p.name << std::endl;
+    auto it = std::find_if(params->begin(), params->end(),
+                           [&p](const adastra::parameters::Parameter &param) {
+                             return param.name == p.name;
+                           });
+    ASSERT_NE(it, params->end());
+    ASSERT_EQ(p.value, it->value);
+  }
+
+  // Get the value of each parameter individually and check its value.
+  for (auto &p : expected_parameters) {
+    auto value = client.GetParameter(p.name);
+    ASSERT_TRUE(value.ok());
+    ASSERT_EQ(p.value, *value);
+  }
+
+  // Check the map value.
+  auto map_value = client.GetParameter("/parameter/map");
+  ASSERT_TRUE(map_value.ok());
+  ASSERT_EQ(adastra::parameters::Type::kMap, map_value->GetType());
+  ASSERT_EQ(map, map_value->GetMap());
 
   sleep(1);
   // Stop the subsystem.

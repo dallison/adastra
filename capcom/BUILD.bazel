@@ -51,7 +51,7 @@ cc_binary(
 
 cc_test(
     name = "capcom_test",
-    size = "small",
+    size = "medium",
     srcs = ["capcom_test.cc"],
     data = [
         "//stagezero/zygote:standard_zygote",

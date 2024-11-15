@@ -44,7 +44,6 @@ void StageZero::Stop() {
 void StageZero::CloseHandler(std::shared_ptr<ClientHandler> handler) {
   for (auto it = client_handlers_.begin(); it != client_handlers_.end(); it++) {
     if (*it == handler) {
-      std::cerr << "Closing handler\n";
       client_handlers_.erase(it);
       return;
     }
@@ -301,10 +300,17 @@ absl::Status StageZero::SetParameter(const std::string &name,
   return absl::OkStatus();
 }
 
-absl::Status StageZero::DeleteParameter(const std::string &name,
-                                        co::Coroutine *c) {
-  if (absl::Status status = parameters_.DeleteParameter(name); !status.ok()) {
-    return status;
+absl::Status
+StageZero::DeleteParameters(const std::vector<std::string> &names,
+                           co::Coroutine *c) {
+  if (names.empty()) {
+    parameters_.Clear();
+    return absl::OkStatus();
+  }
+  for (auto &name : names) {
+    if (absl::Status status = parameters_.DeleteParameter(name); !status.ok()) {
+      return status;
+    }
   }
   return absl::OkStatus();
 }
@@ -312,6 +318,7 @@ absl::Status StageZero::DeleteParameter(const std::string &name,
 absl::Status
 StageZero::UploadParameters(const std::vector<parameters::Parameter> &params,
                             co::Coroutine *c) {
+  parameters_.Clear();
   for (auto &param : params) {
     if (absl::Status status = parameters_.SetParameter(param.name, param.value);
         !status.ok()) {
@@ -494,7 +501,8 @@ void StageZero::HandleParameterServerRequest(
 void StageZero::HandleTelemetryServerStatus(
     std::shared_ptr<Process> proc, const adastra::proto::telemetry::Status &s,
     std::shared_ptr<ClientHandler> client, co::Coroutine *c) {
-  absl::Status status = client->SendTelemetryStatusEvent(s);
+  absl::Status status =
+      client->SendTelemetryStatusEvent(proc->GetId(), compute_, s);
   if (!status.ok()) {
     logger_.Log(toolbelt::LogLevel::kError,
                 "Failed to send telemetry status event: %s",

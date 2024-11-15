@@ -28,8 +28,7 @@ class ClientHandler
     : public common::TCPClientHandler<control::Request, control::Response,
                                       control::Event> {
 public:
-  ClientHandler(StageZero &stagezero, toolbelt::TCPSocket socket)
-      : TCPClientHandler(std::move(socket)), stagezero_(stagezero) {}
+  ClientHandler(StageZero &stagezero, toolbelt::TCPSocket socket);
   ~ClientHandler() = default;
 
   absl::Status SendProcessStartEvent(const std::string &process_id);
@@ -43,9 +42,8 @@ public:
                                         const parameters::Value &value);
   absl::Status SendParameterDeleteEvent(const std::string &name);
   absl::Status
-  SendTelemetryStatusEvent(const adastra::proto::telemetry::Status &status);
-
-  toolbelt::Logger &GetLogger() const override;
+  SendTelemetryStatusEvent(const std::string& process_id, const std::string& compute,
+  const adastra::proto::telemetry::Status &status);
 
   co::CoroutineScheduler &GetScheduler() const override;
 
@@ -136,8 +134,8 @@ private:
   void HandleSetParameter(const control::SetParameterRequest &req,
                           control::SetParameterResponse *response,
                           co::Coroutine *c);
-  void HandleDeleteParameter(const control::DeleteParameterRequest &req,
-                             control::DeleteParameterResponse *response,
+  void HandleDeleteParameters(const control::DeleteParametersRequest &req,
+                             control::DeleteParametersResponse *response,
                              co::Coroutine *c);
   void HandleUploadParameters(const control::UploadParametersRequest &req,
                               control::UploadParametersResponse *response,
