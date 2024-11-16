@@ -57,7 +57,7 @@ void Subsystem::RunSubsystemInState(
   std::chrono::nanoseconds time_remaining =
       std::chrono::duration_cast<std::chrono::nanoseconds>(timeout);
   while (subsystem->running_) {
-    std::vector<struct pollfd> fds;
+    std::vector<int> fds;
     for (auto & [ name, umbilical ] : umbilicals_) {
       if (umbilical.state != UmbilicalState::kUmbilicalConnected) {
         continue;
@@ -65,13 +65,13 @@ void Subsystem::RunSubsystemInState(
       if (!umbilical.client->GetEventFd().Valid()) {
         continue;
       }
-      fds.push_back({umbilical.client->GetEventFd().Fd(), POLLIN});
+      fds.push_back(umbilical.client->GetEventFd().Fd());
     }
-    fds.push_back({subsystem->interrupt_.GetPollFd().Fd(), POLLIN});
-    fds.push_back({subsystem->message_pipe_.ReadFd().Fd(), POLLIN});
+    fds.push_back(subsystem->interrupt_.GetPollFd().Fd());
+    fds.push_back(subsystem->message_pipe_.ReadFd().Fd());
     auto start = std::chrono::system_clock::now();
-    int fd = time_remaining > 0s ? c->Wait(fds, time_remaining.count())
-                                 : c->Wait(fds);
+    int fd = time_remaining > 0s ? c->Wait(fds, POLLIN, time_remaining.count())
+                                 : c->Wait(fds, POLLIN);
     auto end = std::chrono::system_clock::now();
     if (fd == -1) {
       // Timeout.
