@@ -38,6 +38,7 @@ inline const char *AdminStateName(AdminState s) {
   case AdminState::kOffline:
     return "offline";
   }
+  return "unknown";
 }
 
 inline const char *OperStateName(OperState s) {
@@ -65,6 +66,7 @@ inline const char *OperStateName(OperState s) {
   case OperState::kDegraded:
     return "degraded";
   }
+  return "unknown";
 }
 
 inline std::ostream &operator<<(std::ostream &os, AdminState s) {
