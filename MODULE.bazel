@@ -35,9 +35,9 @@ http_archive(
 # Coroutines
 http_archive(
     name = "coroutines",
-    integrity = "sha256-cJ3a89VebabjRgLjHNsEsjIQE+hi+5vdtuAh4RfTXCI=",
-    strip_prefix = "co-1.3.7",
-    urls = ["https://github.com/dallison/co/archive/refs/tags/1.3.7.tar.gz"],
+    integrity = "sha256-57SN1uahs3pE+j/vddJSCknVvJXlW8C80Fo9wcupMFU=",
+    strip_prefix = "co-1.4.0",
+    urls = ["https://github.com/dallison/co/archive/refs/tags/1.4.0.tar.gz"],
 )
 
 # For local debugging of co coroutine library.
@@ -46,18 +46,18 @@ http_archive(
 #     path = "../co",
 # )
 
-http_archive(
-  name = "subspace",
-  urls = ["https://github.com/dallison/subspace/archive/refs/tags/1.3.6.tar.gz"],
-  strip_prefix = "subspace-1.3.6",
-  sha256 = "8150d692b007083124b6dfd92353301bbb70ccb56ea282705eb372bdca2cbf1c"
-)
+#http_archive(
+  #name = "subspace",
+  #urls = ["https://github.com/dallison/subspace/archive/refs/tags/1.3.6.tar.gz"],
+  #strip_prefix = "subspace-1.3.6",
+  #sha256 = "8150d692b007083124b6dfd92353301bbb70ccb56ea282705eb372bdca2cbf1c"
+#)
 
 # For local debugging of subspace library.
-# local_repository(
-#     name = "subspace",
-#     path = "../subspace",
-# )
+local_repository(
+    name = "subspace",
+    path = "../subspace",
+)
 
 # For local debugging of retro library.
 # local_repository(

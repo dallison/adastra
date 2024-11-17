@@ -33,6 +33,7 @@ void Telemetry::Init(
 }
 
 bool Telemetry::Wait(co::Coroutine *c) {
+  std::cerr << "telemetry waiting for " << read_fd_.Fd() << std::endl;
   int fd = c->Wait({read_fd_.Fd(), shutdown_fd_.GetPollFd().Fd()}, POLLIN);
   if (fd == shutdown_fd_.GetPollFd().Fd()) {
     return false;

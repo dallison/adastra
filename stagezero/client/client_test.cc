@@ -117,7 +117,7 @@ public:
   }
 
   std::string WaitForOutput(adastra::stagezero::Client &client,
-                            std::string match, int retries = 10) {
+                            std::string match, bool* got_stop = nullptr, int retries = 10) {
     std::cout << "waiting for output " << match << "\n";
     std::stringstream s;
     for (int retry = 0; retry < retries; retry++) {
@@ -129,6 +129,9 @@ public:
       }
       std::shared_ptr<adastra::stagezero::control::Event> event = *e;
       std::cout << event->DebugString();
+      if (event->event_case() == adastra::stagezero::control::Event::kStop) {
+        if (got_stop != nullptr) *got_stop = true;
+      }
       if (event->event_case() == adastra::stagezero::control::Event::kOutput) {
         s << event->output().data();
         if (s.str().find(match) != std::string::npos) {
@@ -797,7 +800,8 @@ TEST_F(ClientTest, ProcessVars) {
   ASSERT_TRUE(status.ok());
   WaitForEvent(client, adastra::stagezero::control::Event::kStart);
 
-  std::string data = WaitForOutput(client, "DONE\n");
+  bool got_stop = false;
+  std::string data = WaitForOutput(client, "DONE\n", &got_stop);
   size_t fds = data.find("STAGEZERO_PARAMETERS_FDS=");
   if (fds != std::string::npos) {
     size_t nl = data.find('\n', fds);
@@ -819,7 +823,10 @@ STAGEZERO_PARAMETERS_FDS=X:X:X
 DONE
 )";
   ASSERT_EQ(expected, data);
-  WaitForEvent(client, adastra::stagezero::control::Event::kStop);
+  std::cerr << "waiting for stop\n";
+  if (!got_stop) {
+    WaitForEvent(client, adastra::stagezero::control::Event::kStop);
+  }
 }
 
 TEST_F(ClientTest, LaunchZygoteAndStop) {
@@ -1073,7 +1080,7 @@ TEST_F(ClientTest, Namespaces) {
   std::string process_id = status->first;
   WaitForEvent(client, adastra::stagezero::control::Event::kStart);
 
-  std::string data = WaitForOutput(client, "FOO", 100);
+  std::string data = WaitForOutput(client, "FOO", nullptr, 100);
   std::cout << data;
 
 #if defined(__linux__)

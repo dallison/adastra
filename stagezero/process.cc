@@ -84,7 +84,8 @@ void Process::KillNow() {
 int Process::WaitLoop(co::Coroutine *c,
                       std::optional<std::chrono::seconds> timeout) {
 #if defined(__linux__) && HAVE_PIDFD
-  c->Wait(pid_fd_.Fd()); // Timeout ignored on linux.
+  toolbelt::FileDescriptor pidfd(dup(pid_fd_.Fd()));
+  c->Wait(pidfd.Fd()); // Timeout ignored on linux.
   // We can't really get here unless the process has exited.
   running_ = false;
   siginfo_t siginfo;
@@ -347,12 +348,13 @@ absl::Status StreamFromFileDescriptor(
     int fd, std::function<absl::Status(const char *, size_t)> writer,
     co::Coroutine *c) {
   char buffer[256];
+  toolbelt::FileDescriptor streamfd(dup(fd));
   for (;;) {
-    int wait_fd = c->Wait(fd, POLLIN);
-    if (wait_fd != fd) {
+    int wait_fd = c->Wait(streamfd.Fd(), POLLIN);
+    if (wait_fd != streamfd.Fd()) {
       return absl::InternalError("Interrupted");
     }
-    ssize_t n = ::read(fd, buffer, sizeof(buffer));
+    ssize_t n = ::read(streamfd.Fd(), buffer, sizeof(buffer));
     if (n <= 0) {
       if (n == -1) {
         return absl::InternalError(
@@ -1372,13 +1374,14 @@ absl::Status Process::Stop(co::Coroutine *c) {
           }
 #endif
         }
-      }));
+      }, "Stopper"));
   return client_->RemoveProcess(this);
 }
 
 absl::Status Process::SendInput(int fd, const std::string &data,
                                 co::Coroutine *c) {
   if (interactive_) {
+
     return WriteToProcess(interactive_this_end_.Fd(), data.data(), data.size(),
                           c);
   }

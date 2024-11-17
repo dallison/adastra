@@ -269,9 +269,10 @@ template <typename Request, typename Response, typename Event>
 inline void TCPClientHandler<Request, Response, Event>::EventSenderCoroutine(
     co::Coroutine *c) {
   auto client = this->shared_from_this();
+  toolbelt::FileDescriptor stop_trigger(dup(client->stop_trigger_.GetPollFd().Fd()));
   while (client->event_socket_.Connected()) {
     // Wait for an event to be queued.
-    int fd = c->Wait({client->stop_trigger_.GetPollFd().Fd(),
+    int fd = c->Wait({stop_trigger.Fd(),
                       client->event_trigger_.GetPollFd().Fd(),
                       event_socket_.GetFileDescriptor().Fd()},
                      POLLIN);

@@ -31,7 +31,7 @@ struct Value {
   Value(int64_t value) : type(Type::kInt64), value(value) {}
   Value(double value) : type(Type::kDouble), value(value) {}
   Value(bool value) : type(Type::kBool), value(value) {}
-  Value(const char *value) : type(Type::kString), value(value) {}
+  Value(const char *value) : type(Type::kString), value(std::string(value)) {}
   Value(std::string value) : type(Type::kString), value(std::move(value)) {}
   Value(absl::Span<char> value) : type(Type::kBytes), value(std::move(value)) {}
   Value(const std::vector<Value> &value) : type(Type::kList), value(value) {}

@@ -2248,11 +2248,11 @@ TEST_F(CapcomTest, LocalParameters) {
           .static_processes = {{
               .name = "params",
               .executable = "${runfiles_dir}/_main/testdata/params",
-              .notify = true,
               .parameters =
                   {
                       {"foo/bar", "local-value1"}, {"foo/baz", "local-value2"},
                   },
+              .notify = true,
           }},
       });
   // Start the subsystem
@@ -2287,8 +2287,8 @@ TEST_F(CapcomTest, ParametersWithUpdate) {
                    .static_processes = {{
                        .name = "params",
                        .executable = "${runfiles_dir}/_main/testdata/params",
-                       .notify = true,
                        .args = {"parameter_events"},
+                       .notify = true,
                    }},
                });
   // Start the subsystem
@@ -2326,13 +2326,12 @@ TEST_F(CapcomTest, LocalParametersWithEvents) {
           .static_processes = {{
               .name = "params",
               .executable = "${runfiles_dir}/_main/testdata/params",
-              .notify = true,
-              .args = {"parameter_events"},
-
               .parameters =
                   {
                       {"foo/bar", "local-value1"}, {"foo/baz", "local-value2"},
                   },
+              .args = {"parameter_events"},
+              .notify = true,
           }},
       });
   // Start the subsystem
@@ -2383,10 +2382,9 @@ TEST_F(CapcomTest, ParameterPerformance) {
                    .static_processes = {{
                        .name = "params",
                        .executable = "${runfiles_dir}/_main/testdata/params",
-                       .notify = true,
-                       .args = {"performance"},
-
                        .parameters = local_params,
+                       .args = {"performance"},
+                       .notify = true,
                    }},
                });
   // Start the subsystem

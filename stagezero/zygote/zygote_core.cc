@@ -428,6 +428,11 @@ absl::Status ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
       fds[stream.index()].Reset();
     }
 
+    std::vector<int> allfds = scheduler_.GetAllFds();
+    for (auto fd : allfds) {
+      fds_to_keep_open.insert(fd);
+    }
+
     // Close all open file descriptors that we don't want to explicitly
     // keep open.
     toolbelt::CloseAllFds(
@@ -459,7 +464,7 @@ absl::Status ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
     // a return from its Run() function in ZygoteCore::Run, where we will
     // invoke the main function on the program stack.
     scheduler_.Stop();
-    c->Yield();
+    c->YieldToScheduler();
 
     // Won't get here in the child process.
     abort();
