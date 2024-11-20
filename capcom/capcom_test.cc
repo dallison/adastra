@@ -62,6 +62,7 @@ public:
 
     stagezero_pid_ = fork();
     if (stagezero_pid_ == 0) {
+      capcom_thread_.release();
       signal(SIGTERM, StageZeroSignalHandler);
       signal(SIGINT, StageZeroSignalHandler);
       // Child process.
@@ -92,7 +93,7 @@ public:
         false, capcom_pipe_[1]);
 
     // Start capcom running in a thread.
-    capcom_thread_ = std::thread([]() {
+    capcom_thread_ = std::make_unique<std::thread>([]() {
       absl::Status s = capcom_->Run();
       if (!s.ok()) {
         fprintf(stderr, "Error running capcom: %s\n", s.ToString().c_str());
@@ -119,7 +120,7 @@ public:
     capcom_->Stop();
 
     // Wait for server to tell us that it's stopped.
-    WaitForStop(capcom_pipe_[0], capcom_thread_);
+    WaitForStop(capcom_pipe_[0], *capcom_thread_);
   }
 
   static void StopStageZero() {
@@ -144,7 +145,7 @@ public:
       waitpid(stagezero_pid_, &status, 0);
       stagezero_pid_ = 0;
     }
-    WaitForStop(capcom_pipe_[0], capcom_thread_);
+    WaitForStop(capcom_pipe_[0], *capcom_thread_);
   }
 
   void SetUp() override { signal(SIGPIPE, SIG_IGN); }
@@ -323,13 +324,12 @@ private:
   static co::CoroutineScheduler capcom_scheduler_;
   static int capcom_pipe_[2];
   static std::unique_ptr<adastra::capcom::Capcom> capcom_;
-  static std::thread capcom_thread_;
+  static std::unique_ptr<std::thread> capcom_thread_;
   static toolbelt::InetAddress capcom_addr_;
 
   static co::CoroutineScheduler stagezero_scheduler_;
   static int stagezero_pipe_[2];
   static std::unique_ptr<adastra::stagezero::StageZero> stagezero_;
-  static std::thread stagezero_thread_;
   static toolbelt::InetAddress stagezero_addr_;
   static int stagezero_pid_;
 };
@@ -337,13 +337,12 @@ private:
 co::CoroutineScheduler CapcomTest::capcom_scheduler_;
 int CapcomTest::capcom_pipe_[2];
 std::unique_ptr<adastra::capcom::Capcom> CapcomTest::capcom_;
-std::thread CapcomTest::capcom_thread_;
+std::unique_ptr<std::thread> CapcomTest::capcom_thread_;
 toolbelt::InetAddress CapcomTest::capcom_addr_;
 
 co::CoroutineScheduler CapcomTest::stagezero_scheduler_;
 int CapcomTest::stagezero_pipe_[2];
 std::unique_ptr<adastra::stagezero::StageZero> CapcomTest::stagezero_;
-std::thread CapcomTest::stagezero_thread_;
 toolbelt::InetAddress CapcomTest::stagezero_addr_;
 int CapcomTest::stagezero_pid_;
 

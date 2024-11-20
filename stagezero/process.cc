@@ -217,7 +217,7 @@ StaticProcess::StartInternal(const std::vector<std::string> extra_env_vars,
   client_->AddCoroutine(std::make_unique<co::Coroutine>(
       scheduler_,
       [ proc = shared_from_this(), client = client_,
-        send_start_event ](co::Coroutine * c) {
+        send_start_event ](co::Coroutine * c) mutable {
         if (proc->WillNotify()) {
           std::shared_ptr<StreamInfo> s = proc->FindNotifyStream();
           if (s != nullptr) {
@@ -233,16 +233,22 @@ StaticProcess::StartInternal(const std::vector<std::string> extra_env_vars,
 
               // Stop the process as it failed to notify us.
               (void)proc->Stop(c);
-              return;
+              send_start_event = false;
             }
             // Read the data from the notify pipe.
             int64_t val;
-            (void)read(notify_fd, &val, 8);
-            // Nothing to interpret from this (yet?)
+            ssize_t n = read(notify_fd, &val, 8);
+            if (n <= 0) {
+              client->Log(proc->Name(), toolbelt::LogLevel::kError,
+                          "Failed to read from notify pipe: %s",
+                          strerror(errno));
+              send_start_event = false;
+            } else {
+              client->Log(proc->Name(), toolbelt::LogLevel::kDebug,
+                          "Process %s notified us of startup",
+                          proc->Name().c_str());
 
-            client->Log(proc->Name(), toolbelt::LogLevel::kDebug,
-                        "Process %s notified us of startup",
-                        proc->Name().c_str());
+            }
           }
         }
         // Send start event to client.
@@ -1173,8 +1179,7 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
   }
   for (auto &stream : streams_) {
     if (stream->disposition != proto::StreamControl::CLOSE &&
-        stream->disposition != proto::StreamControl::STAGEZERO &&
-        stream->disposition != proto::StreamControl::NOTIFY) {
+        stream->disposition != proto::StreamControl::STAGEZERO) {
       toolbelt::FileDescriptor &fd =
           stream->direction == proto::StreamControl::OUTPUT
               ? stream->pipe.WriteFd()

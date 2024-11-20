@@ -630,7 +630,6 @@ absl::Status Capcom::HandleParameterEvent(
         !status.ok()) {
       return status;
     }
-    SendParameterUpdateEvent(event.update().name(), value);
     break;
   }
   case adastra::proto::parameters::ParameterEvent::kDelete: {

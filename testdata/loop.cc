@@ -18,11 +18,14 @@ int main(int argc, char **argv) {
   });
 
   bool ignore_signal = false;
+  bool exit_before_notify = false;
   printf("Running\n");
   for (int i = 1; i < argc; i++) {
     if (strcmp(argv[i], "ignore_signal") == 0) {
       ignore_signal = true;
-    } 
+    } else if (strcmp(argv[i], "exit_before_notify") == 0) {
+      exit_before_notify = true;
+    }
   }
   if (ignore_signal) {
     printf("Ignoring signals\n");
@@ -32,6 +35,10 @@ int main(int argc, char **argv) {
     printf("SIGINT will terminate\n");
   }
 
+  if (exit_before_notify) {
+    printf("Exiting before notify\n");
+    return 0;
+  }
   char *notify = getenv("STAGEZERO_NOTIFY_FD");
   if (notify != nullptr) {
     int notify_fd = atoi(notify);

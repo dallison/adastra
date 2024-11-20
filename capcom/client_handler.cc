@@ -246,7 +246,7 @@ void ClientHandler::HandleAddCompute(const proto::AddComputeRequest &req,
   // If this is a static compute connection, connect the umbilical now and keep
   // it open.
   if (req.connection_policy() == proto::AddComputeRequest::STATIC) {
-    capcom_.AddUmbilical(compute_ptr, c);
+    capcom_.AddUmbilical(compute_ptr, true);
     if (absl::Status status = capcom_.ConnectUmbilical(compute.name(), c);
         !status.ok()) {
       response->set_error(absl::StrFormat("Failed to connect to compute %s: %s",
