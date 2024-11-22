@@ -37,7 +37,7 @@ void Event::ToProto(proto::Event *dest) const {
     break;
   }
   case EventType::kParameterUpdate: {
-    parameters::ParameterNode p = std::get<4>(event);
+    const parameters::Parameter p = std::get<4>(event);
     auto pe = dest->mutable_parameter();
     p.ToProto(pe->mutable_update());
     break;
@@ -95,7 +95,7 @@ absl::Status Event::FromProto(const proto::Event &src) {
   case adastra::proto::Event::kParameter: {
     switch (src.parameter().event_case()) {
     case adastra::proto::parameters::ParameterEvent::kUpdate: {
-      parameters::ParameterNode p;
+      parameters::Parameter p;
       p.FromProto(src.parameter().update());
       this->event = p;
       this->type = EventType::kParameterUpdate;

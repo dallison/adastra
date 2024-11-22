@@ -37,7 +37,6 @@ StageZero::~StageZero() {
 }
 
 void StageZero::Stop() {
-  client_handlers_.clear();
   co_scheduler_.Stop();
 }
 

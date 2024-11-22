@@ -483,7 +483,7 @@ absl::Status Capcom::Abort(const std::string &reason, bool emergency,
 
   // Now tell all computes (the stagezero running on them) to kill
   // all the processes.
-  for (auto & [ name, umbilical ] : stagezero_umbilicals_) {
+  for (auto & [ _, umbilical ] : stagezero_umbilicals_) {
     if (umbilical.client == nullptr || !umbilical.client->IsConnected()) {
       continue;
     }
@@ -519,6 +519,20 @@ absl::Status Capcom::Abort(const std::string &reason, bool emergency,
 
 absl::Status Capcom::AddGlobalVariable(const Variable &var, co::Coroutine *c) {
   global_symbols_.AddSymbol(var.name, var.value, var.exported);
+  // Send the global variable to all the stagezeros.
+  for (auto & [ _, umbilical ] : stagezero_umbilicals_) {
+    if (umbilical.client == nullptr || !umbilical.client->IsConnected()) {
+      continue;
+    }
+
+    if (absl::Status status = umbilical.client->SetGlobalVariable(
+            var.name, var.value, var.exported, c);
+        !status.ok()) {
+      return absl::InternalError(absl::StrFormat(
+          "Failed to set global variable %s on compute %s: %s", var.name,
+          umbilical.compute->name, status.ToString()));
+    }
+  }
   return absl::OkStatus();
 }
 
@@ -527,7 +541,7 @@ absl::Status Capcom::PropagateParameterUpdate(const std::string &name,
                                               co::Coroutine *c) {
   absl::Status result = absl::OkStatus();
 
-  for (auto & [ name, umbilical ] : stagezero_umbilicals_) {
+  for (auto & [ _, umbilical ] : stagezero_umbilicals_) {
     if (umbilical.client == nullptr || !umbilical.client->IsConnected()) {
       continue;
     }
@@ -549,7 +563,7 @@ Capcom::PropagateParameterDelete(const std::vector<std::string> &names,
 
   absl::Status result = absl::OkStatus();
 
-  for (auto & [ name, umbilical ] : stagezero_umbilicals_) {
+  for (auto & [ _, umbilical ] : stagezero_umbilicals_) {
     if (umbilical.client == nullptr || !umbilical.client->IsConnected()) {
       continue;
     }
@@ -599,8 +613,7 @@ Capcom::GetParameters(const std::vector<std::string> &names) {
 
   std::vector<parameters::Parameter> result;
   for (auto &name : names) {
-    absl::StatusOr<parameters::Value> value =
-        parameters_.GetParameter(name);
+    absl::StatusOr<parameters::Value> value = parameters_.GetParameter(name);
     if (!value.ok()) {
       return value.status();
     }

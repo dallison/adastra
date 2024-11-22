@@ -250,10 +250,10 @@ public:
       std::shared_ptr<adastra::Event> event = *e;
       std::cerr << "event: " << (int)event->type << std::endl;
       if (event->type == adastra::EventType::kParameterUpdate) {
-        adastra::parameters::ParameterNode p = std::get<4>(event->event);
-        std::cerr << "update parameter: " << p.GetName() << " " << p.GetValue()
+        const adastra::parameters::Parameter& p = std::get<4>(event->event);
+        std::cerr << "update parameter: " << p.name << " " << p.value
                   << std::endl;
-        if (p.GetName() == name && p.GetValue() == v) {
+        if (p.name == name && p.value == v) {
           std::cout << "parameter update received\n";
           return;
         }

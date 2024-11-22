@@ -49,7 +49,7 @@ struct Output {
 struct Event {
   EventType type;
   std::variant<SubsystemStatus, Alarm, Output, LogMessage,
-               parameters::ParameterNode, std::string,
+               parameters::Parameter, std::string,
                ::adastra::proto::TelemetryEvent>
       event;
 
