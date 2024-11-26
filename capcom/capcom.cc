@@ -142,6 +142,7 @@ absl::Status Capcom::ConnectUmbilical(const std::string &compute,
   }
 
   if (umbilical->state != UmbilicalState::kUmbilicalClosed) {
+    umbilical->dynamicRefs++;
     return absl::OkStatus();
   }
   umbilical->client->Reset();
@@ -155,7 +156,8 @@ absl::Status Capcom::ConnectUmbilical(const std::string &compute,
         absl::StrFormat("Failed to connect umbilical to %s: %s",
                         compute.c_str(), status.ToString().c_str()));
   }
-  umbilical->state = UmbilicalState::kUmbilicalConnected;
+  umbilical->state = UmbilicalState::kUmbilicalConnected;   
+  umbilical->dynamicRefs++;
   logger_.Log(toolbelt::LogLevel::kInfo,
               "StageZero umbilical connected to compute %s", compute.c_str());
   // Register cgroups

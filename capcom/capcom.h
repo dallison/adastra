@@ -103,7 +103,7 @@ private:
   void AddUmbilical(std::shared_ptr<Compute> compute, bool is_static) {
     auto it = stagezero_umbilicals_.find(compute->name);
     if (it != stagezero_umbilicals_.end()) {
-      it->second.dynamicRefs++;
+      it->second.staticRefs++;
       return;
     }
     stagezero_umbilicals_.emplace(
@@ -116,11 +116,11 @@ private:
     if (it == stagezero_umbilicals_.end()) {
       return;
     }
-    it->second.dynamicRefs--;
+    it->second.staticRefs--;
     if (dynamic_only && it->second.is_static) {
       return;
     }
-    if (it->second.dynamicRefs == 0) {
+    if (it->second.staticRefs == 0) {
       stagezero_umbilicals_.erase(it);
     }
   }
@@ -132,7 +132,11 @@ private:
     if (it == stagezero_umbilicals_.end()) {
       return;
     }
+    it->second.dynamicRefs--;
     if (dynamic_only && it->second.is_static) {
+      return;
+    }
+    if (it->second.staticRefs > 0) {
       return;
     }
     it->second.client->Close();
@@ -198,7 +202,8 @@ private:
                                 const parameters::Value &value);
   void SendParameterDeleteEvent(const std::vector<std::string> &names);
   void
-  SendTelemetryEvent(const std::string& subsystem, const adastra::stagezero::control::TelemetryEvent &event);
+  SendTelemetryEvent(const std::string &subsystem,
+                     const adastra::stagezero::control::TelemetryEvent &event);
 
   void SendAlarm(const Alarm &alarm);
 
@@ -234,12 +239,13 @@ private:
 
   absl::Status SetParameter(const std::string &name,
                             const parameters::Value &value);
-  absl::Status DeleteParameters(const std::vector<std::string> &names, co::Coroutine* c);
+  absl::Status DeleteParameters(const std::vector<std::string> &names,
+                                co::Coroutine *c);
   absl::Status
   SetAllParameters(const std::vector<parameters::Parameter> &params);
-  absl::StatusOr<std::vector<parameters::Parameter>> GetParameters(
-      const std::vector<std::string> &names);
-      
+  absl::StatusOr<std::vector<parameters::Parameter>>
+  GetParameters(const std::vector<std::string> &names);
+
   absl::Status
   HandleParameterEvent(const adastra::proto::parameters::ParameterEvent &event,
                        co::Coroutine *c);
