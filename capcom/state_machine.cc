@@ -59,13 +59,13 @@ void Subsystem::RunSubsystemInState(
   while (subsystem->running_) {
     std::vector<int> fds;
     for (auto & [ name, umbilical ] : umbilicals_) {
-      if (umbilical.state != UmbilicalState::kUmbilicalConnected) {
+      if (!umbilical.IsConnected()) {
         continue;
       }
-      if (!umbilical.client->GetEventFd().Valid()) {
+      if (!umbilical.GetClient()->GetEventFd().Valid()) {
         continue;
       }
-      fds.push_back(umbilical.client->GetEventFd().Fd());
+      fds.push_back(umbilical.GetClient()->GetEventFd().Fd());
     }
     fds.push_back(subsystem->interrupt_.GetPollFd().Fd());
     fds.push_back(subsystem->message_pipe_.ReadFd().Fd());
@@ -94,8 +94,8 @@ void Subsystem::RunSubsystemInState(
       // one or two clients per subsystem, most likely, so a linear
       // search is fine.
       for (auto & [ name, umbilical ] : umbilicals_) {
-        if (fd == umbilical.client->GetEventFd().Fd()) {
-          found_client = umbilical.client;
+        if (fd == umbilical.GetClient()->GetEventFd().Fd()) {
+          found_client = umbilical.GetClient();
           event_source = EventSource::kStageZero;
           break;
         }

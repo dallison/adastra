@@ -20,6 +20,7 @@
 #include "proto/event.pb.h"
 #include "proto/stream.pb.h"
 #include "stagezero/client/client.h"
+#include "capcom/umbilical.h"
 #include "toolbelt/fd.h"
 #include "toolbelt/logging.h"
 #include "toolbelt/pipe.h"
@@ -34,25 +35,6 @@ class Subsystem;
 struct Compute;
 class Process;
 
-// An umbilical connects capcom to StageZero via a client connection.
-enum UmbilicalState {
-  kUmbilicalClosed,
-  kUmbilicalConnecting,
-  kUmbilicalConnected,
-};
-
-struct Umbilical {
-  Umbilical(std::shared_ptr<Compute> compute,
-            std::shared_ptr<stagezero::Client> client, bool is_static = false)
-      : compute(compute), client(client), is_static(is_static) {}
-  std::shared_ptr<Compute> compute = nullptr;
-  std::shared_ptr<stagezero::Client> client{};
-  UmbilicalState state = kUmbilicalClosed;
-  int staticRefs = 0; // Total number of processes referencing this umbilical.
-  int dynamicRefs =
-      0; // Current number of processes referencing this umbilical.
-  bool is_static = false;
-};
 
 constexpr uint32_t kNoClient = -1U;
 

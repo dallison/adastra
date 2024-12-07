@@ -141,32 +141,18 @@ absl::Status Capcom::ConnectUmbilical(const std::string &compute,
         absl::StrFormat("No umbilical found for compute %s", compute));
   }
 
-  if (umbilical->state != UmbilicalState::kUmbilicalClosed) {
-    umbilical->dynamicRefs++;
-    return absl::OkStatus();
+  umbilical->Precondition();
+  if (absl::Status status = umbilical->Connect(kNoEvents, c); !status.ok()) {
+    return status;
   }
-  umbilical->client->Reset();
-  umbilical->state = UmbilicalState::kUmbilicalConnecting;
-  if (absl::Status status = umbilical->client->Init(
-          umbilical->compute->addr, "<capcom umbilical>", kNoEvents,
-          umbilical->compute->name, c);
-      !status.ok()) {
-    umbilical->state = UmbilicalState::kUmbilicalClosed;
-    return absl::InternalError(
-        absl::StrFormat("Failed to connect umbilical to %s: %s",
-                        compute.c_str(), status.ToString().c_str()));
-  }
-  umbilical->state = UmbilicalState::kUmbilicalConnected;   
-  umbilical->dynamicRefs++;
-  logger_.Log(toolbelt::LogLevel::kInfo,
-              "StageZero umbilical connected to compute %s", compute.c_str());
+ 
   // Register cgroups
   if (absl::Status add_status =
-          RegisterComputeCgroups(umbilical->client, umbilical->compute, c);
+          RegisterComputeCgroups(umbilical->GetClient(), umbilical->GetCompute(), c);
       !add_status.ok()) {
     return absl::InternalError(absl::StrFormat(
         "Failed to add cgroup to compute %s: %s",
-        umbilical->compute->name.c_str(), add_status.ToString().c_str()));
+        umbilical->GetCompute()->name.c_str(), add_status.ToString().c_str()));
   }
 
   // Upload all the parameters to stagezero.
@@ -175,28 +161,28 @@ absl::Status Capcom::ConnectUmbilical(const std::string &compute,
   if (parameters.empty()) {
     // No parameters, but StageZero might have some from the last time we
     // connected, delete them.
-    if (absl::Status s = umbilical->client->DeleteParameters({}, c); !s.ok()) {
+    if (absl::Status s = umbilical->GetClient()->DeleteParameters({}, c); !s.ok()) {
       return absl::InternalError(absl::StrFormat(
           "Failed to delete parameters from compute %s: %s",
-          umbilical->compute->name.c_str(), s.ToString().c_str()));
+          umbilical->GetCompute()->name.c_str(), s.ToString().c_str()));
     }
   }
   // Send the parameters to the client.
-  if (absl::Status status = umbilical->client->UploadParameters(parameters, c);
+  if (absl::Status status = umbilical->GetClient()->UploadParameters(parameters, c);
       !status.ok()) {
     return absl::InternalError(absl::StrFormat(
         "Failed to upload parameters to compute %s: %s",
-        umbilical->compute->name.c_str(), status.ToString().c_str()));
+        umbilical->GetCompute()->name.c_str(), status.ToString().c_str()));
   }
 
   // Add all global symbols to stagezero.
   for (auto & [ name, sym ] : global_symbols_.GetSymbols()) {
-    if (absl::Status status = umbilical->client->SetGlobalVariable(
+    if (absl::Status status = umbilical->GetClient()->SetGlobalVariable(
             sym->Name(), sym->Value(), sym->Exported(), c);
         !status.ok()) {
       return absl::InternalError(absl::StrFormat(
           "Failed to set global variable %s on %s: %s", sym->Name().c_str(),
-          umbilical->compute->name.c_str(), status.ToString().c_str()));
+          umbilical->GetCompute()->name.c_str(), status.ToString().c_str()));
     }
   }
   return absl::OkStatus();
@@ -486,15 +472,15 @@ absl::Status Capcom::Abort(const std::string &reason, bool emergency,
   // Now tell all computes (the stagezero running on them) to kill
   // all the processes.
   for (auto & [ _, umbilical ] : stagezero_umbilicals_) {
-    if (umbilical.client == nullptr || !umbilical.client->IsConnected()) {
+    if (!umbilical.IsConnected()) {
       continue;
     }
 
-    absl::Status status = umbilical.client->Abort(reason, emergency, c);
+    absl::Status status = umbilical.GetClient()->Abort(reason, emergency, c);
     if (!status.ok()) {
       result = absl::InternalError(
           absl::StrFormat("Failed to abort compute %s: %s",
-                          umbilical.compute->name, status.ToString()));
+                          umbilical.GetCompute()->name, status.ToString()));
     }
   }
   if (emergency) {
@@ -523,16 +509,16 @@ absl::Status Capcom::AddGlobalVariable(const Variable &var, co::Coroutine *c) {
   global_symbols_.AddSymbol(var.name, var.value, var.exported);
   // Send the global variable to all the stagezeros.
   for (auto & [ _, umbilical ] : stagezero_umbilicals_) {
-    if (umbilical.client == nullptr || !umbilical.client->IsConnected()) {
+    if (!umbilical.IsConnected()) {
       continue;
-    }
+    } 
 
-    if (absl::Status status = umbilical.client->SetGlobalVariable(
+    if (absl::Status status = umbilical.GetClient()->SetGlobalVariable(
             var.name, var.value, var.exported, c);
         !status.ok()) {
       return absl::InternalError(absl::StrFormat(
           "Failed to set global variable %s on compute %s: %s", var.name,
-          umbilical.compute->name, status.ToString()));
+          umbilical.GetCompute()->name, status.ToString()));
     }
   }
   return absl::OkStatus();
@@ -544,15 +530,16 @@ absl::Status Capcom::PropagateParameterUpdate(const std::string &name,
   absl::Status result = absl::OkStatus();
 
   for (auto & [ _, umbilical ] : stagezero_umbilicals_) {
-    if (umbilical.client == nullptr || !umbilical.client->IsConnected()) {
+    if (!umbilical.IsConnected()) {
       continue;
-    }
+    } 
 
-    absl::Status status = umbilical.client->SetParameter(name, value, c);
+
+    absl::Status status = umbilical.GetClient()->SetParameter(name, value, c);
     if (!status.ok()) {
       result = absl::InternalError(
           absl::StrFormat("Failed to update parameter %s on compute %s: %s",
-                          name, umbilical.compute->name, status.ToString()));
+                          name, umbilical.GetCompute()->name, status.ToString()));
     }
   }
 
@@ -566,11 +553,12 @@ Capcom::PropagateParameterDelete(const std::vector<std::string> &names,
   absl::Status result = absl::OkStatus();
 
   for (auto & [ _, umbilical ] : stagezero_umbilicals_) {
-    if (umbilical.client == nullptr || !umbilical.client->IsConnected()) {
+     if (!umbilical.IsConnected()) {
       continue;
-    }
+    } 
 
-    absl::Status status = umbilical.client->DeleteParameters(names, c);
+
+    absl::Status status = umbilical.GetClient()->DeleteParameters(names, c);
     if (!status.ok()) {
       // This will fail on the stagezero that deleted the parameter.
     }
@@ -714,13 +702,12 @@ absl::Status Capcom::FreezeCgroup(const std::string &compute,
         absl::StrFormat("No such cgroup %s on computer %s", cgroup, compute));
   }
   Umbilical *umbilical = FindUmbilical(compute);
-  if (umbilical == nullptr || umbilical->client == nullptr ||
-      !umbilical->client->IsConnected()) {
+  if (umbilical == nullptr || !umbilical->IsConnected()) {
     return absl::InternalError(
         absl::StrFormat("Not connected to compute %s", compute));
   }
 
-  return umbilical->client->FreezeCgroup(cgroup, c);
+  return umbilical->GetClient()->FreezeCgroup(cgroup, c);
 }
 
 absl::Status Capcom::ThawCgroup(const std::string &compute,
@@ -736,13 +723,12 @@ absl::Status Capcom::ThawCgroup(const std::string &compute,
   }
 
   Umbilical *umbilical = FindUmbilical(compute);
-  if (umbilical == nullptr || umbilical->client == nullptr ||
-      !umbilical->client->IsConnected()) {
+  if (umbilical == nullptr || !umbilical->IsConnected()) {
     return absl::InternalError(
         absl::StrFormat("Not connected to compute %s", compute));
   }
 
-  return umbilical->client->ThawCgroup(cgroup, c);
+  return umbilical->GetClient()->ThawCgroup(cgroup, c);
 }
 
 absl::Status Capcom::KillCgroup(const std::string &compute,
@@ -758,13 +744,12 @@ absl::Status Capcom::KillCgroup(const std::string &compute,
         absl::StrFormat("No such cgroup %s on computer %s", cgroup, compute));
   }
   Umbilical *umbilical = FindUmbilical(compute);
-  if (umbilical == nullptr || umbilical->client == nullptr ||
-      !umbilical->client->IsConnected()) {
+  if (umbilical == nullptr || !umbilical->IsConnected()) {
     return absl::InternalError(
         absl::StrFormat("Not connected to compute %s", compute));
   }
 
-  return umbilical->client->KillCgroup(cgroup, c);
+  return umbilical->GetClient()->KillCgroup(cgroup, c);
 }
 
 absl::Status
