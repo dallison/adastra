@@ -8,8 +8,8 @@ local_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:local.bzl"
 
 bazel_dep(name = "bazel_skylib", version = "1.7.1")
 bazel_dep(name = "platforms", version = "0.0.10")
-bazel_dep(name = "abseil-cpp", version = "20230802.0", repo_name = "com_google_absl")
-bazel_dep(name = "googletest", version = "1.14.0", repo_name = "com_google_googletest")
+bazel_dep(name = "abseil-cpp", version = "20240722.0.bcr.1", repo_name = "com_google_absl")
+bazel_dep(name = "googletest", version = "1.15.2", repo_name = "com_google_googletest")
 
 # Note, see https://github.com/bazelbuild/bazel/issues/19973
 # Protobuf must be aliased as "com_google_protobuf" to match implicit dependency within bazel_tools.

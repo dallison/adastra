@@ -38,62 +38,40 @@ void Subsystem::ConnectUmbilical(const std::string &compute) {
                 "No umbilical found for compute %s", compute.c_str());
     return;
   }
-  umbilical->dynamicRefs++;
-  switch (umbilical->state) {
-  case UmbilicalState::kUmbilicalClosed:
-    umbilical->state = UmbilicalState::kUmbilicalConnecting;
-    capcom_.Log(Name(), toolbelt::LogLevel::kInfo, "Umbilical connecting to %s",
-                compute.c_str());
-    // Spawn a coroutine to connect to the stagezero instance via the client.
-    // When the client connects a 'connect' event will be received.
-    capcom_.AddCoroutine(std::make_unique<co::Coroutine>(
-        capcom_.co_scheduler_,
-        [ subsystem = shared_from_this(), umbilical,
-          compute ](co::Coroutine * c) {
-          while (subsystem->IsConnecting()) {
-            if (absl::Status status = umbilical->client->Init(
-                    umbilical->compute->addr, subsystem->Name(), kAllEvents,
-                    umbilical->compute->name, c);
-                !status.ok()) {
-              subsystem->capcom_.Log(
-                  subsystem->Name(), toolbelt::LogLevel::kError,
-                  "Failed to connect umbilical to %s: %s", compute.c_str(),
-                  status.ToString().c_str());
-              umbilical->client->Reset();
-              c->Sleep(1);
-              continue;
-            }
-            subsystem->capcom_.Log(subsystem->Name(), toolbelt::LogLevel::kInfo,
-                                   "Umbilical connected to %s",
-                                   compute.c_str());
-            umbilical->state = UmbilicalState::kUmbilicalConnected;
-
-            // Connect the umbilical to the stagezero client.
-            if (absl::Status status =
-                    subsystem->capcom_.ConnectUmbilical(compute, c);
-                !status.ok()) {
-              subsystem->capcom_.Log(
-                  subsystem->Name(), toolbelt::LogLevel::kError,
-                  "Failed to connect capcom umbilical to %s: %s",
-                  compute.c_str(), status.ToString().c_str());
-              umbilical->client->Close();
-              umbilical->client->Reset();
-              umbilical->state = UmbilicalState::kUmbilicalConnecting;
-              c->Sleep(1);
-              continue;
-            }
-
-            subsystem->Wakeup();
-            return;
-          }
-        }));
-
-    break;
-  case UmbilicalState::kUmbilicalConnecting:
-  case UmbilicalState::kUmbilicalConnected:
-    // Nohing to do, already connected or in progress.
-    break;
+  bool was_closed = umbilical->Precondition();
+  if (!was_closed) {
+    // Already connecting or connected.
+    return;
   }
+
+  // Spawn a coroutine to connect to the stagezero instance via the client.
+  // When the client connects a 'connect' event will be received.
+  capcom_.AddCoroutine(std::make_unique<co::Coroutine>(capcom_.co_scheduler_, [
+    subsystem = shared_from_this(), umbilical, compute
+  ](co::Coroutine * c) {
+    while (subsystem->IsConnecting()) {
+      if (absl::Status status = umbilical->Connect(kAllEvents, c);
+          !status.ok()) {
+        subsystem->capcom_.Log(subsystem->Name(), toolbelt::LogLevel::kError,
+                               "Failed to connect umbilical to %s: %s",
+                               compute.c_str(), status.ToString().c_str());
+        c->Sleep(1);
+        continue;
+      }
+
+      // Connect the umbilical to the stagezero client.
+      if (absl::Status status = subsystem->capcom_.ConnectUmbilical(compute, c);
+          !status.ok()) {
+        subsystem->capcom_.Log(subsystem->Name(), toolbelt::LogLevel::kError,
+                               "%s", status.ToString().c_str());
+        c->Sleep(1);
+        continue;
+      }
+
+      subsystem->Wakeup();
+      return;
+    }
+  }));
 }
 
 void Subsystem::DisconnectUmbilical(const std::string &compute) {
@@ -104,35 +82,20 @@ void Subsystem::DisconnectUmbilical(const std::string &compute) {
     return;
   }
 
-  switch (umbilical->state) {
-  case UmbilicalState::kUmbilicalClosed:
-    break;
-  case UmbilicalState::kUmbilicalConnecting:
-  case UmbilicalState::kUmbilicalConnected:
-    umbilical->dynamicRefs--;
-    if (umbilical->dynamicRefs > 0) {
-      break;
-    }
-    umbilical->client->Close();
-    umbilical->client->Reset();
-    umbilical->state = UmbilicalState::kUmbilicalClosed;
-    capcom_.DisconnectUmbilical(compute, true);
-    capcom_.Log(Name(), toolbelt::LogLevel::kInfo,
-                "Umbilical disconnected from %s", compute.c_str());
-    break;
-  }
+  umbilical->Disconnect();
+  capcom_.DisconnectUmbilical(compute, true);
 }
 
 void Subsystem::AddUmbilicalReference(std::shared_ptr<Compute> compute) {
   auto it = umbilicals_.find(compute->name);
   if (it == umbilicals_.end()) {
     umbilicals_.insert(
-        {compute->name,
-         Umbilical(compute, std::make_shared<stagezero::Client>())});
+        {compute->name, Umbilical(Name(), capcom_.logger_, compute,
+                                  std::make_shared<stagezero::Client>())});
     it = umbilicals_.find(compute->name);
     capcom_.AddUmbilical(compute, false);
   }
-  it->second.staticRefs++;
+  it->second.IncStaticRefs(+1);
 }
 
 void Subsystem::RemoveUmbilicalReference(const std::string &compute) {
@@ -140,12 +103,13 @@ void Subsystem::RemoveUmbilicalReference(const std::string &compute) {
   if (it == umbilicals_.end()) {
     return;
   }
-  it->second.staticRefs--;
-  if (it->second.staticRefs == 0) {
-    umbilicals_.erase(it);
-    // Remove the main umbilical if it's not static.
-    capcom_.RemoveUmbilical(compute, true);
+  it->second.IncStaticRefs(-1);
+  if (it->second.HasStaticRefs()) {
+    return;
   }
+  umbilicals_.erase(it);
+  // Remove the main umbilical if it's not static.
+  capcom_.RemoveUmbilical(compute, true);
 }
 
 Umbilical *Subsystem::FindUmbilical(const std::string &compute) {
@@ -642,16 +606,16 @@ bool Process::IsConnected(Subsystem *subsystem) const {
   if (umbilical == nullptr) {
     return false;
   }
-  return umbilical->state == UmbilicalState::kUmbilicalConnected;
+  return umbilical->IsConnected();
 }
 
 absl::Status Process::SendInput(Umbilical *umbilical, int fd,
                                 const std::string &data, co::Coroutine *c) {
-  return umbilical->client->SendInput(process_id_, fd, data, c);
+  return umbilical->GetClient()->SendInput(process_id_, fd, data, c);
 }
 
 absl::Status Process::CloseFd(Umbilical *umbilical, int fd, co::Coroutine *c) {
-  return umbilical->client->CloseProcessFileDescriptor(process_id_, fd, c);
+  return umbilical->GetClient()->CloseProcessFileDescriptor(process_id_, fd, c);
 }
 
 void Process::ParseOptions(const stagezero::config::ProcessOptions &options) {
@@ -711,7 +675,7 @@ absl::Status Process::Stop(Subsystem *subsystem, co::Coroutine *c) {
     return absl::InternalError(
         absl::StrFormat("No umbilical found for compute %s", compute_));
   }
-  return umbilical->client->StopProcess(process_id_, c);
+  return umbilical->GetClient()->StopProcess(process_id_, c);
 }
 
 void Process::RaiseAlarm(Capcom &capcom, const Alarm &alarm) {
@@ -740,11 +704,11 @@ Process::SendTelemetryCommand(std::shared_ptr<Subsystem> subsystem,
     return absl::InternalError(
         absl::StrFormat("No umbilical found for compute %s", compute_));
   }
-  if (!umbilical->client->IsConnected()) {
+  if (!umbilical->GetClient()->IsConnected()) {
     return absl::InternalError(
         absl::StrFormat("Umbilical %s is not connected", compute_));
   }
-  return umbilical->client->SendTelemetryCommand(process_id_, cmd, c);
+  return umbilical->GetClient()->SendTelemetryCommand(process_id_, cmd, c);
 }
 
 StaticProcess::StaticProcess(
@@ -800,7 +764,8 @@ absl::Status StaticProcess::Launch(Subsystem *subsystem, co::Coroutine *c) {
   }
 
   absl::StatusOr<std::pair<std::string, int>> s =
-      umbilical->client->LaunchStaticProcess(Name(), executable_, options, c);
+      umbilical->GetClient()->LaunchStaticProcess(Name(), executable_, options,
+                                                  c);
   if (!s.ok()) {
     return s.status();
   }
@@ -843,7 +808,7 @@ absl::Status Zygote::Launch(Subsystem *subsystem, co::Coroutine *c) {
         absl::StrFormat("No umbilical found for compute %s", compute_));
   }
   absl::StatusOr<std::pair<std::string, int>> s =
-      umbilical->client->LaunchZygote(Name(), executable_, options, c);
+      umbilical->GetClient()->LaunchZygote(Name(), executable_, options, c);
   if (!s.ok()) {
     return s.status();
   }
@@ -905,8 +870,8 @@ absl::Status VirtualProcess::Launch(Subsystem *subsystem, co::Coroutine *c) {
         absl::StrFormat("No umbilical found for compute %s", compute_));
   }
   absl::StatusOr<std::pair<std::string, int>> s =
-      umbilical->client->LaunchVirtualProcess(Name(), zygote_name_, dso_,
-                                              main_func_, options, c);
+      umbilical->GetClient()->LaunchVirtualProcess(Name(), zygote_name_, dso_,
+                                                   main_func_, options, c);
   if (!s.ok()) {
     return s.status();
   }

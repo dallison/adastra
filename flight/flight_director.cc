@@ -9,6 +9,8 @@
 #include <fstream>
 #include <google/protobuf/io/zero_copy_stream_impl.h>
 #include <google/protobuf/text_format.h>
+#include "absl/strings/str_cat.h"
+
 #include <iostream>
 
 namespace adastra::flight {
