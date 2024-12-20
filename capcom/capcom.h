@@ -106,6 +106,7 @@ private:
       it->second.IncStaticRefs(+1);
       return;
     }
+    std::cerr << "adding umbilical for " << compute->addr.ToString() << std::endl;
     stagezero_umbilicals_.emplace(
         compute->name,
         Umbilical{"capcom", logger_, compute, std::make_shared<stagezero::Client>(), is_static});

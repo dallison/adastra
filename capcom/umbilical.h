@@ -42,7 +42,7 @@ public:
   }
 
   bool IsStatic() const { return is_static_; }
-
+  
 private:
   std::string name_;
   toolbelt::Logger &logger_;

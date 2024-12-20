@@ -407,7 +407,7 @@ absl::Status FlightDirector::LoadSubsystemGraph(
     }
     Compute compute = {c.name(), toolbelt::InetAddress(c.ip_addr(), c.port()),
                        std::move(cgroups)};
-
+    std::cerr << "adding compute " << c.name() << " addr " << compute.addr.ToString() << std::endl;
     AddCompute(c.name(), std::move(compute));
   }
 

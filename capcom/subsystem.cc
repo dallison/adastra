@@ -50,20 +50,21 @@ void Subsystem::ConnectUmbilical(const std::string &compute) {
     subsystem = shared_from_this(), umbilical, compute
   ](co::Coroutine * c) {
     while (subsystem->IsConnecting()) {
+      // Connect the umbilical to the stagezero client.
+      if (absl::Status status =
+              subsystem->capcom_.ConnectUmbilical(compute, c);
+          !status.ok()) {
+        subsystem->capcom_.Log(subsystem->Name(), toolbelt::LogLevel::kError,
+                               "%s", status.ToString().c_str());
+        c->Sleep(1);
+        continue;
+      }
+
       if (absl::Status status = umbilical->Connect(kAllEvents, c);
           !status.ok()) {
         subsystem->capcom_.Log(subsystem->Name(), toolbelt::LogLevel::kError,
                                "Failed to connect umbilical to %s: %s",
                                compute.c_str(), status.ToString().c_str());
-        c->Sleep(1);
-        continue;
-      }
-
-      // Connect the umbilical to the stagezero client.
-      if (absl::Status status = subsystem->capcom_.ConnectUmbilical(compute, c);
-          !status.ok()) {
-        subsystem->capcom_.Log(subsystem->Name(), toolbelt::LogLevel::kError,
-                               "%s", status.ToString().c_str());
         c->Sleep(1);
         continue;
       }
@@ -328,6 +329,7 @@ absl::Status Subsystem::LaunchProcesses(co::Coroutine *c) {
     }
     proc->SetExit(false, -1);
 
+    std::cerr << "Launching process " << proc->Name() << std::endl;
     absl::Status status = proc->Launch(this, c);
     if (!status.ok()) {
       // A failure to launch one is a failure for all.

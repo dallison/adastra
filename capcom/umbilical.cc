@@ -14,8 +14,8 @@ absl::Status Umbilical::Connect(int event_mask, co::Coroutine *c) {
     return absl::InternalError(
         absl::StrFormat("Umbilical %s has not been preconditioned", name_));
   }
-  logger_.Log(toolbelt::LogLevel::kInfo, "Umbilical %s connecting to %s",
-              name_.c_str(), compute_->name.c_str());
+  logger_.Log(toolbelt::LogLevel::kInfo, "Umbilical %s connecting to %s (%s)",
+              name_.c_str(), compute_->name.c_str(), compute_->addr.ToString().c_str());
   client_->Reset();
   if (absl::Status status =
           client_->Init(compute_->addr, name_, event_mask, compute_->name, c);
