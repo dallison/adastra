@@ -8,8 +8,8 @@ local_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:local.bzl"
 
 bazel_dep(name = "bazel_skylib", version = "1.7.1")
 bazel_dep(name = "platforms", version = "0.0.10")
-bazel_dep(name = "abseil-cpp", version = "20230802.0", repo_name = "com_google_absl")
-bazel_dep(name = "googletest", version = "1.14.0", repo_name = "com_google_googletest")
+bazel_dep(name = "abseil-cpp", version = "20240722.0.bcr.1", repo_name = "com_google_absl")
+bazel_dep(name = "googletest", version = "1.15.2", repo_name = "com_google_googletest")
 
 # Note, see https://github.com/bazelbuild/bazel/issues/19973
 # Protobuf must be aliased as "com_google_protobuf" to match implicit dependency within bazel_tools.
@@ -19,18 +19,18 @@ bazel_dep(name = "rules_cc", version = "0.0.9")
 bazel_dep(name = "rules_pkg", version = "0.9.1")
 bazel_dep(name = "zlib", version = "1.3.1.bcr.3")
 
-http_archive(
-  name = "toolbelt",
-  urls = ["https://github.com/dallison/cpp_toolbelt/archive/refs/tags/1.2.2.tar.gz"],
-  strip_prefix = "cpp_toolbelt-1.2.2",
-  integrity = "sha256-ZVjTxhPStiGhheys3qIpwHHuP9h7r6BaT0BW0fVr4xM=",
-)
+# http_archive(
+#   name = "toolbelt",
+#   urls = ["https://github.com/dallison/cpp_toolbelt/archive/refs/tags/1.2.2.tar.gz"],
+#   strip_prefix = "cpp_toolbelt-1.2.2",
+#   integrity = "sha256-ZVjTxhPStiGhheys3qIpwHHuP9h7r6BaT0BW0fVr4xM=",
+# )
 
 # For local debugging of toolbelt coroutine library.
-# local_repository(
-#     name = "toolbelt",
-#     path = "../cpp_toolbelt",
-# )
+local_repository(
+    name = "toolbelt",
+    path = "../cpp_toolbelt",
+)
 
 # Coroutines
 http_archive(

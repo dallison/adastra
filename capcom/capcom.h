@@ -103,12 +103,13 @@ private:
   void AddUmbilical(std::shared_ptr<Compute> compute, bool is_static) {
     auto it = stagezero_umbilicals_.find(compute->name);
     if (it != stagezero_umbilicals_.end()) {
-      it->second.staticRefs++;
+      it->second.IncStaticRefs(+1);
       return;
     }
+    std::cerr << "adding umbilical for " << compute->addr.ToString() << std::endl;
     stagezero_umbilicals_.emplace(
         compute->name,
-        Umbilical{compute, std::make_shared<stagezero::Client>(), is_static});
+        Umbilical{"capcom", logger_, compute, std::make_shared<stagezero::Client>(), is_static});
   }
 
   void RemoveUmbilical(const std::string &compute, bool dynamic_only) {
@@ -116,13 +117,15 @@ private:
     if (it == stagezero_umbilicals_.end()) {
       return;
     }
-    it->second.staticRefs--;
-    if (dynamic_only && it->second.is_static) {
+    it->second.IncStaticRefs(-1);
+    if (dynamic_only && it->second.IsStatic()) {
       return;
     }
-    if (it->second.staticRefs == 0) {
-      stagezero_umbilicals_.erase(it);
+    if (it->second.HasStaticRefs()) {
+      return;
     }
+
+    stagezero_umbilicals_.erase(it);
   }
 
   absl::Status ConnectUmbilical(const std::string &compute, co::Coroutine *c);
@@ -132,15 +135,8 @@ private:
     if (it == stagezero_umbilicals_.end()) {
       return;
     }
-    it->second.dynamicRefs--;
-    if (dynamic_only && it->second.is_static) {
-      return;
-    }
-    if (it->second.staticRefs > 0) {
-      return;
-    }
-    it->second.client->Close();
-    it->second.state = UmbilicalState::kUmbilicalClosed;
+
+    it->second.Disconnect(dynamic_only);
   }
 
   Umbilical *FindUmbilical(const std::string &compute) {

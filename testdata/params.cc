@@ -216,7 +216,7 @@ int main(int argc, char **argv) {
   // system(buf);
 
   // Sleep forever until killed.
-  for (int i = 0;; i++) {
+  for (;;) {
     usleep(200000);
   }
 }

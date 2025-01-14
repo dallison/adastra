@@ -162,7 +162,6 @@ absl::Status TCPClient<Request, Response, Event>::SendRequestReceiveResponse(
     command_socket_.Close();
     return n.status();
   }
-
   if (!response.ParseFromArray(respbuffer->data(), respbuffer->size())) {
     command_socket_.Close();
     return absl::InternalError("Failed to parse response");

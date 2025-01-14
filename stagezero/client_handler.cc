@@ -167,6 +167,7 @@ void ClientHandler::HandleLaunchStaticProcess(
     }
     return;
   }
+  std::cerr << "Starting process " << proc->Name() << std::endl;
   absl::Status status = proc->Start(c);
   if (!status.ok()) {
     response->set_error(status.ToString());
@@ -422,6 +423,7 @@ void ClientHandler::TryRemoveProcess(std::shared_ptr<Process> proc) {
 void ClientHandler::HandleSetGlobalVariable(
     const control::SetGlobalVariableRequest &req,
     control::SetGlobalVariableResponse *response, co::Coroutine *c) {
+      std::cerr << "Setting global variable " << req.name() << " to " << req.value() << std::endl;
   stagezero_.global_symbols_.AddSymbol(req.name(), req.value(), req.exported());
 }
 

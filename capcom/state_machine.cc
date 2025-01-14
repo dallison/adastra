@@ -34,6 +34,8 @@ void Subsystem::EnterState(OperState state, uint32_t client_id) {
                 "Subsystem %s entering %s from %s", Name().c_str(),
                 OperStateName(state), OperStateName(oper_state_));
   }
+  std::cerr << "Subsystem " << Name() << " entering " << OperStateName(state)
+            << " from " << OperStateName(oper_state_) << std::endl;
   prev_oper_state_ = oper_state_;
   oper_state_ = state;
   co::Coroutine *coroutine = new co::Coroutine(
@@ -59,13 +61,13 @@ void Subsystem::RunSubsystemInState(
   while (subsystem->running_) {
     std::vector<int> fds;
     for (auto & [ name, umbilical ] : umbilicals_) {
-      if (umbilical.state != UmbilicalState::kUmbilicalConnected) {
+      if (!umbilical.IsConnected()) {
         continue;
       }
-      if (!umbilical.client->GetEventFd().Valid()) {
+      if (!umbilical.GetClient()->GetEventFd().Valid()) {
         continue;
       }
-      fds.push_back(umbilical.client->GetEventFd().Fd());
+      fds.push_back(umbilical.GetClient()->GetEventFd().Fd());
     }
     fds.push_back(subsystem->interrupt_.GetPollFd().Fd());
     fds.push_back(subsystem->message_pipe_.ReadFd().Fd());
@@ -94,8 +96,8 @@ void Subsystem::RunSubsystemInState(
       // one or two clients per subsystem, most likely, so a linear
       // search is fine.
       for (auto & [ name, umbilical ] : umbilicals_) {
-        if (fd == umbilical.client->GetEventFd().Fd()) {
-          found_client = umbilical.client;
+        if (fd == umbilical.GetClient()->GetEventFd().Fd()) {
+          found_client = umbilical.GetClient();
           event_source = EventSource::kStageZero;
           break;
         }
@@ -234,6 +236,10 @@ void Subsystem::Offline(uint32_t client_id, co::Coroutine *c) {
           auto message = *msg;
           switch (message->code) {
           case Message::kChangeAdmin:
+            if (message->state.admin == AdminState::kOffline) {
+              // Stay offline.
+              return StateTransition::kStay;
+            }
             next_state = subsystem->HandleAdminCommand(
                 *message, OperState::kStartingChildren, OperState::kOffline);
             if (next_state == OperState::kStartingChildren) {
@@ -304,6 +310,7 @@ void Subsystem::Connecting(uint32_t client_id, co::Coroutine *c) {
   }
 
   if (AllProcessesConnected()) {
+    std::cerr << "all processes connected" << std::endl;
     EnterState(OperState::kStartingProcesses, client_id);
     return;
   }
@@ -421,6 +428,7 @@ void Subsystem::Connecting(uint32_t client_id, co::Coroutine *c) {
             }
 
             if (subsystem->AllProcessesConnected()) {
+              std::cerr << "2 all processes connected" << std::endl;
               subsystem->EnterState(OperState::kStartingProcesses, client_id);
               subsystem->SendToChildren(AdminState::kOnline, client_id);
               return StateTransition::kLeave;
@@ -542,6 +550,10 @@ void Subsystem::StartingChildren(uint32_t client_id, co::Coroutine *c) {
                   // We are admin offline and a child has gone offline.  We
                   // consider this a final notification from the child.
                   child_notified[message->sender] = true;
+                } else if (message->state.oper == OperState::kBroken) {
+                  // We are broken if any child is broken.
+                  subsystem->EnterState(OperState::kBroken, client_id);
+                  return StateTransition::kLeave;
                 }
                 subsystem->NotifyParents();
                 break;
@@ -944,6 +956,10 @@ void Subsystem::Online(uint32_t client_id, co::Coroutine *c) {
                   // Child has entered restarting state.  This is our signal
                   // to do that too.
                   subsystem->EnterState(OperState::kRestarting, client_id);
+                  return StateTransition::kLeave;
+                } else if (message->state.oper == OperState::kBroken) {
+                  // We are broken if any child is broken.
+                  subsystem->EnterState(OperState::kBroken, client_id);
                   return StateTransition::kLeave;
                 }
                 break;
