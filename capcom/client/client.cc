@@ -600,7 +600,7 @@ absl::Status Client::SendInput(const std::string &subsystem,
 }
 
 absl::Status Client::CloseFd(const std::string &subsystem,
-                             const std::string &process, int fd,
+                             const std::string &process_name, int fd,
                              co::Coroutine *c) {
   if (c == nullptr) {
     c = co_;
@@ -608,7 +608,7 @@ absl::Status Client::CloseFd(const std::string &subsystem,
   adastra::capcom::proto::Request req;
   auto close = req.mutable_close_fd();
   close->set_subsystem(subsystem);
-  close->set_process(process);
+  close->set_process(process_name);
   close->set_fd(fd);
 
   adastra::capcom::proto::Response resp;

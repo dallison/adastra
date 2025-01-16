@@ -404,6 +404,21 @@ void Capcom::SendParameterDeleteEvent(const std::vector<std::string> &names) {
   }
 }
 
+  void Capcom::SendOutputEvent(int fd, const std::string &process_id, const std::string& data) {
+    auto event = std::make_shared<adastra::proto::Event>();
+    auto output = event->mutable_output();
+    output->set_process_id(process_id);
+    output->set_data(data);
+    output->set_fd(fd);
+    for (auto &handler : client_handlers_) {
+      if (absl::Status status = handler->SendOutputEvent(event); !status.ok()) {
+        logger_.Log(toolbelt::LogLevel::kError,
+                    "Failed to send output event to client %s: %s",
+                    handler->GetClientName().c_str(), status.ToString().c_str());
+      }
+    }
+  }
+
 void Capcom::SendTelemetryEvent(
     const std::string &subsystem,
     const adastra::stagezero::control::TelemetryEvent &event) {

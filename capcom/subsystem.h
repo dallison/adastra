@@ -12,6 +12,7 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "capcom/bitset.h"
+#include "capcom/umbilical.h"
 #include "common/alarm.h"
 #include "common/parameters.h"
 #include "common/states.h"
@@ -20,7 +21,6 @@
 #include "proto/event.pb.h"
 #include "proto/stream.pb.h"
 #include "stagezero/client/client.h"
-#include "capcom/umbilical.h"
 #include "toolbelt/fd.h"
 #include "toolbelt/logging.h"
 #include "toolbelt/pipe.h"
@@ -35,9 +35,7 @@ class Subsystem;
 struct Compute;
 class Process;
 
-
 constexpr uint32_t kNoClient = -1U;
-
 
 // Messages are sent through the message pipe.
 struct Message {
@@ -369,7 +367,8 @@ public:
 
   absl::Status
   PropagateTelemetryCommandMessage(std::shared_ptr<Message> message,
-                       co::Coroutine *c);
+                                   co::Coroutine *c);
+
 private:
   friend class Process;
   friend class Capcom;
@@ -516,7 +515,8 @@ private:
 
   co::CoroutineScheduler &Scheduler();
 
-  void SendOutput(int fd, const std::string &data, co::Coroutine *c);
+  void SendOutput(int fd, const std::string &process_id,
+                  const std::string &data, co::Coroutine *c);
 
   std::shared_ptr<Process> FindInteractiveProcess();
 

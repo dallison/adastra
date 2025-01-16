@@ -74,6 +74,14 @@ ClientHandler::SendTelemetryEvent(const adastra::proto::TelemetryEvent &event) {
   return QueueEvent(std::move(e));
 }
 
+absl::Status
+ClientHandler::SendOutputEvent(std::shared_ptr<adastra::proto::Event> event) {
+  if ((event_mask_ & kOutputEvents) == 0) {
+    return absl::OkStatus();
+  }
+  return QueueEvent(std::move(event));
+}
+
 absl::Status ClientHandler::SendAlarm(const Alarm &alarm) {
   if ((event_mask_ & kAlarmEvents) == 0) {
     return absl::OkStatus();

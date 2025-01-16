@@ -201,6 +201,7 @@ private:
   SendTelemetryEvent(const std::string &subsystem,
                      const adastra::stagezero::control::TelemetryEvent &event);
 
+  void SendOutputEvent(int fd, const std::string &process_id, const std::string& data);
   void SendAlarm(const Alarm &alarm);
 
   std::vector<Subsystem *> GetSubsystems() const;

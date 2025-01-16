@@ -199,8 +199,9 @@ void Subsystem::Offline(uint32_t client_id, co::Coroutine *c) {
           case adastra::stagezero::control::Event::kStop:
             break;
           case adastra::stagezero::control::Event::kOutput:
-            subsystem->SendOutput(event->output().fd(), event->output().data(),
-                                  c2);
+            subsystem->SendOutput(event->output().fd(),
+                                  event->output().process_id(),
+                                  event->output().data(), c2);
             break;
           case adastra::stagezero::control::Event::kLog:
             subsystem->capcom_.Log(event->log());
@@ -310,7 +311,6 @@ void Subsystem::Connecting(uint32_t client_id, co::Coroutine *c) {
   }
 
   if (AllProcessesConnected()) {
-    std::cerr << "all processes connected" << std::endl;
     EnterState(OperState::kStartingProcesses, client_id);
     return;
   }
@@ -352,6 +352,7 @@ void Subsystem::Connecting(uint32_t client_id, co::Coroutine *c) {
 
               case adastra::stagezero::control::Event::kOutput:
                 subsystem->SendOutput(event->output().fd(),
+                                      event->output().process_id(),
                                       event->output().data(), c2);
                 break;
               case adastra::stagezero::control::Event::kLog:
@@ -428,7 +429,6 @@ void Subsystem::Connecting(uint32_t client_id, co::Coroutine *c) {
             }
 
             if (subsystem->AllProcessesConnected()) {
-              std::cerr << "2 all processes connected" << std::endl;
               subsystem->EnterState(OperState::kStartingProcesses, client_id);
               subsystem->SendToChildren(AdminState::kOnline, client_id);
               return StateTransition::kLeave;
@@ -488,6 +488,7 @@ void Subsystem::StartingChildren(uint32_t client_id, co::Coroutine *c) {
 
               case adastra::stagezero::control::Event::kOutput:
                 subsystem->SendOutput(event->output().fd(),
+                                      event->output().process_id(),
                                       event->output().data(), c2);
                 break;
               case adastra::stagezero::control::Event::kLog:
@@ -702,6 +703,7 @@ void Subsystem::StartingProcesses(uint32_t client_id, co::Coroutine *c) {
                  }
                  case adastra::stagezero::control::Event::kOutput:
                    subsystem->SendOutput(event->output().fd(),
+                                         event->output().process_id(),
                                          event->output().data(), c2);
                    break;
                  case adastra::stagezero::control::Event::kLog:
@@ -884,6 +886,7 @@ void Subsystem::Online(uint32_t client_id, co::Coroutine *c) {
               }
               case adastra::stagezero::control::Event::kOutput:
                 subsystem->SendOutput(event->output().fd(),
+                                      event->output().process_id(),
                                       event->output().data(), c2);
                 break;
               case adastra::stagezero::control::Event::kLog:
@@ -1084,8 +1087,9 @@ void Subsystem::StoppingProcesses(uint32_t client_id, co::Coroutine *c) {
             break;
           }
           case adastra::stagezero::control::Event::kOutput:
-            subsystem->SendOutput(event->output().fd(), event->output().data(),
-                                  c2);
+            subsystem->SendOutput(event->output().fd(),
+                                  event->output().process_id(),
+                                  event->output().data(), c2);
             break;
           case adastra::stagezero::control::Event::kLog:
             subsystem->capcom_.Log(event->log());
@@ -1223,6 +1227,7 @@ void Subsystem::StoppingChildren(uint32_t client_id, co::Coroutine *c) {
               }
               case adastra::stagezero::control::Event::kOutput:
                 subsystem->SendOutput(event->output().fd(),
+                                      event->output().process_id(),
                                       event->output().data(), c2);
                 break;
               case adastra::stagezero::control::Event::kLog:
@@ -1407,6 +1412,7 @@ void Subsystem::WaitForRestart(co::Coroutine *c) {
               }
               case adastra::stagezero::control::Event::kOutput:
                 subsystem->SendOutput(event->output().fd(),
+                                      event->output().process_id(),
                                       event->output().data(), c2);
                 break;
               case adastra::stagezero::control::Event::kLog:
@@ -1761,6 +1767,7 @@ void Subsystem::Restarting(uint32_t client_id, co::Coroutine *c) {
                  }
                  case adastra::stagezero::control::Event::kOutput:
                    subsystem->SendOutput(event->output().fd(),
+                                         event->output().process_id(),
                                          event->output().data(), c2);
                    break;
                  case adastra::stagezero::control::Event::kLog:
@@ -1927,6 +1934,7 @@ void Subsystem::RestartingProcesses(uint32_t client_id, co::Coroutine *c) {
                  }
                  case adastra::stagezero::control::Event::kOutput:
                    subsystem->SendOutput(event->output().fd(),
+                                         event->output().process_id(),
                                          event->output().data(), c2);
                    break;
                  case adastra::stagezero::control::Event::kLog:
@@ -2047,6 +2055,7 @@ void Subsystem::Broken(uint32_t client_id, co::Coroutine *c) {
 
                  case adastra::stagezero::control::Event::kOutput:
                    subsystem->SendOutput(event->output().fd(),
+                                         event->output().process_id(),
                                          event->output().data(), c2);
                    break;
                  case adastra::stagezero::control::Event::kLog:

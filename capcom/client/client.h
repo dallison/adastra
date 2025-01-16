@@ -222,7 +222,7 @@ public:
                          const std::string &process, int fd,
                          const std::string &data, co::Coroutine *c = nullptr);
 
-  absl::Status CloseFd(const std::string &subsystem, const std::string &process,
+  absl::Status CloseFd(const std::string &subsystem, const std::string &process_name,
                        int fd, co::Coroutine *c = nullptr);
 
   absl::Status FreezeCgroup(const std::string &compute,

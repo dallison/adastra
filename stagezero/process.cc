@@ -404,13 +404,13 @@ static void DefaultStreamDirections(std::shared_ptr<StreamInfo> stream) {
 
   switch (stream->fd) {
   case STDIN_FILENO:
-    if (stream->direction != proto::StreamControl::DEFAULT) {
+    if (stream->direction == proto::StreamControl::DEFAULT) {
       stream->direction = proto::StreamControl::INPUT;
     }
     break;
   case STDOUT_FILENO:
   case STDERR_FILENO:
-    if (stream->direction != proto::StreamControl::DEFAULT) {
+    if (stream->direction == proto::StreamControl::DEFAULT) {
       stream->direction = proto::StreamControl::OUTPUT;
     }
     break;
@@ -564,7 +564,6 @@ absl::Status Process::BuildStreams(
         return pipe.status();
       }
       stream->pipe = std::move(*pipe);
-
       if (s.has_terminal()) {
         stream->term_name = s.terminal().name();
       }
@@ -1184,7 +1183,7 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
           stream->direction == proto::StreamControl::OUTPUT
               ? stream->pipe.WriteFd()
               : stream->pipe.ReadFd();
-      fd.Reset();
+     fd.Reset();
     }
   }
   return absl::OkStatus();

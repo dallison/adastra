@@ -394,7 +394,11 @@ void Subsystem::RestartProcesses(
   }
 }
 
-void Subsystem::SendOutput(int fd, const std::string &data, co::Coroutine *c) {
+void Subsystem::SendOutput(int fd, const std::string& process_id, const std::string &data, co::Coroutine *c) {
+  if (!interactive_output_.Valid()) {
+    capcom_.SendOutputEvent(fd, process_id, data);
+    return;
+  }
   c->Wait(interactive_output_.Fd(), POLLOUT);
   int e = ::write(interactive_output_.Fd(), data.data(), data.size());
   if (e <= 0) {
