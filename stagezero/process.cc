@@ -217,8 +217,8 @@ StaticProcess::StartInternal(const std::vector<std::string> extra_env_vars,
 
   client_->AddCoroutine(std::make_unique<co::Coroutine>(
       scheduler_,
-      [ proc = shared_from_this(), client = client_,
-        send_start_event ](co::Coroutine * c) mutable {
+      [proc = shared_from_this(), client = client_,
+       send_start_event](co::Coroutine *c) mutable {
         if (proc->WillNotify()) {
           std::shared_ptr<StreamInfo> s = proc->FindNotifyStream();
           if (s != nullptr) {
@@ -525,14 +525,14 @@ absl::Status Process::BuildStreams(
 
     // Spawn coroutine to read from the pty and send output events.
     client_->AddCoroutine(std::make_unique<co::Coroutine>(
-        scheduler_, [ proc = shared_from_this(), client = client_,
-                      this_end ](co::Coroutine * c) {
+        scheduler_, [proc = shared_from_this(), client = client_,
+                     this_end](co::Coroutine *c) {
           absl::Status status = StreamFromFileDescriptor(
               this_end,
               [proc, client](const char *buf, size_t len) -> absl::Status {
                 // Write to client using an event.
-                return client->SendOutputEvent(proc->Name(), proc->GetId(), STDOUT_FILENO,
-                                               buf, len);
+                return client->SendOutputEvent(proc->Name(), proc->GetId(),
+                                               STDOUT_FILENO, buf, len);
               },
               c);
           if (!status.ok()) {
@@ -574,15 +574,15 @@ absl::Status Process::BuildStreams(
       // writes to the write end of the pipe/tty.
       if (stream->direction == proto::StreamControl::OUTPUT) {
         client_->AddCoroutine(std::make_unique<co::Coroutine>(
-            scheduler_, [ proc = shared_from_this(), stream,
-                          client = client_ ](co::Coroutine * c) {
+            scheduler_, [proc = shared_from_this(), stream,
+                         client = client_](co::Coroutine *c) {
               absl::Status status = StreamFromFileDescriptor(
                   stream->pipe.ReadFd().Fd(),
                   [proc, stream, client](const char *buf,
                                          size_t len) -> absl::Status {
                     // Write to client using an event.
-                    return client->SendOutputEvent(proc->Name(), proc->GetId(), stream->fd,
-                                                   buf, len);
+                    return client->SendOutputEvent(proc->Name(), proc->GetId(),
+                                                   stream->fd, buf, len);
                   },
                   c);
               if (!status.ok()) {
@@ -607,8 +607,8 @@ absl::Status Process::BuildStreams(
         stream->term_name = s.terminal().name();
       }
       client_->AddCoroutine(std::make_unique<co::Coroutine>(
-          scheduler_, [ proc = shared_from_this(), stream,
-                        client = client_ ](co::Coroutine * c) {
+          scheduler_, [proc = shared_from_this(), stream,
+                       client = client_](co::Coroutine *c) {
             absl::Status status = StreamFromFileDescriptor(
                 stream->pipe.ReadFd().Fd(),
                 [proc, stream, client](const char *buf,
@@ -641,13 +641,12 @@ absl::Status Process::BuildStreams(
         stream->term_name = s.terminal().name();
       }
       client_->AddCoroutine(std::make_unique<co::Coroutine>(
-          scheduler_, [ proc = shared_from_this(), stream,
-                        client = client_ ](co::Coroutine * c) {
+          scheduler_, [proc = shared_from_this(), stream,
+                       client = client_](co::Coroutine *c) {
             absl::Status status = StreamFromFileDescriptor(
                 stream->pipe.ReadFd().Fd(),
                 [proc, stream, client](const char *buf,
                                        size_t len) -> absl::Status {
-
                   syslog(stream->fd == 1 ? LOG_INFO : LOG_ERR, "%s: %s",
                          proc->Name().c_str(), std::string(buf, len).c_str());
                   return absl::OkStatus();
@@ -693,128 +692,127 @@ void Process::RunParameterServer() {
   std::shared_ptr<StreamInfo> param_write_stream = FindParametersStream(false);
   assert(param_read_stream != nullptr && param_write_stream != nullptr);
 
-  client_->AddCoroutine(std::make_unique<co::Coroutine>(scheduler_, [
-    proc = shared_from_this(), param_read_stream, param_write_stream,
-    client = client_
-  ](co::Coroutine * c) {
-    toolbelt::FileDescriptor &rfd = param_write_stream->pipe.ReadFd();
-    toolbelt::FileDescriptor &wfd = param_read_stream->pipe.WriteFd();
-    while (rfd.Valid() && wfd.Valid()) {
-      adastra::proto::parameters::Request req;
-      {
-        uint32_t len;
-        int wait_fd = c->Wait(rfd.Fd(), POLLIN);
-        if (wait_fd != rfd.Fd()) {
-          return;
-        }
-        ssize_t n = ::read(rfd.Fd(), &len, sizeof(len));
-        if (n <= 0) {
-          return;
-        }
-        std::vector<char> buffer(len);
-        char *buf = buffer.data();
-        size_t remaining = len;
-        while (remaining > 0) {
-          int wait_fd = c->Wait(rfd.Fd(), POLLIN);
-          if (wait_fd != rfd.Fd()) {
-            return;
+  client_->AddCoroutine(std::make_unique<co::Coroutine>(
+      scheduler_, [proc = shared_from_this(), param_read_stream,
+                   param_write_stream, client = client_](co::Coroutine *c) {
+        toolbelt::FileDescriptor &rfd = param_write_stream->pipe.ReadFd();
+        toolbelt::FileDescriptor &wfd = param_read_stream->pipe.WriteFd();
+        while (rfd.Valid() && wfd.Valid()) {
+          adastra::proto::parameters::Request req;
+          {
+            uint32_t len;
+            int wait_fd = c->Wait(rfd.Fd(), POLLIN);
+            if (wait_fd != rfd.Fd()) {
+              return;
+            }
+            ssize_t n = ::read(rfd.Fd(), &len, sizeof(len));
+            if (n <= 0) {
+              return;
+            }
+            std::vector<char> buffer(len);
+            char *buf = buffer.data();
+            size_t remaining = len;
+            while (remaining > 0) {
+              int wait_fd = c->Wait(rfd.Fd(), POLLIN);
+              if (wait_fd != rfd.Fd()) {
+                return;
+              }
+              ssize_t n = ::read(rfd.Fd(), buf, remaining);
+              if (n <= 0) {
+                return;
+              }
+              remaining -= n;
+              buf += n;
+            }
+
+            if (!req.ParseFromArray(buffer.data(), buffer.size())) {
+              client->Log(proc->Name(), toolbelt::LogLevel::kError,
+                          "Failed to parse parameter stream message");
+              break;
+            }
           }
-          ssize_t n = ::read(rfd.Fd(), buf, remaining);
-          if (n <= 0) {
-            return;
+          adastra::proto::parameters::Response resp;
+
+          proc->GetStageZero().HandleParameterServerRequest(proc, req, resp,
+                                                            client, c);
+
+          uint64_t len = resp.ByteSizeLong();
+          std::vector<char> resp_buffer(len + sizeof(uint32_t));
+          char *respbuf = resp_buffer.data() + 4;
+          if (!resp.SerializeToArray(respbuf, uint32_t(len))) {
+            client->Log(proc->Name(), toolbelt::LogLevel::kError,
+                        "Failed to serialize parameters response");
+            break;
           }
-          remaining -= n;
-          buf += n;
-        }
+          // Copy length into buffer.
+          memcpy(resp_buffer.data(), &len, sizeof(uint32_t));
 
-        if (!req.ParseFromArray(buffer.data(), buffer.size())) {
-          client->Log(proc->Name(), toolbelt::LogLevel::kError,
-                      "Failed to parse parameter stream message");
-          break;
+          // Write back to pipe in a loop.
+          char *buf = resp_buffer.data();
+          size_t remaining = len + sizeof(uint32_t);
+          while (remaining > 0) {
+            int wait_fd = c->Wait(wfd.Fd(), POLLOUT);
+            if (wait_fd != wfd.Fd()) {
+              return;
+            }
+            ssize_t n = ::write(wfd.Fd(), buf, remaining);
+            if (n <= 0) {
+              return;
+            }
+            remaining -= n;
+            buf += n;
+          }
         }
-      }
-      adastra::proto::parameters::Response resp;
-
-      proc->GetStageZero().HandleParameterServerRequest(proc, req, resp, client,
-                                                        c);
-
-      uint64_t len = resp.ByteSizeLong();
-      std::vector<char> resp_buffer(len + sizeof(uint32_t));
-      char *respbuf = resp_buffer.data() + 4;
-      if (!resp.SerializeToArray(respbuf, uint32_t(len))) {
-        client->Log(proc->Name(), toolbelt::LogLevel::kError,
-                    "Failed to serialize parameters response");
-        break;
-      }
-      // Copy length into buffer.
-      memcpy(resp_buffer.data(), &len, sizeof(uint32_t));
-
-      // Write back to pipe in a loop.
-      char *buf = resp_buffer.data();
-      size_t remaining = len + sizeof(uint32_t);
-      while (remaining > 0) {
-        int wait_fd = c->Wait(wfd.Fd(), POLLOUT);
-        if (wait_fd != wfd.Fd()) {
-          return;
-        }
-        ssize_t n = ::write(wfd.Fd(), buf, remaining);
-        if (n <= 0) {
-          return;
-        }
-        remaining -= n;
-        buf += n;
-      }
-    }
-  }));
+      }));
 }
 
 void Process::RunTelemetryServer() {
   std::shared_ptr<StreamInfo> tele_write_stream = FindTelemetryStream(false);
   assert(tele_write_stream != nullptr);
 
-  client_->AddCoroutine(std::make_unique<co::Coroutine>(scheduler_, [
-    proc = shared_from_this(), tele_write_stream, client = client_
-  ](co::Coroutine * c) {
-    toolbelt::FileDescriptor &rfd = tele_write_stream->pipe.ReadFd();
-    while (rfd.Valid()) {
-      adastra::proto::telemetry::Status status;
-      {
-        uint32_t len;
-        int wait_fd = c->Wait(rfd.Fd(), POLLIN);
-        if (wait_fd != rfd.Fd()) {
-          return;
-        }
-        ssize_t n = ::read(rfd.Fd(), &len, sizeof(len));
-        if (n <= 0) {
-          return;
-        }
-        std::vector<char> buffer(len);
-        char *buf = buffer.data();
-        size_t remaining = len;
-        while (remaining > 0) {
-          int wait_fd = c->Wait(rfd.Fd(), POLLIN);
-          if (wait_fd != rfd.Fd()) {
-            return;
-          }
-          ssize_t n = ::read(rfd.Fd(), buf, remaining);
-          if (n <= 0) {
-            return;
-          }
-          remaining -= n;
-          buf += n;
-        }
+  client_->AddCoroutine(std::make_unique<co::Coroutine>(
+      scheduler_, [proc = shared_from_this(), tele_write_stream,
+                   client = client_](co::Coroutine *c) {
+        toolbelt::FileDescriptor &rfd = tele_write_stream->pipe.ReadFd();
+        while (rfd.Valid()) {
+          adastra::proto::telemetry::Status status;
+          {
+            uint32_t len;
+            int wait_fd = c->Wait(rfd.Fd(), POLLIN);
+            if (wait_fd != rfd.Fd()) {
+              return;
+            }
+            ssize_t n = ::read(rfd.Fd(), &len, sizeof(len));
+            if (n <= 0) {
+              return;
+            }
+            std::vector<char> buffer(len);
+            char *buf = buffer.data();
+            size_t remaining = len;
+            while (remaining > 0) {
+              int wait_fd = c->Wait(rfd.Fd(), POLLIN);
+              if (wait_fd != rfd.Fd()) {
+                return;
+              }
+              ssize_t n = ::read(rfd.Fd(), buf, remaining);
+              if (n <= 0) {
+                return;
+              }
+              remaining -= n;
+              buf += n;
+            }
 
-        if (!status.ParseFromArray(buffer.data(), buffer.size())) {
-          client->Log(proc->Name(), toolbelt::LogLevel::kError,
-                      "Failed to parse telemetry status message");
-          break;
-        }
+            if (!status.ParseFromArray(buffer.data(), buffer.size())) {
+              client->Log(proc->Name(), toolbelt::LogLevel::kError,
+                          "Failed to parse telemetry status message");
+              break;
+            }
 
-        proc->GetStageZero().HandleTelemetryServerStatus(proc, status, client,
-                                                         c);
-      }
-    }
-  }));
+            proc->GetStageZero().HandleTelemetryServerStatus(proc, status,
+                                                             client, c);
+          }
+        }
+      }));
 }
 
 void Process::SendParameterUpdateEvent(const std::string &name,
@@ -1124,7 +1122,7 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
 
     absl::flat_hash_map<std::string, Symbol *> env_vars =
         local_symbols_.GetEnvironmentSymbols();
-    for (auto & [ name, symbol ] : env_vars) {
+    for (auto &[name, symbol] : env_vars) {
       env_strings.push_back(absl::StrFormat("%s=%s", name, symbol->Value()));
     }
     for (auto &extra : extra_env_vars) {
@@ -1138,7 +1136,22 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
     }
     env.push_back(nullptr);
 
-    setpgrp();
+    if (!interactive_) {
+      // Can't set a process group on a new session.
+      int perr = setpgid(0, 0);
+      if (perr == -1) {
+        std::cerr << "Failed to set process group: " << strerror(errno)
+                  << std::endl;
+        exit(1);
+      }
+    }
+
+    // Add the process to the cgroup if it is set.
+    if (absl::Status status = AddToCgroup(getpid()); !status.ok()) {
+      std::cerr << "Failed to add process to cgroup " << cgroup_ << status
+                << std::endl;
+      exit(1);
+    }
 
     if (geteuid() == 0) {
       // We can only set the user and group if we are running as root.
@@ -1152,13 +1165,6 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
         std::cerr << "Failed to setgid: " << strerror(errno) << std::endl;
         exit(1);
       }
-    }
-
-    // Add the process to the cgroup if it is set.
-    if (absl::Status status = AddToCgroup(getpid()); !status.ok()) {
-      std::cerr << "Failed to add process to cgroup " << cgroup_ << status
-                << std::endl;
-      exit(1);
     }
 
     int64_t val = 1;
@@ -1290,7 +1296,7 @@ absl::Status Process::Stop(co::Coroutine *c) {
   stopping_ = true;
   client_->AddCoroutine(std::make_unique<co::Coroutine>(
       scheduler_,
-      [ proc = shared_from_this(), client = client_ ](co::Coroutine * c2) {
+      [proc = shared_from_this(), client = client_](co::Coroutine *c2) {
         if (!proc->IsRunning()) {
           return;
         }
@@ -1329,9 +1335,10 @@ absl::Status Process::Stop(co::Coroutine *c) {
 
         timeout = proc->SigIntTimeoutSecs();
         if (timeout > 0) {
-          client->Log(proc->Name(), toolbelt::LogLevel::kDebug,
-                      "Killing process %s with SIGINT (timeout %d seconds)",
-                      proc->Name().c_str(), timeout);
+          client->Log(
+              proc->Name(), toolbelt::LogLevel::kDebug,
+              "Killing process %s (pid %d) with SIGINT (timeout %d seconds)",
+              proc->Name().c_str(), proc->GetProcessGroupId(), timeout);
           int e = SafeKill(proc->GetProcessGroupId(), SIGINT);
           if (e != 0) {
             client->Log(proc->Name(), toolbelt::LogLevel::kError,
@@ -1455,10 +1462,11 @@ absl::Status Zygote::Start(co::Coroutine *c) {
   }
 
   // Wait for the zygote to connect to the socket in a coroutine.
-  auto acceptor = new co::Coroutine(scheduler_, [
-    proc = shared_from_this(), listen_socket = std::move(listen_socket),
-    client = client_
-  ](co::Coroutine * c) mutable {
+  auto acceptor = new co::Coroutine(scheduler_, [proc = shared_from_this(),
+                                                 listen_socket =
+                                                     std::move(listen_socket),
+                                                 client = client_](
+                                                    co::Coroutine *c) mutable {
     absl::StatusOr<toolbelt::UnixSocket> s = listen_socket.Accept(c);
     if (!s.ok()) {
       client->Log(proc->Name(), toolbelt::LogLevel::kError,
@@ -1513,7 +1521,6 @@ absl::Status Zygote::Start(co::Coroutine *c) {
         }
       }
     }
-
   });
   client_->AddCoroutine(std::unique_ptr<co::Coroutine>(acceptor));
   return absl::OkStatus();
@@ -1779,57 +1786,58 @@ absl::Status VirtualProcess::Start(co::Coroutine *c) {
     RunTelemetryServer();
   }
 
-  client_->AddCoroutine(std::make_unique<co::Coroutine>(scheduler_, [
-    proc, vproc, zygote = zygote_, client = client_
-  ](co::Coroutine * c2) {
-    // Send start event to client.
-    absl::Status eventStatus;
-    if (proc->IsDetached()) {
-      eventStatus = proc->GetStageZero().SendProcessStartEvent(proc->GetId());
-    } else {
-      eventStatus = client->SendProcessStartEvent(proc->GetId());
-    }
-    if (!eventStatus.ok()) {
-      client->Log(proc->Name(), toolbelt::LogLevel::kError, "%s",
-                  eventStatus.ToString().c_str());
-      return;
-    }
+  client_->AddCoroutine(std::make_unique<co::Coroutine>(
+      scheduler_,
+      [proc, vproc, zygote = zygote_, client = client_](co::Coroutine *c2) {
+        // Send start event to client.
+        absl::Status eventStatus;
+        if (proc->IsDetached()) {
+          eventStatus =
+              proc->GetStageZero().SendProcessStartEvent(proc->GetId());
+        } else {
+          eventStatus = client->SendProcessStartEvent(proc->GetId());
+        }
+        if (!eventStatus.ok()) {
+          client->Log(proc->Name(), toolbelt::LogLevel::kError, "%s",
+                      eventStatus.ToString().c_str());
+          return;
+        }
 
-    int status = vproc->WaitForZygoteNotification(c2);
-    zygote->RemoveVirtualProcess(vproc);
+        int status = vproc->WaitForZygoteNotification(c2);
+        zygote->RemoveVirtualProcess(vproc);
 
-    bool signaled = WIFSIGNALED(status);
-    bool exited = WIFEXITED(status);
-    int term_sig = WTERMSIG(status);
-    int exit_status = WEXITSTATUS(status);
-    // Can't be both exit and signal, but can be neither in the case
-    // of a stop.  We don't expect anything to be stopped and don't
-    // support it.
-    if (!signaled && !exited) {
-      signaled = true;
-    }
-    if (exited) {
-      client->Log(proc->Name(), toolbelt::LogLevel::kDebug,
-                  "Virtual process %s exited with status %d",
-                  proc->Name().c_str(), exit_status);
-    } else {
-      client->Log(proc->Name(), toolbelt::LogLevel::kDebug,
-                  "Virtual process %s received signal %d \"%s\"",
-                  proc->Name().c_str(), term_sig, strsignal(term_sig));
-    }
-    if (proc->IsDetached()) {
-      eventStatus = proc->GetStageZero().SendProcessStopEvent(
-          proc->GetId(), !signaled, exit_status, term_sig);
-    } else {
-      eventStatus = client->SendProcessStopEvent(proc->GetId(), !signaled,
-                                                 exit_status, term_sig);
-    }
-    if (!eventStatus.ok()) {
-      client->Log(proc->Name(), toolbelt::LogLevel::kError, "%s\n",
-                  eventStatus.ToString().c_str());
-      return;
-    }
-  }));
+        bool signaled = WIFSIGNALED(status);
+        bool exited = WIFEXITED(status);
+        int term_sig = WTERMSIG(status);
+        int exit_status = WEXITSTATUS(status);
+        // Can't be both exit and signal, but can be neither in the case
+        // of a stop.  We don't expect anything to be stopped and don't
+        // support it.
+        if (!signaled && !exited) {
+          signaled = true;
+        }
+        if (exited) {
+          client->Log(proc->Name(), toolbelt::LogLevel::kDebug,
+                      "Virtual process %s exited with status %d",
+                      proc->Name().c_str(), exit_status);
+        } else {
+          client->Log(proc->Name(), toolbelt::LogLevel::kDebug,
+                      "Virtual process %s received signal %d \"%s\"",
+                      proc->Name().c_str(), term_sig, strsignal(term_sig));
+        }
+        if (proc->IsDetached()) {
+          eventStatus = proc->GetStageZero().SendProcessStopEvent(
+              proc->GetId(), !signaled, exit_status, term_sig);
+        } else {
+          eventStatus = client->SendProcessStopEvent(proc->GetId(), !signaled,
+                                                     exit_status, term_sig);
+        }
+        if (!eventStatus.ok()) {
+          client->Log(proc->Name(), toolbelt::LogLevel::kError, "%s\n",
+                      eventStatus.ToString().c_str());
+          return;
+        }
+      }));
 
   return absl::OkStatus();
 }

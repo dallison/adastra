@@ -34,8 +34,6 @@ void Subsystem::EnterState(OperState state, uint32_t client_id) {
                 "Subsystem %s entering %s from %s", Name().c_str(),
                 OperStateName(state), OperStateName(oper_state_));
   }
-  std::cerr << "Subsystem " << Name() << " entering " << OperStateName(state)
-            << " from " << OperStateName(oper_state_) << std::endl;
   prev_oper_state_ = oper_state_;
   oper_state_ = state;
   co::Coroutine *coroutine = new co::Coroutine(

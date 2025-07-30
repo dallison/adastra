@@ -4,6 +4,7 @@
 
 #include "capcom/capcom.h"
 #include "toolbelt/clock.h"
+#include "absl/strings/str_split.h"
 
 namespace adastra::capcom {
 
@@ -19,7 +20,6 @@ Capcom::Capcom(co::CoroutineScheduler &scheduler, toolbelt::InetAddress addr,
   Compute lc = {.name = "<localhost>",
                 .addr =
                     toolbelt::InetAddress("localhost", local_stagezero_port)};
-  std::cerr << "local compute: " << lc.addr.ToString() << std::endl;
   local_compute_ = std::make_shared<Compute>(lc);
 
   // Create the log message pipe.
@@ -148,7 +148,6 @@ absl::Status Capcom::ConnectUmbilical(const std::string &compute,
     // Already connecting or connected.
     return absl::OkStatus();
   }
-  std::cerr << "Connecting capcom umbilical to " << compute << std::endl;
   if (absl::Status status = umbilical->Connect(kNoEvents, c); !status.ok()) {
     umbilical->Fail();
     return status;
@@ -195,7 +194,7 @@ absl::Status Capcom::ConnectUmbilical(const std::string &compute,
   }
 
   // Add all global symbols to stagezero.
-  for (auto & [ name, sym ] : global_symbols_.GetSymbols()) {
+  for (auto &[name, sym] : global_symbols_.GetSymbols()) {
     if (absl::Status status = umbilical->GetClient()->SetGlobalVariable(
             sym->Name(), sym->Value(), sym->Exported(), nullptr);
         !status.ok()) {
@@ -215,7 +214,7 @@ void Capcom::DisconnectUmbilical(const std::string &compute,
     return;
   }
 
-  Umbilical& umbilical = it->second;
+  Umbilical &umbilical = it->second;
   if (absl::Status add_status = RemoveComputeCgroups(
           umbilical.GetClient(), umbilical.GetCompute(), nullptr);
       !add_status.ok()) {
@@ -268,7 +267,7 @@ void Capcom::FlushLogs() {
     }
   }
 
-  for (auto & [ timestamp, msg ] : log_buffer_) {
+  for (auto &[timestamp, msg] : log_buffer_) {
     toolbelt::LogLevel level;
     switch (msg->level()) {
     case adastra::proto::LogMessage::LOG_VERBOSE:
@@ -370,12 +369,12 @@ absl::Status Capcom::Run() {
       "Log Flusher"));
 
   // Start the listener coroutine.
-  coroutines_.insert(
-      std::make_unique<co::Coroutine>(co_scheduler_,
-                                      [this, &listen_socket](co::Coroutine *c) {
-                                        ListenerCoroutine(listen_socket, c);
-                                      },
-                                      "Listener Socket"));
+  coroutines_.insert(std::make_unique<co::Coroutine>(
+      co_scheduler_,
+      [this, &listen_socket](co::Coroutine *c) {
+        ListenerCoroutine(listen_socket, c);
+      },
+      "Listener Socket"));
 
   // Run the coroutine main loop.
   co_scheduler_.Run();
@@ -452,35 +451,44 @@ void Capcom::SendOutputEvent(int fd, const std::string &name,
     // If we are not logging process output, we are done.
     return;
   }
-  // Write output as log message to capcom logger.
-  bool has_escapes = false;
-  for (char c : data) {
-    if (c == '\033') {
-      has_escapes = true;
-      break;
-    }
-  }
-  if (has_escapes) {
-    if (fd == STDERR_FILENO) {
-      std::cerr << data;
+
+  // If the output contains escape sequences it's probably already a log message
+  // from a process that uses the logger.  In this case we don't want to nest
+  // this as our own log messages so we just output it directly to the
+  // appropriate stream.
+  std::ostream *output_stream = (fd == STDERR_FILENO) ? &std::cerr : &std::cout;
+
+  // Split the output in to lines and log each line separately.
+  std::vector<std::string> lines = absl::StrSplit(data, '\n');
+  for (auto &line : lines) {
+    bool has_escapes = line.find('\x1b') != std::string::npos;
+    if (has_escapes) {
+      *output_stream << line << std::endl;
     } else {
-      std::cout << data;
+      // Format the output as a log message and send it to the logger.
+      while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) {
+        // Remove trailing newline or CR.
+        line.pop_back();
+      }
+      if (line.empty()) {
+        // If the line is empty, skip it.
+        continue;
+      }
+      LogMessage log = {.source = name,
+                        .level = fd == STDERR_FILENO ? toolbelt::LogLevel::kError
+                                                     : toolbelt::LogLevel::kInfo,
+                        .text = line};
+
+      struct timespec now_ts;
+      clock_gettime(CLOCK_REALTIME, &now_ts);
+      uint64_t now_ns = now_ts.tv_sec * 1000000000LL + now_ts.tv_nsec;
+      log.timestamp = now_ns;
+
+      adastra::proto::LogMessage proto_msg;
+      log.ToProto(&proto_msg);
+      this->Log(proto_msg);
     }
-    return;
   }
-  LogMessage msg = {
-      .source = name,
-      .text = data,
-      .level = fd == STDERR_FILENO ? toolbelt::LogLevel::kError
-                                   : toolbelt::LogLevel::kInfo,
-  };
-  struct timespec now_ts;
-  clock_gettime(CLOCK_REALTIME, &now_ts);
-  uint64_t timestamp = now_ts.tv_sec * 1000000000LL + now_ts.tv_nsec;
-  msg.timestamp = timestamp;
-  adastra::proto::LogMessage log_msg;
-  msg.ToProto(&log_msg);
-  this->Log(log_msg);
 }
 
 void Capcom::SendTelemetryEvent(
@@ -534,7 +542,7 @@ absl::Status Capcom::Abort(const std::string &reason, bool emergency,
 
   emergency_aborting_ = emergency;
 
-  for (auto & [ name, subsys ] : subsystems_) {
+  for (auto &[name, subsys] : subsystems_) {
     if (subsys->IsCritical()) {
       continue;
     }
@@ -550,7 +558,7 @@ absl::Status Capcom::Abort(const std::string &reason, bool emergency,
   // get notified that their process has died and will attempt to restart it.
   for (;;) {
     bool all_offline = true;
-    for (auto & [ name, subsys ] : subsystems_) {
+    for (auto &[name, subsys] : subsystems_) {
       if (!subsys->IsCritical() && !subsys->IsOffline()) {
         all_offline = false;
         break;
@@ -564,7 +572,7 @@ absl::Status Capcom::Abort(const std::string &reason, bool emergency,
 
   // Now tell all computes (the stagezero running on them) to kill
   // all the processes.
-  for (auto & [ _, umbilical ] : stagezero_umbilicals_) {
+  for (auto &[_, umbilical] : stagezero_umbilicals_) {
     if (!umbilical.IsConnected()) {
       continue;
     }
@@ -601,7 +609,7 @@ absl::Status Capcom::Abort(const std::string &reason, bool emergency,
 absl::Status Capcom::AddGlobalVariable(const Variable &var, co::Coroutine *c) {
   global_symbols_.AddSymbol(var.name, var.value, var.exported);
   // Send the global variable to all the stagezeros.
-  for (auto & [ _, umbilical ] : stagezero_umbilicals_) {
+  for (auto &[_, umbilical] : stagezero_umbilicals_) {
     if (!umbilical.IsConnected()) {
       continue;
     }
@@ -622,7 +630,7 @@ absl::Status Capcom::PropagateParameterUpdate(const std::string &name,
                                               co::Coroutine *c) {
   absl::Status result = absl::OkStatus();
 
-  for (auto & [ _, umbilical ] : stagezero_umbilicals_) {
+  for (auto &[_, umbilical] : stagezero_umbilicals_) {
     if (!umbilical.IsConnected()) {
       continue;
     }
@@ -644,7 +652,7 @@ Capcom::PropagateParameterDelete(const std::vector<std::string> &names,
 
   absl::Status result = absl::OkStatus();
 
-  for (auto & [ _, umbilical ] : stagezero_umbilicals_) {
+  for (auto &[_, umbilical] : stagezero_umbilicals_) {
     if (!umbilical.IsConnected()) {
       continue;
     }
@@ -776,7 +784,8 @@ Capcom::RemoveComputeCgroups(std::shared_ptr<stagezero::Client> client,
                              std::shared_ptr<Compute> compute,
                              co::Coroutine *c) {
   for (auto &cgroup : compute->cgroups) {
-    if (absl::Status status = client->RemoveCgroup(cgroup.name, c); !status.ok()) {
+    if (absl::Status status = client->RemoveCgroup(cgroup.name, c);
+        !status.ok()) {
       return status;
     }
   }

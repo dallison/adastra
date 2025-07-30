@@ -329,7 +329,6 @@ absl::Status Subsystem::LaunchProcesses(co::Coroutine *c) {
     }
     proc->SetExit(false, -1);
 
-    std::cerr << "Launching process " << proc->Name() << std::endl;
     absl::Status status = proc->Launch(this, c);
     if (!status.ok()) {
       // A failure to launch one is a failure for all.
@@ -394,7 +393,7 @@ void Subsystem::RestartProcesses(
   }
 }
 
-void Subsystem::SendOutput(int fd, const std::string& name, 
+void Subsystem::SendOutput(int fd, const std::string& name,
   const std::string& process_id, const std::string &data, co::Coroutine *c) {
   if (!interactive_output_.Valid()) {
     capcom_.SendOutputEvent(fd, name, process_id, data);

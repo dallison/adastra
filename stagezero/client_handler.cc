@@ -167,7 +167,6 @@ void ClientHandler::HandleLaunchStaticProcess(
     }
     return;
   }
-  std::cerr << "Starting process " << proc->Name() << std::endl;
   absl::Status status = proc->Start(c);
   if (!status.ok()) {
     response->set_error(status.ToString());
@@ -232,8 +231,6 @@ void ClientHandler::HandleLaunchVirtualProcess(
       response->set_error(
           absl::StrFormat("Failed to send start event for process %s: %s",
                           existing->GetId(), status.ToString()));
-      std::cerr << "Failed to send start event for process "
-                << existing->GetId() << ": " << status << std::endl;
     }
     return;
   }
@@ -331,7 +328,7 @@ absl::Status ClientHandler::SendProcessStopEvent(const std::string &process_id,
   return QueueEvent(std::move(event));
 }
 
-absl::Status ClientHandler::SendOutputEvent(const std::string& name, 
+absl::Status ClientHandler::SendOutputEvent(const std::string& name,
   const std::string &process_id,
                                             int fd, const char *data,
                                             size_t len) {
@@ -425,7 +422,6 @@ void ClientHandler::TryRemoveProcess(std::shared_ptr<Process> proc) {
 void ClientHandler::HandleSetGlobalVariable(
     const control::SetGlobalVariableRequest &req,
     control::SetGlobalVariableResponse *response, co::Coroutine *c) {
-      std::cerr << "Setting global variable " << req.name() << " to " << req.value() << std::endl;
   stagezero_.global_symbols_.AddSymbol(req.name(), req.value(), req.exported());
 }
 

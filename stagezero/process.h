@@ -64,8 +64,9 @@ public:
   virtual bool IsZygote() const { return false; }
   virtual bool IsVirtual() const { return false; }
   absl::Status SendInput(int fd, const std::string &data, co::Coroutine *c);
-  absl::Status SendTelemetryCommand(const adastra::proto::telemetry::Command &cmd,
-                                    co::Coroutine *c);
+  absl::Status
+  SendTelemetryCommand(const adastra::proto::telemetry::Command &cmd,
+                       co::Coroutine *c);
 
   absl::Status CloseFileDescriptor(int fd);
 
@@ -78,13 +79,7 @@ public:
   bool IsStopping() const { return stopping_; }
   bool IsRunning() const { return running_; }
   int GetPid() const { return pid_; }
-  int GetProcessGroupId() const {
-    if (interactive_) {
-      // No process group for interactive processes.
-      return pid_;
-    }
-    return pid_ > 0 ? getpgid(pid_) : -1;
-  }
+  virtual int GetProcessGroupId() const { return pid_; }
 #ifdef __linux__
   toolbelt::FileDescriptor &GetPidFd() { return pid_fd_; }
   void SetPidFd(toolbelt::FileDescriptor pidfd) { pid_fd_ = std::move(pidfd); }
@@ -135,15 +130,18 @@ public:
   void RunParameterServer();
   void RunTelemetryServer();
 
-  absl::Status SendTelemetryShutdown(int exit_code, int timeout_secs, co::Coroutine *c);
+  absl::Status SendTelemetryShutdown(int exit_code, int timeout_secs,
+                                     co::Coroutine *c);
 
   parameters::ParameterServer &Parameters() { return local_parameters_; }
 
   void SetWantsParameterEvents(bool wants) { wants_parameter_events_ = wants; }
 
-  void SendParameterUpdateEvent(const std::string &name, const parameters::Value &value, co::Coroutine* c);
-  void SendParameterDeleteEvent(const std::string &name, co::Coroutine* c);
-  
+  void SendParameterUpdateEvent(const std::string &name,
+                                const parameters::Value &value,
+                                co::Coroutine *c);
+  void SendParameterDeleteEvent(const std::string &name, co::Coroutine *c);
+
 protected:
   virtual int Wait() = 0;
   absl::Status BuildStreams(
@@ -151,12 +149,14 @@ protected:
       bool notify, bool telemetry);
 
   static int SafeKill(int pid, int sig) {
-    if (pid > 0) {
+    if (pid != -1) {
       return kill(pid, sig);
     }
     return -1;
   }
-  void SendParameterEvent(const adastra::proto::parameters::ParameterEvent &event, co::Coroutine* c);
+  void
+  SendParameterEvent(const adastra::proto::parameters::ParameterEvent &event,
+                     co::Coroutine *c);
 
   co::CoroutineScheduler &scheduler_;
   StageZero &stagezero_;
@@ -205,6 +205,13 @@ public:
   }
 
 protected:
+  int GetProcessGroupId() const override {
+    if (interactive_) {
+      // No process group for interactive processes.
+      return pid_;
+    }
+    return -pid_;
+  }
   absl::Status StartInternal(const std::vector<std::string> extra_env_vars,
                              bool send_start_event);
   absl::Status ForkAndExec(const std::vector<std::string> extra_env_vars);

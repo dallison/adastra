@@ -1951,9 +1951,7 @@ TEST_F(CapcomTest, TalkAndListen) {
       "subspace",
       {.static_processes = {{
            .name = "subspace_server",
-           .executable = "${runfiles_dir}/_main/external/"
-                         "_main~_repo_rules~subspace/server/"
-                         "subspace_server",
+           .executable = "${runfiles_dir}/+_repo_rules+subspace/server/subspace_server",
            .args = {"--notify_fd=${notify_fd}"},
            .notify = true,
        }},
@@ -2101,7 +2099,7 @@ TEST_F(CapcomTest, NonInteractiveEcho) {
 
   status = client.StopSubsystem("echo");
   ASSERT_TRUE(status.ok());
-  
+
   WaitForState(client, "echo", AdminState::kOffline, OperState::kOffline);
 
   status = client.RemoveSubsystem("echo", false);
