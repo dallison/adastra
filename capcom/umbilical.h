@@ -27,6 +27,8 @@ public:
 
   bool Precondition();
 
+  void Fail() { state_ = UmbilicalState::kClosed; }
+  void Close() {}
   absl::Status Connect(int event_mask, co::Coroutine *c);
   void Disconnect(bool dynamic_only = false);
 

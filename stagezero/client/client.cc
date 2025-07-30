@@ -287,6 +287,27 @@ absl::Status Client::RegisterCgroup(const Cgroup &cgroup, co::Coroutine *co) {
   return absl::OkStatus();
 }
 
+absl::Status Client::RemoveCgroup(const std::string &cgroup, co::Coroutine *co) {
+  if (co == nullptr) {
+    co = co_;
+  }
+  adastra::stagezero::control::Request req;
+  auto rem = req.mutable_remove_cgroup();
+  rem->set_cgroup(cgroup);
+
+  adastra::stagezero::control::Response resp;
+  if (absl::Status status = SendRequestReceiveResponse(req, resp, co);
+      !status.ok()) {
+    return status;
+  }
+  auto &rem_resp = resp.remove_cgroup();
+  if (!rem_resp.error().empty()) {
+    return absl::InternalError(
+        absl::StrFormat("Failed to remove cgroup: %s", rem_resp.error()));
+  }
+  return absl::OkStatus();
+}
+
 absl::Status Client::FreezeCgroup(const std::string &cgroup,
                                   co::Coroutine *co) {
   if (co == nullptr) {

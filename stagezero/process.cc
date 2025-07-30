@@ -10,6 +10,7 @@
 #include "stagezero/cgroup.h"
 #include "stagezero/client_handler.h"
 #include "toolbelt/hexdump.h"
+#include "toolbelt/pipe.h"
 
 #include <ctype.h>
 #include <syslog.h>
@@ -72,7 +73,7 @@ void Process::KillNow() {
   if (pid_ <= 0) {
     return;
   }
-  int e = SafeKill(pid_, SIGKILL);
+  int e = SafeKill(GetProcessGroupId(), SIGKILL);
   if (e != 0) {
     client_->Log(Name(), toolbelt::LogLevel::kError,
                  "Failed to send SIGKILL to %s: pid: %d: %s", Name().c_str(),
@@ -247,7 +248,6 @@ StaticProcess::StartInternal(const std::vector<std::string> extra_env_vars,
               client->Log(proc->Name(), toolbelt::LogLevel::kDebug,
                           "Process %s notified us of startup",
                           proc->Name().c_str());
-
             }
           }
         }
@@ -531,7 +531,7 @@ absl::Status Process::BuildStreams(
               this_end,
               [proc, client](const char *buf, size_t len) -> absl::Status {
                 // Write to client using an event.
-                return client->SendOutputEvent(proc->GetId(), STDOUT_FILENO,
+                return client->SendOutputEvent(proc->Name(), proc->GetId(), STDOUT_FILENO,
                                                buf, len);
               },
               c);
@@ -581,7 +581,7 @@ absl::Status Process::BuildStreams(
                   [proc, stream, client](const char *buf,
                                          size_t len) -> absl::Status {
                     // Write to client using an event.
-                    return client->SendOutputEvent(proc->GetId(), stream->fd,
+                    return client->SendOutputEvent(proc->Name(), proc->GetId(), stream->fd,
                                                    buf, len);
                   },
                   c);
@@ -921,6 +921,11 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
     RunTelemetryServer();
   }
 
+  absl::StatusOr<toolbelt::Pipe> startup_pipe = toolbelt::Pipe::Create();
+  if (!startup_pipe.ok()) {
+    return startup_pipe.status();
+  }
+
 #if defined(__linux__)
   // On Linux we can use clone3 instead of fork if we have any namespace
   // assignments.
@@ -941,6 +946,9 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
         absl::StrFormat("Fork failed: %s", strerror(errno)));
   }
   if (pid_ == 0) {
+    // The parent will get EOF if we exit before writing to the pipe.
+    startup_pipe->ReadFd().Close();
+
     // Set some local variables for the process.
     local_symbols_.AddSymbol("pid", absl::StrFormat("%d", getpid()), false);
 
@@ -1153,6 +1161,14 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
       exit(1);
     }
 
+    int64_t val = 1;
+    ssize_t n = ::write(startup_pipe->WriteFd().Fd(), &val, sizeof(val));
+    if (n != sizeof(val)) {
+      std::cerr << "Failed to write to startup pipe: " << strerror(errno)
+                << std::endl;
+      exit(1);
+    }
+    startup_pipe->WriteFd().Close();
     execve(exe.c_str(),
            reinterpret_cast<char *const *>(const_cast<char **>(argv.data())),
            reinterpret_cast<char *const *>(const_cast<char **>(env.data())));
@@ -1160,6 +1176,7 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
               << std::endl;
     exit(1);
   }
+  startup_pipe->WriteFd().Close();
 #if defined(__linux__) && HAVE_PIDFD
   int pidfd = pidfd_open(pid_, 0);
   if (pidfd == -1) {
@@ -1183,8 +1200,19 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
           stream->direction == proto::StreamControl::OUTPUT
               ? stream->pipe.WriteFd()
               : stream->pipe.ReadFd();
-     fd.Reset();
+      fd.Reset();
     }
+  }
+  int64_t val;
+  ssize_t n = ::read(startup_pipe->ReadFd().Fd(), &val, sizeof(val));
+  if (n != sizeof(val)) {
+    if (n == 0) {
+      // EOF means the child exited before writing to the pipe.
+      return absl::InternalError(
+          absl::StrFormat("Process %s (PID %d) failed to start", Name(), pid_));
+    }
+    return absl::InternalError(absl::StrFormat(
+        "Failed to read from startup pipe: %s", strerror(errno)));
   }
   return absl::OkStatus();
 }
@@ -1282,10 +1310,14 @@ absl::Status Process::Stop(co::Coroutine *c) {
                 proc->Name().c_str(), status.ToString().c_str());
           } else {
 #if defined(__linux__) && HAVE_PIDFD
-            c2->Wait(proc->GetPidFd().Fd(), POLLIN,
-                     std::chrono::duration_cast<std::chrono::nanoseconds>(
-                         std::chrono::seconds(timeout))
-                         .count());
+            int fd =
+                c2->Wait(proc->GetPidFd().Fd(), POLLIN,
+                         std::chrono::duration_cast<std::chrono::nanoseconds>(
+                             std::chrono::seconds(timeout))
+                             .count());
+            if (fd != -1) {
+              return;
+            }
 #else
             (void)proc->WaitLoop(c2, std::chrono::seconds(timeout));
 #endif
@@ -1300,25 +1332,23 @@ absl::Status Process::Stop(co::Coroutine *c) {
           client->Log(proc->Name(), toolbelt::LogLevel::kDebug,
                       "Killing process %s with SIGINT (timeout %d seconds)",
                       proc->Name().c_str(), timeout);
-#if defined(__linux__) && HAVE_PIDFD
-          int e = pidfd_send_signal(proc->GetPidFd().Fd(), SIGINT, nullptr, 0);
-          if (e != 0) {
-            client->Log(proc->Name(), toolbelt::LogLevel::kError,
-                        "Failed to send SIGINT to %s: pidfd: %d: %s",
-                        proc->Name().c_str(), proc->GetPidFd().Fd(),
-                        strerror(errno));
-          }
-          c2->Wait(proc->GetPidFd().Fd(), POLLIN,
-                   std::chrono::duration_cast<std::chrono::nanoseconds>(
-                       std::chrono::seconds(timeout))
-                       .count());
-#else
-          int e = SafeKill(proc->GetPid(), SIGINT);
+          int e = SafeKill(proc->GetProcessGroupId(), SIGINT);
           if (e != 0) {
             client->Log(proc->Name(), toolbelt::LogLevel::kError,
                         "Failed to send SIGINT to %s: pid: %d: %s",
                         proc->Name().c_str(), proc->GetPid(), strerror(errno));
           }
+#if defined(__linux__) && HAVE_PIDFD
+          int fd =
+              c2->Wait(proc->GetPidFd().Fd(), POLLIN,
+                       std::chrono::duration_cast<std::chrono::nanoseconds>(
+                           std::chrono::seconds(timeout))
+                           .count());
+          if (fd != -1) {
+            return;
+          }
+#else
+
           (void)proc->WaitLoop(c2, std::chrono::seconds(timeout));
 #endif
           if (!proc->IsRunning()) {
@@ -1327,25 +1357,16 @@ absl::Status Process::Stop(co::Coroutine *c) {
         }
         timeout = proc->SigTermTimeoutSecs();
         if (timeout > 0) {
-#if defined(__linux__) && HAVE_PIDFD
-          int e = pidfd_send_signal(proc->GetPidFd().Fd(), SIGTERM, nullptr, 0);
-          if (e != 0) {
-            client->Log(proc->Name(), toolbelt::LogLevel::kError,
-                        "Failed to send SIGTERM to %s: pidfd: %d: %s",
-                        proc->Name().c_str(), proc->GetPidFd().Fd(),
-                        strerror(errno));
-          }
-#else
-          int e = SafeKill(proc->GetPid(), SIGTERM);
+          client->Log(proc->Name(), toolbelt::LogLevel::kDebug,
+                      "Killing process %s with SIGTERM (timeout %d seconds)",
+                      proc->Name().c_str(), timeout);
+          int e = SafeKill(proc->GetProcessGroupId(), SIGTERM);
           if (e != 0) {
             client->Log(proc->Name(), toolbelt::LogLevel::kError,
                         "Failed to send SIGTERM to %s: pid: %d: %s",
                         proc->Name().c_str(), proc->GetPid(), strerror(errno));
           }
-#endif
-          client->Log(proc->Name(), toolbelt::LogLevel::kDebug,
-                      "Killing process %s with SIGTERM (timeout %d seconds)",
-                      proc->Name().c_str(), timeout);
+
 #if defined(__linux__) && HAVE_PIDFD
           c2->Wait(proc->GetPidFd().Fd(), POLLIN,
                    std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -1360,25 +1381,15 @@ absl::Status Process::Stop(co::Coroutine *c) {
         if (proc->IsRunning()) {
           client->Log(proc->Name(), toolbelt::LogLevel::kDebug,
                       "Killing process %s with SIGKILL", proc->Name().c_str());
-
-#if defined(__linux__) && HAVE_PIDFD
-          int e = pidfd_send_signal(proc->GetPidFd().Fd(), SIGKILL, nullptr, 0);
-          if (e != 0) {
-            client->Log(proc->Name(), toolbelt::LogLevel::kError,
-                        "Failed to send SIGKILL to %s: pidfd: %d: %s",
-                        proc->Name().c_str(), proc->GetPidFd().Fd(),
-                        strerror(errno));
-          }
-#else
-          int e = SafeKill(proc->GetPid(), SIGKILL);
+          int e = SafeKill(proc->GetProcessGroupId(), SIGKILL);
           if (e != 0) {
             client->Log(proc->Name(), toolbelt::LogLevel::kError,
                         "Failed to send SIGKILL to %s: pid: %d: %s",
                         proc->Name().c_str(), proc->GetPid(), strerror(errno));
           }
-#endif
         }
-      }, "Stopper"));
+      },
+      "Stopper"));
   return client_->RemoveProcess(this);
 }
 

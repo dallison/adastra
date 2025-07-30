@@ -78,6 +78,13 @@ public:
   bool IsStopping() const { return stopping_; }
   bool IsRunning() const { return running_; }
   int GetPid() const { return pid_; }
+  int GetProcessGroupId() const {
+    if (interactive_) {
+      // No process group for interactive processes.
+      return pid_;
+    }
+    return pid_ > 0 ? getpgid(pid_) : -1;
+  }
 #ifdef __linux__
   toolbelt::FileDescriptor &GetPidFd() { return pid_fd_; }
   void SetPidFd(toolbelt::FileDescriptor pidfd) { pid_fd_ = std::move(pidfd); }

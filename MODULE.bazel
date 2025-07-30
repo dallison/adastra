@@ -13,31 +13,30 @@ bazel_dep(name = "googletest", version = "1.15.2", repo_name = "com_google_googl
 
 # Note, see https://github.com/bazelbuild/bazel/issues/19973
 # Protobuf must be aliased as "com_google_protobuf" to match implicit dependency within bazel_tools.
-bazel_dep(name = "protobuf", version = "21.7", repo_name = "com_google_protobuf")
+bazel_dep(name = "protobuf", version = "29.0", repo_name = "com_google_protobuf")
 
-bazel_dep(name = "rules_cc", version = "0.0.9")
-bazel_dep(name = "rules_pkg", version = "0.9.1")
+bazel_dep(name = "rules_cc", version = "0.0.16")
+bazel_dep(name = "rules_pkg", version = "1.0.1")
 bazel_dep(name = "zlib", version = "1.3.1.bcr.3")
 
-# http_archive(
-#   name = "toolbelt",
-#   urls = ["https://github.com/dallison/cpp_toolbelt/archive/refs/tags/1.2.2.tar.gz"],
-#   strip_prefix = "cpp_toolbelt-1.2.2",
-#   integrity = "sha256-ZVjTxhPStiGhheys3qIpwHHuP9h7r6BaT0BW0fVr4xM=",
-# )
-
-# For local debugging of toolbelt coroutine library.
-local_repository(
+http_archive(
     name = "toolbelt",
-    path = "../cpp_toolbelt",
+    integrity = "sha256-O5SO3Bsx070QekVWUHUMwygB5HgSGmDi8IwlGEC5KKA=",
+    strip_prefix = "cpp_toolbelt-1.2.7",
+    urls = ["https://github.com/dallison/cpp_toolbelt/archive/refs/tags/1.2.7.tar.gz"],
 )
+# For local debugging of toolbelt coroutine library.
+# local_repository(
+#     name = "toolbelt",
+#     path = "../cpp_toolbelt",
+# )
 
 # Coroutines
 http_archive(
     name = "coroutines",
-    integrity = "sha256-59zs6v5ymiVB8gvQSZRRui3lELQW/9QJSmegn3+Nbf8=",
-    strip_prefix = "co-1.4.2",
-    urls = ["https://github.com/dallison/co/archive/refs/tags/1.4.2.tar.gz"],
+    integrity = "sha256-PCpyMPnMgHAWtL1FWK7bYUTzOWqoGf/PgU5gdIR2tT4=",
+    strip_prefix = "co-2.0.1",
+    urls = ["https://github.com/dallison/co/archive/refs/tags/2.0.1.tar.gz"],
 )
 
 # For local debugging of co coroutine library.
@@ -48,9 +47,9 @@ http_archive(
 
 http_archive(
     name = "subspace",
-    urls = ["https://github.com/dallison/subspace/archive/refs/tags/1.3.7.tar.gz"],
-    strip_prefix = "subspace-1.3.7",
-    integrity = "sha256-cnpmr0NKGgleFMhXq0sBW2HHOf0FXGlobBeUt+oScoU=",
+    urls = ["https://github.com/dallison/subspace/archive/refs/tags/2.0.3.tar.gz"],
+    strip_prefix = "subspace-2.0.3",
+    #integrity = "sha256-cnpmr0NKGgleFMhXq0sBW2HHOf0FXGlobBeUt+oScoU=",
 )
 
 # For local debugging of subspace library.
@@ -73,16 +72,16 @@ http_archive(
 )
 
 http_archive(
-  name = "davros",
-  urls = ["https://github.com/dallison/davros/archive/refs/tags/1.0.1.tar.gz"],
-  strip_prefix = "davros-1.0.1",
-  integrity = "sha256-Ei4KE2gVewMDSK9jvsZMpOxlQxL4h12nBRrJ8lRNhng="
+  name = "neutron",
+  urls = ["https://github.com/dallison/neutron/archive/refs/tags/1.0.2.tar.gz"],
+  strip_prefix = "neutron-1.0.2",
+  #integrity = "sha256-Ei4KE2gVewMDSK9jvsZMpOxlQxL4h12nBRrJ8lRNhng="
 )
 
-# For local debugging of davros library.
+# For local debugging of neutron library.
 # local_repository(
-#     name = "davros",
-#     path = "../davros",
+#     name = "neutron",
+#     path = "../neutron",
 # )
 
 http_archive(

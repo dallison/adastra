@@ -10,10 +10,11 @@ namespace adastra::capcom {
 Capcom::Capcom(co::CoroutineScheduler &scheduler, toolbelt::InetAddress addr,
                bool log_to_output, int local_stagezero_port,
                std::string log_file_name, std::string log_level, bool test_mode,
-               int notify_fd)
+               int notify_fd, bool log_process_output)
     : co_scheduler_(scheduler), addr_(std::move(addr)),
       log_to_output_(log_to_output), test_mode_(test_mode),
-      notify_fd_(notify_fd), logger_("capcom", log_to_output) {
+      notify_fd_(notify_fd), logger_("capcom", log_to_output),
+      log_process_output_(log_process_output) {
   logger_.SetLogLevel(log_level);
   Compute lc = {.name = "<localhost>",
                 .addr =
@@ -141,7 +142,7 @@ absl::Status Capcom::ConnectUmbilical(const std::string &compute,
     return absl::InternalError(
         absl::StrFormat("No umbilical found for compute %s", compute));
   }
-  
+
   bool was_closed = umbilical->Precondition();
   if (!was_closed) {
     // Already connecting or connected.
@@ -149,6 +150,7 @@ absl::Status Capcom::ConnectUmbilical(const std::string &compute,
   }
   std::cerr << "Connecting capcom umbilical to " << compute << std::endl;
   if (absl::Status status = umbilical->Connect(kNoEvents, c); !status.ok()) {
+    umbilical->Fail();
     return status;
   }
 
@@ -162,6 +164,7 @@ absl::Status Capcom::ConnectUmbilical(const std::string &compute,
   if (absl::Status add_status = RegisterComputeCgroups(
           umbilical->GetClient(), umbilical->GetCompute(), nullptr);
       !add_status.ok()) {
+    umbilical->Disconnect();
     return absl::InternalError(absl::StrFormat(
         "Failed to add cgroup to compute %s: %s",
         umbilical->GetCompute()->name.c_str(), add_status.ToString().c_str()));
@@ -175,6 +178,7 @@ absl::Status Capcom::ConnectUmbilical(const std::string &compute,
     // connected, delete them.
     if (absl::Status s = umbilical->GetClient()->DeleteParameters({}, nullptr);
         !s.ok()) {
+      umbilical->Disconnect();
       return absl::InternalError(absl::StrFormat(
           "Failed to delete parameters from compute %s: %s",
           umbilical->GetCompute()->name.c_str(), s.ToString().c_str()));
@@ -184,6 +188,7 @@ absl::Status Capcom::ConnectUmbilical(const std::string &compute,
   if (absl::Status status =
           umbilical->GetClient()->UploadParameters(parameters, nullptr);
       !status.ok()) {
+    umbilical->Disconnect();
     return absl::InternalError(absl::StrFormat(
         "Failed to upload parameters to compute %s: %s",
         umbilical->GetCompute()->name.c_str(), status.ToString().c_str()));
@@ -194,12 +199,34 @@ absl::Status Capcom::ConnectUmbilical(const std::string &compute,
     if (absl::Status status = umbilical->GetClient()->SetGlobalVariable(
             sym->Name(), sym->Value(), sym->Exported(), nullptr);
         !status.ok()) {
+      umbilical->Disconnect();
       return absl::InternalError(absl::StrFormat(
           "Failed to set global variable %s on %s: %s", sym->Name().c_str(),
           umbilical->GetCompute()->name.c_str(), status.ToString().c_str()));
     }
   }
   return absl::OkStatus();
+}
+
+void Capcom::DisconnectUmbilical(const std::string &compute,
+                                 bool dynamic_only) {
+  auto it = stagezero_umbilicals_.find(compute);
+  if (it == stagezero_umbilicals_.end()) {
+    return;
+  }
+
+  Umbilical& umbilical = it->second;
+  if (absl::Status add_status = RemoveComputeCgroups(
+          umbilical.GetClient(), umbilical.GetCompute(), nullptr);
+      !add_status.ok()) {
+    umbilical.Disconnect();
+    logger_.Log(toolbelt::LogLevel::kError,
+                "Failed to remove cgroup from compute %s: %s",
+                umbilical.GetCompute()->name.c_str(),
+                add_status.ToString().c_str());
+  }
+
+  umbilical.Disconnect(dynamic_only);
 }
 
 void Capcom::LoggerCoroutine(co::Coroutine *c) {
@@ -404,20 +431,57 @@ void Capcom::SendParameterDeleteEvent(const std::vector<std::string> &names) {
   }
 }
 
-  void Capcom::SendOutputEvent(int fd, const std::string &process_id, const std::string& data) {
-    auto event = std::make_shared<adastra::proto::Event>();
-    auto output = event->mutable_output();
-    output->set_process_id(process_id);
-    output->set_data(data);
-    output->set_fd(fd);
-    for (auto &handler : client_handlers_) {
-      if (absl::Status status = handler->SendOutputEvent(event); !status.ok()) {
-        logger_.Log(toolbelt::LogLevel::kError,
-                    "Failed to send output event to client %s: %s",
-                    handler->GetClientName().c_str(), status.ToString().c_str());
-      }
+void Capcom::SendOutputEvent(int fd, const std::string &name,
+                             const std::string &process_id,
+                             const std::string &data) {
+  auto event = std::make_shared<adastra::proto::Event>();
+  auto output = event->mutable_output();
+  output->set_process_id(process_id);
+  output->set_data(data);
+  output->set_fd(fd);
+  output->set_name(name);
+  for (auto &handler : client_handlers_) {
+    if (absl::Status status = handler->SendOutputEvent(event); !status.ok()) {
+      logger_.Log(toolbelt::LogLevel::kError,
+                  "Failed to send output event to client %s: %s",
+                  handler->GetClientName().c_str(), status.ToString().c_str());
     }
   }
+
+  if (!log_process_output_) {
+    // If we are not logging process output, we are done.
+    return;
+  }
+  // Write output as log message to capcom logger.
+  bool has_escapes = false;
+  for (char c : data) {
+    if (c == '\033') {
+      has_escapes = true;
+      break;
+    }
+  }
+  if (has_escapes) {
+    if (fd == STDERR_FILENO) {
+      std::cerr << data;
+    } else {
+      std::cout << data;
+    }
+    return;
+  }
+  LogMessage msg = {
+      .source = name,
+      .text = data,
+      .level = fd == STDERR_FILENO ? toolbelt::LogLevel::kError
+                                   : toolbelt::LogLevel::kInfo,
+  };
+  struct timespec now_ts;
+  clock_gettime(CLOCK_REALTIME, &now_ts);
+  uint64_t timestamp = now_ts.tv_sec * 1000000000LL + now_ts.tv_nsec;
+  msg.timestamp = timestamp;
+  adastra::proto::LogMessage log_msg;
+  msg.ToProto(&log_msg);
+  this->Log(log_msg);
+}
 
 void Capcom::SendTelemetryEvent(
     const std::string &subsystem,
@@ -701,6 +765,18 @@ Capcom::RegisterComputeCgroups(std::shared_ptr<stagezero::Client> client,
                                co::Coroutine *c) {
   for (auto &cgroup : compute->cgroups) {
     if (absl::Status status = client->RegisterCgroup(cgroup, c); !status.ok()) {
+      return status;
+    }
+  }
+  return absl::OkStatus();
+}
+
+absl::Status
+Capcom::RemoveComputeCgroups(std::shared_ptr<stagezero::Client> client,
+                             std::shared_ptr<Compute> compute,
+                             co::Coroutine *c) {
+  for (auto &cgroup : compute->cgroups) {
+    if (absl::Status status = client->RemoveCgroup(cgroup.name, c); !status.ok()) {
       return status;
     }
   }

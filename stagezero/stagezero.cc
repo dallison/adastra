@@ -481,7 +481,7 @@ void StageZero::HandleParameterServerRequest(
     break;
   }
   case adastra::proto::parameters::Request::kHasParameter:
-    if (req.get_parameter().name()[0] != '/') {
+    if (req.has_parameter().name()[0] != '/') {
       // Local parameter
       resp.mutable_has_parameter()->set_has(
           process->Parameters().HasParameter(req.has_parameter().name()));

@@ -331,7 +331,8 @@ absl::Status ClientHandler::SendProcessStopEvent(const std::string &process_id,
   return QueueEvent(std::move(event));
 }
 
-absl::Status ClientHandler::SendOutputEvent(const std::string &process_id,
+absl::Status ClientHandler::SendOutputEvent(const std::string& name, 
+  const std::string &process_id,
                                             int fd, const char *data,
                                             size_t len) {
   if ((event_mask_ & kOutputEvents) == 0) {
@@ -342,6 +343,7 @@ absl::Status ClientHandler::SendOutputEvent(const std::string &process_id,
   output->set_process_id(process_id);
   output->set_data(data, len);
   output->set_fd(fd);
+  output->set_name(name);
   return QueueEvent(std::move(event));
 }
 

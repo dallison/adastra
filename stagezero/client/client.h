@@ -138,6 +138,7 @@ public:
 
   absl::Status RegisterCgroup(const Cgroup &cgroup,
                               co::Coroutine *co = nullptr);
+  absl::Status RemoveCgroup(const std::string& cgroup, co::Coroutine *co = nullptr);
   absl::Status FreezeCgroup(const std::string &cgroup,
                             co::Coroutine *co = nullptr);
   absl::Status ThawCgroup(const std::string &cgroup,
@@ -148,17 +149,19 @@ public:
                             co::Coroutine *c = nullptr);
 
   absl::Status DeleteParameters(const std::vector<std::string> &name,
-                               co::Coroutine *c = nullptr);
+                                co::Coroutine *c = nullptr);
   absl::Status
   UploadParameters(const std::vector<parameters::Parameter> &params,
                    co::Coroutine *c = nullptr);
 
   absl::Status SendTelemetryCommand(const std::string &process_id,
-                                     const ::stagezero::TelemetryCommand &cmd,
-                                     co::Coroutine *c = nullptr);
- absl::Status SendTelemetryCommand(const std::string &process_id,
-                                     const adastra::proto::telemetry::Command &cmd,
-                                     co::Coroutine *c = nullptr);
+                                    const ::stagezero::TelemetryCommand &cmd,
+                                    co::Coroutine *c = nullptr);
+  absl::Status
+  SendTelemetryCommand(const std::string &process_id,
+                       const adastra::proto::telemetry::Command &cmd,
+                       co::Coroutine *c = nullptr);
+
 private:
   absl::StatusOr<std::pair<std::string, int>> LaunchStaticProcessInternal(
       const std::string &name, const std::string &executable,

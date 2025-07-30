@@ -173,6 +173,7 @@ protected:
   parameters::ParameterServer local_parameters_;
 
   int32_t startup_timeout_secs_;
+  int32_t telemetry_shutdown_timeout_secs_;
   int32_t sigint_shutdown_timeout_secs_;
   int32_t sigterm_shutdown_timeout_secs_;
   bool notify_;
@@ -515,7 +516,8 @@ private:
 
   co::CoroutineScheduler &Scheduler();
 
-  void SendOutput(int fd, const std::string &process_id,
+  void SendOutput(int fd, const std::string& name, 
+    const std::string &process_id,
                   const std::string &data, co::Coroutine *c);
 
   std::shared_ptr<Process> FindInteractiveProcess();

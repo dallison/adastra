@@ -197,6 +197,7 @@ message OutputEvent {
   string process_id = 1;
   bytes data = 2;
   int32 fd = 3; // What fd sent it
+  string name = 4; // Name of process, if available.
 }
 
 message ConnectEvent {}

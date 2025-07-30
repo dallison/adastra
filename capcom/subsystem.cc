@@ -394,9 +394,10 @@ void Subsystem::RestartProcesses(
   }
 }
 
-void Subsystem::SendOutput(int fd, const std::string& process_id, const std::string &data, co::Coroutine *c) {
+void Subsystem::SendOutput(int fd, const std::string& name, 
+  const std::string& process_id, const std::string &data, co::Coroutine *c) {
   if (!interactive_output_.Valid()) {
-    capcom_.SendOutputEvent(fd, process_id, data);
+    capcom_.SendOutputEvent(fd, name, process_id, data);
     return;
   }
   c->Wait(interactive_output_.Fd(), POLLOUT);
@@ -647,6 +648,7 @@ void Process::ParseOptions(const stagezero::config::ProcessOptions &options) {
     }
   }
   startup_timeout_secs_ = options.startup_timeout_secs();
+  telemetry_shutdown_timeout_secs_ = options.telemetry_shutdown_timeout_secs();
   sigint_shutdown_timeout_secs_ = options.sigint_shutdown_timeout_secs();
   sigterm_shutdown_timeout_secs_ = options.sigterm_shutdown_timeout_secs();
   notify_ = options.notify();
@@ -733,6 +735,7 @@ absl::Status StaticProcess::Launch(Subsystem *subsystem, co::Coroutine *c) {
       .description = description_,
       .args = args_,
       .startup_timeout_secs = startup_timeout_secs_,
+      .telemetry_shutdown_timeout_secs = telemetry_shutdown_timeout_secs_,
       .sigint_shutdown_timeout_secs = sigint_shutdown_timeout_secs_,
       .sigterm_shutdown_timeout_secs = sigterm_shutdown_timeout_secs_,
       .notify = notify_,
@@ -785,6 +788,7 @@ absl::Status Zygote::Launch(Subsystem *subsystem, co::Coroutine *c) {
       .description = description_,
       .args = args_,
       .startup_timeout_secs = startup_timeout_secs_,
+      .telemetry_shutdown_timeout_secs = telemetry_shutdown_timeout_secs_,
       .sigint_shutdown_timeout_secs = sigint_shutdown_timeout_secs_,
       .sigterm_shutdown_timeout_secs = sigterm_shutdown_timeout_secs_,
       .notify = notify_,
@@ -840,6 +844,7 @@ absl::Status VirtualProcess::Launch(Subsystem *subsystem, co::Coroutine *c) {
       .description = description_,
       .args = args_,
       .startup_timeout_secs = startup_timeout_secs_,
+      .telemetry_shutdown_timeout_secs = telemetry_shutdown_timeout_secs_,
       .sigint_shutdown_timeout_secs = sigint_shutdown_timeout_secs_,
       .sigterm_shutdown_timeout_secs = sigterm_shutdown_timeout_secs_,
       .notify = notify_,
