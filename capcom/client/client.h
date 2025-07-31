@@ -6,9 +6,11 @@
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "common/alarm.h"
+#include "common/capability.h"
 #include "common/cgroup.h"
 #include "common/event.h"
 #include "common/parameters.h"
+#include "common/scheduler.h"
 #include "common/states.h"
 #include "common/stream.h"
 #include "common/subsystem_status.h"
@@ -62,6 +64,9 @@ struct StaticProcess {
   bool oneshot = false;
   std::string cgroup = "";
   int32_t max_restarts = kDefaultMaxRestarts;
+  KernelSchedulerPolicy kernel_scheduler_policy;
+  std::vector<int> cpus;
+  CapabilitySet capabilities;
 };
 
 struct Zygote {
@@ -80,6 +85,9 @@ struct Zygote {
   std::string group;
   std::string cgroup = "";
   int32_t max_restarts = kDefaultMaxRestarts;
+  KernelSchedulerPolicy kernel_scheduler_policy;
+  std::vector<int> cpus;
+  CapabilitySet capabilities;
 };
 
 struct VirtualProcess {
@@ -103,6 +111,9 @@ struct VirtualProcess {
   std::string group;
   std::string cgroup = "";
   int32_t max_restarts = kDefaultMaxRestarts;
+  KernelSchedulerPolicy kernel_scheduler_policy;
+  std::vector<int> cpus;
+  CapabilitySet capabilities;
 };
 
 struct SubsystemOptions {
@@ -222,8 +233,9 @@ public:
                          const std::string &process, int fd,
                          const std::string &data, co::Coroutine *c = nullptr);
 
-  absl::Status CloseFd(const std::string &subsystem, const std::string &process,
-                       int fd, co::Coroutine *c = nullptr);
+  absl::Status CloseFd(const std::string &subsystem,
+                       const std::string &process_name, int fd,
+                       co::Coroutine *c = nullptr);
 
   absl::Status FreezeCgroup(const std::string &compute,
                             const std::string &cgroup,

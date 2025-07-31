@@ -12,7 +12,7 @@ class Module;
 struct SubscriberOptions {
   bool reliable = false;
   std::string type;
-  int max_shared_ptrs = 0;
+  int max_active_messages = 1;
   subspace::ReadMode read_mode = subspace::ReadMode::kReadNext;
   size_t stack_size = 0;
 };

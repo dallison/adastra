@@ -12,15 +12,17 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "capcom/bitset.h"
+#include "capcom/umbilical.h"
 #include "common/alarm.h"
+#include "common/capability.h"
 #include "common/parameters.h"
+#include "common/scheduler.h"
 #include "common/states.h"
 #include "common/vars.h"
 #include "proto/capcom.pb.h"
 #include "proto/event.pb.h"
 #include "proto/stream.pb.h"
 #include "stagezero/client/client.h"
-#include "capcom/umbilical.h"
 #include "toolbelt/fd.h"
 #include "toolbelt/logging.h"
 #include "toolbelt/pipe.h"
@@ -35,9 +37,7 @@ class Subsystem;
 struct Compute;
 class Process;
 
-
 constexpr uint32_t kNoClient = -1U;
-
 
 // Messages are sent through the message pipe.
 struct Message {
@@ -175,6 +175,7 @@ protected:
   parameters::ParameterServer local_parameters_;
 
   int32_t startup_timeout_secs_;
+  int32_t telemetry_shutdown_timeout_secs_;
   int32_t sigint_shutdown_timeout_secs_;
   int32_t sigterm_shutdown_timeout_secs_;
   bool notify_;
@@ -182,9 +183,8 @@ protected:
   int max_restarts_;
 
   bool running_ = false;
-  bool maybe_connected_ =
-      false; // Not necessaryily connected, but contributing to
-             // dynamicRefs in umbilical.
+  bool maybe_connected_ = false; // Not necessaryily connected, but contributing
+                                 // to dynamicRefs in umbilical.
   std::string process_id_;
   int pid_;
   Alarm alarm_;
@@ -203,6 +203,10 @@ protected:
 
   static constexpr std::chrono::seconds kMaxRestartDelay = 32s;
   std::chrono::seconds restart_delay_ = 1s;
+
+  KernelSchedulerPolicy kernel_scheduler_policy_;
+  std::vector<int> cpus_;
+  CapabilitySet capabilities_;
 };
 
 class StaticProcess : public Process {
@@ -369,7 +373,8 @@ public:
 
   absl::Status
   PropagateTelemetryCommandMessage(std::shared_ptr<Message> message,
-                       co::Coroutine *c);
+                                   co::Coroutine *c);
+
 private:
   friend class Process;
   friend class Capcom;
@@ -516,7 +521,9 @@ private:
 
   co::CoroutineScheduler &Scheduler();
 
-  void SendOutput(int fd, const std::string &data, co::Coroutine *c);
+  void SendOutput(int fd, const std::string &name,
+                  const std::string &process_id, const std::string &data,
+                  co::Coroutine *c);
 
   std::shared_ptr<Process> FindInteractiveProcess();
 

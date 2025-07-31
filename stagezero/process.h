@@ -7,8 +7,10 @@
 #include "absl/container/flat_hash_set.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
+#include "common/capability.h"
 #include "common/namespace.h"
 #include "common/parameters.h"
+#include "common/scheduler.h"
 #include "common/stream.h"
 #include "coroutine.h"
 #include "proto/config.pb.h"
@@ -25,8 +27,16 @@
 #include <signal.h>
 #include <string>
 
-// Change this to 0 if pidfd (on Linux only) is not available
+#define HAVE_PIDFD 0
+#if defined(__linux__)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 3, 0)
+// We use pidfds for waiting but not for signal-sending, instead we signal via
+// process group ids. Linux kernel versions >6.9 have the ability to kill
+// process groups via pidfd, so we can revisit this in the future.
+#undef HAVE_PIDFD
 #define HAVE_PIDFD 1
+#endif
+#endif
 
 namespace adastra::stagezero {
 
@@ -64,8 +74,9 @@ public:
   virtual bool IsZygote() const { return false; }
   virtual bool IsVirtual() const { return false; }
   absl::Status SendInput(int fd, const std::string &data, co::Coroutine *c);
-  absl::Status SendTelemetryCommand(const adastra::proto::telemetry::Command &cmd,
-                                    co::Coroutine *c);
+  absl::Status
+  SendTelemetryCommand(const adastra::proto::telemetry::Command &cmd,
+                       co::Coroutine *c);
 
   absl::Status CloseFileDescriptor(int fd);
 
@@ -78,6 +89,7 @@ public:
   bool IsStopping() const { return stopping_; }
   bool IsRunning() const { return running_; }
   int GetPid() const { return pid_; }
+  virtual int GetProcessGroupId() const { return pid_; }
 #ifdef __linux__
   toolbelt::FileDescriptor &GetPidFd() { return pid_fd_; }
   void SetPidFd(toolbelt::FileDescriptor pidfd) { pid_fd_ = std::move(pidfd); }
@@ -128,15 +140,30 @@ public:
   void RunParameterServer();
   void RunTelemetryServer();
 
-  absl::Status SendTelemetryShutdown(int exit_code, int timeout_secs, co::Coroutine *c);
+  absl::Status SendTelemetryShutdown(int exit_code, int timeout_secs,
+                                     co::Coroutine *c);
 
   parameters::ParameterServer &Parameters() { return local_parameters_; }
 
   void SetWantsParameterEvents(bool wants) { wants_parameter_events_ = wants; }
 
-  void SendParameterUpdateEvent(const std::string &name, const parameters::Value &value, co::Coroutine* c);
-  void SendParameterDeleteEvent(const std::string &name, co::Coroutine* c);
-  
+  void SendParameterUpdateEvent(const std::string &name,
+                                const parameters::Value &value,
+                                co::Coroutine *c);
+  void SendParameterDeleteEvent(const std::string &name, co::Coroutine *c);
+
+  void SetKernelSchedulerPolicy(KernelSchedulerPolicy scheduler) {
+    kernel_scheduler_policy_ = scheduler;
+  }
+
+  KernelSchedulerPolicy GetKernelSchedulerPolicy() const {
+    return kernel_scheduler_policy_;
+  }
+
+  void SetCpus(const std::vector<int> &cpus) { cpus_ = cpus; }
+
+  const std::vector<int> &GetCpus() const { return cpus_; }
+
 protected:
   virtual int Wait() = 0;
   absl::Status BuildStreams(
@@ -144,12 +171,18 @@ protected:
       bool notify, bool telemetry);
 
   static int SafeKill(int pid, int sig) {
-    if (pid > 0) {
+    if (pid != -1) {
       return kill(pid, sig);
     }
     return -1;
   }
-  void SendParameterEvent(const adastra::proto::parameters::ParameterEvent &event, co::Coroutine* c);
+  void
+  SendParameterEvent(const adastra::proto::parameters::ParameterEvent &event,
+                     co::Coroutine *c);
+
+                     #if defined(__linux__)
+  absl::Status BuildLinuxParameters();
+  #endif
 
   co::CoroutineScheduler &scheduler_;
   StageZero &stagezero_;
@@ -181,6 +214,9 @@ protected:
   bool wants_parameter_events_ = false;
   toolbelt::FileDescriptor parameters_event_read_fd_;
   toolbelt::FileDescriptor parameters_event_write_fd_;
+  std::vector<int> cpus_;
+  KernelSchedulerPolicy kernel_scheduler_policy_;
+  CapabilitySet capabilities_;
 };
 
 class StaticProcess : public Process {
@@ -198,6 +234,13 @@ public:
   }
 
 protected:
+  int GetProcessGroupId() const override {
+    if (interactive_) {
+      // No process group for interactive processes.
+      return pid_;
+    }
+    return -pid_;
+  }
   absl::Status StartInternal(const std::vector<std::string> extra_env_vars,
                              bool send_start_event);
   absl::Status ForkAndExec(const std::vector<std::string> extra_env_vars);

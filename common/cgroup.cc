@@ -145,7 +145,7 @@ void CgroupRDMAController::FromProto(
     const stagezero::config::Cgroup::RDMAController &src) {
   for (auto &dev : src.device()) {
     CgroupRDMAController::Device d = {.name = dev.name(),
-                              .hca_handle = dev.hca_handle()};
+                                      .hca_handle = dev.hca_handle()};
     if (dev.has_hca_object()) {
       d.hca_object = dev.hca_object();
     }
@@ -180,6 +180,9 @@ void Cgroup::ToProto(stagezero::config::Cgroup *dest) const {
   }
   if (pid != nullptr) {
     pid->ToProto(dest->mutable_pid());
+  }
+  if (rdma != nullptr) {
+    rdma->ToProto(dest->mutable_rdma());
   }
 }
 
@@ -217,6 +220,10 @@ void Cgroup::FromProto(const stagezero::config::Cgroup &src) {
   if (src.has_pid()) {
     pid = std::make_shared<CgroupPIDController>();
     pid->FromProto(src.pid());
+  }
+  if (src.has_rdma()) {
+    rdma = std::make_shared<CgroupRDMAController>();
+    rdma->FromProto(src.rdma());
   }
 }
 } // namespace adastra

@@ -37,6 +37,8 @@ ABSL_FLAG(bool, silent, false, "Don't log messages to output");
 ABSL_FLAG(bool, test_mode, false, "Exit if any subsystem fails (no restarts)");
 ABSL_FLAG(std::string, log_level, "debug",
           "Log level (verbose, debug, info, warning, error)");
+ABSL_FLAG(bool, log_process_output, true,
+          "Log process output to the capcom logger (default: true)");
 
 int main(int argc, char **argv) {
   absl::ParseCommandLine(argc, argv);
@@ -60,7 +62,7 @@ int main(int argc, char **argv) {
       scheduler, capcom_addr, !absl::GetFlag(FLAGS_silent),
       absl::GetFlag(FLAGS_local_stagezero_port), absl::GetFlag(FLAGS_log_file),
       absl::GetFlag(FLAGS_log_level), absl::GetFlag(FLAGS_test_mode),
-      absl::GetFlag(FLAGS_notify_fd));
+      absl::GetFlag(FLAGS_notify_fd), absl::GetFlag(FLAGS_log_process_output));
   g_capcom = capcom.get();
 
   if (absl::Status status = capcom->Run(); !status.ok()) {

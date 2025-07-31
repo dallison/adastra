@@ -508,7 +508,7 @@ Module::RegisterSerializingSubscriber(
       subspace_client_.CreateSubscriber(
           channel, {.reliable = options.reliable,
                     .type = options.type,
-                    .max_shared_ptrs = options.max_shared_ptrs});
+                    .max_active_messages = options.max_active_messages});
   if (!subspace_sub.ok()) {
     return subspace_sub.status();
   }
@@ -535,17 +535,17 @@ Module::RegisterZeroCopySubscriber(
   // Since we pass a shared pointer to the callback function, we
   // need one more than the user specifies.  If the user didn't
   // specify, we will need 2.
-  int max_shared_ptrs = options.max_shared_ptrs;
-  if (max_shared_ptrs == 0) {
-    max_shared_ptrs = 1;
+  int max_active_messages = options.max_active_messages;
+  if (max_active_messages == 0) {
+    max_active_messages = 1;
   }
-  max_shared_ptrs++;
+  max_active_messages++;
 
   absl::StatusOr<subspace::Subscriber> subspace_sub =
       subspace_client_.CreateSubscriber(channel,
                                         {.reliable = options.reliable,
                                          .type = options.type,
-                                         .max_shared_ptrs = max_shared_ptrs});
+                                         .max_active_messages = max_active_messages});
   if (!subspace_sub.ok()) {
     return subspace_sub.status();
   }

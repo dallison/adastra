@@ -44,6 +44,7 @@ struct Output {
   std::string process_id;
   std::string data;
   int fd;
+  std::string name;
 };
 
 struct Event {

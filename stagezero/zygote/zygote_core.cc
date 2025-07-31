@@ -344,17 +344,19 @@ absl::Status ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
     }
 
     // The notify fd is added as an exported symbol.
+    unsetenv("STAGEZERO_NOTIFY_FD");
     if (req.has_notify_fd_index()) {
       toolbelt::FileDescriptor &notify_fd = fds[req.notify_fd_index()];
       fds_to_keep_open.insert(notify_fd.Fd());
 
       // The zygote's notify fd is in the current environment and we will
       // replace it.
-      unsetenv("STAGEZERO_NOTIFY_FD");
-      local_symbols->AddSymbol("STAGEZERO_NOTIFY_FD",
-                               absl::StrFormat("%d", notify_fd.Fd()), true);
+      std::string notify_fd_str = absl::StrFormat("%d", notify_fd.Fd());
+      local_symbols->AddSymbol("STAGEZERO_NOTIFY_FD", notify_fd_str, true);
+      setenv("STAGEZERO_NOTIFY_FD", notify_fd_str.c_str(), 1);
     }
 
+    unsetenv("STAGEZERO_PARAMETERS_FDS");
     int parameters_read_fd = -1, parameters_write_fd = -1,
         parameters_events_fd = -1;
     if (req.has_parameters_read_fd_index()) {
@@ -375,14 +377,37 @@ absl::Status ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
       parameters_events_fd = parameters_fd.Fd();
       fds_to_keep_open.insert(parameters_fd.Fd());
     }
+
     if (parameters_read_fd != -1 && parameters_write_fd != -1 &&
         parameters_events_fd != -1) {
-      unsetenv("STAGEZERO_PARAMETERS_FDS");
-      local_symbols->AddSymbol("STAGEZERO_PARAMETERS_FDS",
-                               absl::StrFormat("%d:%d:%d", parameters_read_fd,
-                                               parameters_write_fd,
-                                               parameters_events_fd),
+      std::string parameters_fds_str =
+          absl::StrFormat("%d:%d:%d", parameters_read_fd, parameters_write_fd,
+                          parameters_events_fd);
+      local_symbols->AddSymbol("STAGEZERO_PARAMETERS_FDS", parameters_fds_str,
                                true);
+      setenv("STAGEZERO_PARAMETERS_FDS", parameters_fds_str.c_str(), 1);
+    }
+
+    unsetenv("STAGEZERO_TELEMETRY_FDS");
+    int telemetry_read_fd = -1, telemetry_write_fd = -1;
+    if (req.has_telemetry_read_fd_index()) {
+      toolbelt::FileDescriptor &telemetry_fd =
+          fds[req.telemetry_read_fd_index()];
+      telemetry_read_fd = telemetry_fd.Fd();
+      fds_to_keep_open.insert(telemetry_fd.Fd());
+    }
+    if (req.has_telemetry_write_fd_index()) {
+      toolbelt::FileDescriptor &telemetry_fd =
+          fds[req.telemetry_write_fd_index()];
+      telemetry_write_fd = telemetry_fd.Fd();
+      fds_to_keep_open.insert(telemetry_fd.Fd());
+    }
+    if (telemetry_read_fd != -1 && telemetry_write_fd != -1) {
+      std::string telemetry_fds_str =
+          absl::StrFormat("%d:%d", telemetry_read_fd, telemetry_write_fd);
+      local_symbols->AddSymbol("STAGEZERO_TELEMETRY_FDS", telemetry_fds_str,
+                               true);
+      setenv("STAGEZERO_TELEMETRY_FDS", telemetry_fds_str.c_str(), 1);
     }
 
     for (auto &stream : req.streams()) {
@@ -479,6 +504,25 @@ absl::Status ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
     }
   }
 
+  // Close this end of all the fds that the child has duplicated.
+  if (req.has_notify_fd_index()) {
+    fds[req.notify_fd_index()].Reset();
+  }
+  if (req.has_parameters_read_fd_index()) {
+    fds[req.parameters_read_fd_index()].Reset();
+  }
+  if (req.has_parameters_write_fd_index()) {
+    fds[req.parameters_write_fd_index()].Reset();
+  }
+  if (req.has_parameters_events_fd_index()) {
+    fds[req.parameters_events_fd_index()].Reset();
+  }
+  if (req.has_telemetry_read_fd_index()) {
+    fds[req.telemetry_read_fd_index()].Reset();
+  }
+  if (req.has_telemetry_write_fd_index()) {
+    fds[req.telemetry_write_fd_index()].Reset();
+  }
   resp->set_pid(pid);
   fds.clear();
 
@@ -487,6 +531,8 @@ absl::Status ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
   fds.push_back(toolbelt::FileDescriptor(pidfd));
   resp->set_pidfd_index(0);
 #endif
+  logger_.Log(toolbelt::LogLevel::kDebug,
+              "Zygote spawned virtual process %s with pid %d", req.name().c_str(), pid);
   return absl::OkStatus();
 }
 

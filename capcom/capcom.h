@@ -43,7 +43,8 @@ public:
   Capcom(co::CoroutineScheduler &scheduler, toolbelt::InetAddress addr,
          bool log_to_output, int local_stagezero_port,
          std::string log_file_name = "", std::string log_level = "",
-         bool test_mode = false, int notify_fd = -1);
+         bool test_mode = false, int notify_fd = -1,
+         bool log_process_output = true);
   ~Capcom();
 
   absl::Status Run();
@@ -106,10 +107,10 @@ private:
       it->second.IncStaticRefs(+1);
       return;
     }
-    std::cerr << "adding umbilical for " << compute->addr.ToString() << std::endl;
     stagezero_umbilicals_.emplace(
         compute->name,
-        Umbilical{"capcom", logger_, compute, std::make_shared<stagezero::Client>(), is_static});
+        Umbilical{"capcom", logger_, compute,
+                  std::make_shared<stagezero::Client>(), is_static});
   }
 
   void RemoveUmbilical(const std::string &compute, bool dynamic_only) {
@@ -129,15 +130,7 @@ private:
   }
 
   absl::Status ConnectUmbilical(const std::string &compute, co::Coroutine *c);
-
-  void DisconnectUmbilical(const std::string &compute, bool dynamic_only) {
-    auto it = stagezero_umbilicals_.find(compute);
-    if (it == stagezero_umbilicals_.end()) {
-      return;
-    }
-
-    it->second.Disconnect(dynamic_only);
-  }
+  void DisconnectUmbilical(const std::string &compute, bool dynamic_only);
 
   Umbilical *FindUmbilical(const std::string &compute) {
     auto it = stagezero_umbilicals_.find(compute);
@@ -201,6 +194,8 @@ private:
   SendTelemetryEvent(const std::string &subsystem,
                      const adastra::stagezero::control::TelemetryEvent &event);
 
+  void SendOutputEvent(int fd, const std::string &name,
+                       const std::string &process_id, const std::string &data);
   void SendAlarm(const Alarm &alarm);
 
   std::vector<Subsystem *> GetSubsystems() const;
@@ -214,6 +209,9 @@ private:
                                       std::shared_ptr<Compute> compute,
                                       co::Coroutine *c);
 
+  absl::Status RemoveComputeCgroups(std::shared_ptr<stagezero::Client> client,
+                                    std::shared_ptr<Compute> compute,
+                                    co::Coroutine *c);
   absl::Status PropagateParameterUpdate(const std::string &name,
                                         const parameters::Value &value,
                                         co::Coroutine *c);
@@ -286,5 +284,7 @@ private:
   // Connections to the StageZero on each compute.  This is used as the
   // umbilical for common StageZero data like parameters, cgroups, etc.
   absl::flat_hash_map<std::string, Umbilical> stagezero_umbilicals_;
+
+  bool log_process_output_ = true;
 };
 } // namespace adastra::capcom

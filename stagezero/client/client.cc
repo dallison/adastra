@@ -136,6 +136,15 @@ void Client::BuildProcessOptions(
     auto *n = options->mutable_ns();
     opts.ns->ToProto(n);
   }
+  if (opts.kernel_scheduler_policy.policy !=
+      KernelSchedulerPolicyType::kDefault) {
+    auto p = options->mutable_kernel_scheduler_policy();
+    opts.kernel_scheduler_policy.ToProto(p);
+  }
+  for (auto cpu : opts.cpus) {
+    options->add_cpus(cpu);
+  }
+  opts.capabilities.ToProto(options->mutable_capabilities());
 }
 
 absl::Status Client::StopProcess(const std::string &process_id,
@@ -287,6 +296,28 @@ absl::Status Client::RegisterCgroup(const Cgroup &cgroup, co::Coroutine *co) {
   return absl::OkStatus();
 }
 
+absl::Status Client::RemoveCgroup(const std::string &cgroup,
+                                  co::Coroutine *co) {
+  if (co == nullptr) {
+    co = co_;
+  }
+  adastra::stagezero::control::Request req;
+  auto rem = req.mutable_remove_cgroup();
+  rem->set_cgroup(cgroup);
+
+  adastra::stagezero::control::Response resp;
+  if (absl::Status status = SendRequestReceiveResponse(req, resp, co);
+      !status.ok()) {
+    return status;
+  }
+  auto &rem_resp = resp.remove_cgroup();
+  if (!rem_resp.error().empty()) {
+    return absl::InternalError(
+        absl::StrFormat("Failed to remove cgroup: %s", rem_resp.error()));
+  }
+  return absl::OkStatus();
+}
+
 absl::Status Client::FreezeCgroup(const std::string &cgroup,
                                   co::Coroutine *co) {
   if (co == nullptr) {
@@ -351,7 +382,8 @@ absl::Status Client::KillCgroup(const std::string &cgroup, co::Coroutine *co) {
   return absl::OkStatus();
 }
 
-absl::Status Client::SetParameter(const std::string &name, const parameters::Value &v,
+absl::Status Client::SetParameter(const std::string &name,
+                                  const parameters::Value &v,
                                   co::Coroutine *co) {
   if (co == nullptr) {
     co = co_;
@@ -375,13 +407,13 @@ absl::Status Client::SetParameter(const std::string &name, const parameters::Val
 }
 
 absl::Status Client::DeleteParameters(const std::vector<std::string> &name,
-                                     co::Coroutine *co) {
+                                      co::Coroutine *co) {
   if (co == nullptr) {
     co = co_;
   }
   adastra::stagezero::control::Request req;
   auto x = req.mutable_delete_parameters();
-  for (auto& name : name) {
+  for (auto &name : name) {
     x->add_names(name);
   }
 

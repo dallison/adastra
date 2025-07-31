@@ -65,7 +65,7 @@ static absl::Status WriteFile(std::filesystem::path file,
 
 // Write a field to a file.
 #define W(obj, field, file)                                                    \
-  if (absl::Status status = WriteFile(cgroup / #obj #file, obj.field);         \
+  if (absl::Status status = WriteFile(cgroup / #obj "." #file, obj.field);         \
       !status.ok()) {                                                          \
     return status;                                                             \
   }
@@ -131,7 +131,7 @@ static absl::Status SetMemoryController(std::filesystem::path cgroup,
   W(memory, swap_high, swap.high);
   W(memory, swap_max, swap.max);
   W(memory, zswap_max, zswap.max);
-  W(memory, zswap_writeback, zswapwriteback);
+  W(memory, zswap_writeback, zswap.writeback);
   return absl::OkStatus();
 }
 

@@ -34,8 +34,8 @@ public:
                                         const parameters::Value &value);
 
   absl::Status SendParameterDeleteEvent(const std::string &name);
-  absl::Status
-  SendTelemetryEvent(const adastra::proto::TelemetryEvent &event);
+  absl::Status SendTelemetryEvent(const adastra::proto::TelemetryEvent &event);
+  absl::Status SendOutputEvent(std::shared_ptr<adastra::proto::Event> event);
 
   co::CoroutineScheduler &GetScheduler() const override;
 
@@ -121,8 +121,8 @@ private:
                           proto::SetParameterResponse *response,
                           co::Coroutine *c);
   void HandleDeleteParameters(const proto::DeleteParametersRequest &req,
-                             proto::DeleteParametersResponse *response,
-                             co::Coroutine *c);
+                              proto::DeleteParametersResponse *response,
+                              co::Coroutine *c);
   void HandleUploadParameters(const proto::UploadParametersRequest &req,
                               proto::UploadParametersResponse *response,
                               co::Coroutine *c);

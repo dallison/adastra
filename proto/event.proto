@@ -52,6 +52,7 @@ message OutputEvent {
   string process_id = 1;
   bytes data = 2;
   int32 fd = 3; // What fd sent it
+  string name = 4;   // Process name.
 }
 
 message TelemetryEvent {

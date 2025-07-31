@@ -10,6 +10,7 @@
 #include "stagezero/cgroup.h"
 #include "stagezero/client_handler.h"
 #include "toolbelt/hexdump.h"
+#include "toolbelt/pipe.h"
 
 #include <ctype.h>
 #include <syslog.h>
@@ -37,7 +38,7 @@
 #include <sys/ioctl.h>
 #include <termios.h>
 
-#if defined(__linux__) && HAVE_PIDFD
+#if HAVE_PIDFD
 #include <syscall.h>
 static int pidfd_open(pid_t pid, unsigned int flags) {
   return syscall(__NR_pidfd_open, pid, flags);
@@ -72,7 +73,7 @@ void Process::KillNow() {
   if (pid_ <= 0) {
     return;
   }
-  int e = SafeKill(pid_, SIGKILL);
+  int e = SafeKill(GetProcessGroupId(), SIGKILL);
   if (e != 0) {
     client_->Log(Name(), toolbelt::LogLevel::kError,
                  "Failed to send SIGKILL to %s: pid: %d: %s", Name().c_str(),
@@ -216,8 +217,8 @@ StaticProcess::StartInternal(const std::vector<std::string> extra_env_vars,
 
   client_->AddCoroutine(std::make_unique<co::Coroutine>(
       scheduler_,
-      [ proc = shared_from_this(), client = client_,
-        send_start_event ](co::Coroutine * c) mutable {
+      [proc = shared_from_this(), client = client_,
+       send_start_event](co::Coroutine *c) mutable {
         if (proc->WillNotify()) {
           std::shared_ptr<StreamInfo> s = proc->FindNotifyStream();
           if (s != nullptr) {
@@ -247,7 +248,6 @@ StaticProcess::StartInternal(const std::vector<std::string> extra_env_vars,
               client->Log(proc->Name(), toolbelt::LogLevel::kDebug,
                           "Process %s notified us of startup",
                           proc->Name().c_str());
-
             }
           }
         }
@@ -404,13 +404,13 @@ static void DefaultStreamDirections(std::shared_ptr<StreamInfo> stream) {
 
   switch (stream->fd) {
   case STDIN_FILENO:
-    if (stream->direction != proto::StreamControl::DEFAULT) {
+    if (stream->direction == proto::StreamControl::DEFAULT) {
       stream->direction = proto::StreamControl::INPUT;
     }
     break;
   case STDOUT_FILENO:
   case STDERR_FILENO:
-    if (stream->direction != proto::StreamControl::DEFAULT) {
+    if (stream->direction == proto::StreamControl::DEFAULT) {
       stream->direction = proto::StreamControl::OUTPUT;
     }
     break;
@@ -525,14 +525,14 @@ absl::Status Process::BuildStreams(
 
     // Spawn coroutine to read from the pty and send output events.
     client_->AddCoroutine(std::make_unique<co::Coroutine>(
-        scheduler_, [ proc = shared_from_this(), client = client_,
-                      this_end ](co::Coroutine * c) {
+        scheduler_, [proc = shared_from_this(), client = client_,
+                     this_end](co::Coroutine *c) {
           absl::Status status = StreamFromFileDescriptor(
               this_end,
               [proc, client](const char *buf, size_t len) -> absl::Status {
                 // Write to client using an event.
-                return client->SendOutputEvent(proc->GetId(), STDOUT_FILENO,
-                                               buf, len);
+                return client->SendOutputEvent(proc->Name(), proc->GetId(),
+                                               STDOUT_FILENO, buf, len);
               },
               c);
           if (!status.ok()) {
@@ -564,7 +564,6 @@ absl::Status Process::BuildStreams(
         return pipe.status();
       }
       stream->pipe = std::move(*pipe);
-
       if (s.has_terminal()) {
         stream->term_name = s.terminal().name();
       }
@@ -575,15 +574,15 @@ absl::Status Process::BuildStreams(
       // writes to the write end of the pipe/tty.
       if (stream->direction == proto::StreamControl::OUTPUT) {
         client_->AddCoroutine(std::make_unique<co::Coroutine>(
-            scheduler_, [ proc = shared_from_this(), stream,
-                          client = client_ ](co::Coroutine * c) {
+            scheduler_, [proc = shared_from_this(), stream,
+                         client = client_](co::Coroutine *c) {
               absl::Status status = StreamFromFileDescriptor(
                   stream->pipe.ReadFd().Fd(),
                   [proc, stream, client](const char *buf,
                                          size_t len) -> absl::Status {
                     // Write to client using an event.
-                    return client->SendOutputEvent(proc->GetId(), stream->fd,
-                                                   buf, len);
+                    return client->SendOutputEvent(proc->Name(), proc->GetId(),
+                                                   stream->fd, buf, len);
                   },
                   c);
               if (!status.ok()) {
@@ -608,8 +607,8 @@ absl::Status Process::BuildStreams(
         stream->term_name = s.terminal().name();
       }
       client_->AddCoroutine(std::make_unique<co::Coroutine>(
-          scheduler_, [ proc = shared_from_this(), stream,
-                        client = client_ ](co::Coroutine * c) {
+          scheduler_, [proc = shared_from_this(), stream,
+                       client = client_](co::Coroutine *c) {
             absl::Status status = StreamFromFileDescriptor(
                 stream->pipe.ReadFd().Fd(),
                 [proc, stream, client](const char *buf,
@@ -642,13 +641,12 @@ absl::Status Process::BuildStreams(
         stream->term_name = s.terminal().name();
       }
       client_->AddCoroutine(std::make_unique<co::Coroutine>(
-          scheduler_, [ proc = shared_from_this(), stream,
-                        client = client_ ](co::Coroutine * c) {
+          scheduler_, [proc = shared_from_this(), stream,
+                       client = client_](co::Coroutine *c) {
             absl::Status status = StreamFromFileDescriptor(
                 stream->pipe.ReadFd().Fd(),
                 [proc, stream, client](const char *buf,
                                        size_t len) -> absl::Status {
-
                   syslog(stream->fd == 1 ? LOG_INFO : LOG_ERR, "%s: %s",
                          proc->Name().c_str(), std::string(buf, len).c_str());
                   return absl::OkStatus();
@@ -694,128 +692,127 @@ void Process::RunParameterServer() {
   std::shared_ptr<StreamInfo> param_write_stream = FindParametersStream(false);
   assert(param_read_stream != nullptr && param_write_stream != nullptr);
 
-  client_->AddCoroutine(std::make_unique<co::Coroutine>(scheduler_, [
-    proc = shared_from_this(), param_read_stream, param_write_stream,
-    client = client_
-  ](co::Coroutine * c) {
-    toolbelt::FileDescriptor &rfd = param_write_stream->pipe.ReadFd();
-    toolbelt::FileDescriptor &wfd = param_read_stream->pipe.WriteFd();
-    while (rfd.Valid() && wfd.Valid()) {
-      adastra::proto::parameters::Request req;
-      {
-        uint32_t len;
-        int wait_fd = c->Wait(rfd.Fd(), POLLIN);
-        if (wait_fd != rfd.Fd()) {
-          return;
-        }
-        ssize_t n = ::read(rfd.Fd(), &len, sizeof(len));
-        if (n <= 0) {
-          return;
-        }
-        std::vector<char> buffer(len);
-        char *buf = buffer.data();
-        size_t remaining = len;
-        while (remaining > 0) {
-          int wait_fd = c->Wait(rfd.Fd(), POLLIN);
-          if (wait_fd != rfd.Fd()) {
-            return;
+  client_->AddCoroutine(std::make_unique<co::Coroutine>(
+      scheduler_, [proc = shared_from_this(), param_read_stream,
+                   param_write_stream, client = client_](co::Coroutine *c) {
+        toolbelt::FileDescriptor &rfd = param_write_stream->pipe.ReadFd();
+        toolbelt::FileDescriptor &wfd = param_read_stream->pipe.WriteFd();
+        while (rfd.Valid() && wfd.Valid()) {
+          adastra::proto::parameters::Request req;
+          {
+            uint32_t len;
+            int wait_fd = c->Wait(rfd.Fd(), POLLIN);
+            if (wait_fd != rfd.Fd()) {
+              return;
+            }
+            ssize_t n = ::read(rfd.Fd(), &len, sizeof(len));
+            if (n <= 0) {
+              return;
+            }
+            std::vector<char> buffer(len);
+            char *buf = buffer.data();
+            size_t remaining = len;
+            while (remaining > 0) {
+              int wait_fd = c->Wait(rfd.Fd(), POLLIN);
+              if (wait_fd != rfd.Fd()) {
+                return;
+              }
+              ssize_t n = ::read(rfd.Fd(), buf, remaining);
+              if (n <= 0) {
+                return;
+              }
+              remaining -= n;
+              buf += n;
+            }
+
+            if (!req.ParseFromArray(buffer.data(), buffer.size())) {
+              client->Log(proc->Name(), toolbelt::LogLevel::kError,
+                          "Failed to parse parameter stream message");
+              break;
+            }
           }
-          ssize_t n = ::read(rfd.Fd(), buf, remaining);
-          if (n <= 0) {
-            return;
+          adastra::proto::parameters::Response resp;
+
+          proc->GetStageZero().HandleParameterServerRequest(proc, req, resp,
+                                                            client, c);
+
+          uint64_t len = resp.ByteSizeLong();
+          std::vector<char> resp_buffer(len + sizeof(uint32_t));
+          char *respbuf = resp_buffer.data() + 4;
+          if (!resp.SerializeToArray(respbuf, uint32_t(len))) {
+            client->Log(proc->Name(), toolbelt::LogLevel::kError,
+                        "Failed to serialize parameters response");
+            break;
           }
-          remaining -= n;
-          buf += n;
-        }
+          // Copy length into buffer.
+          memcpy(resp_buffer.data(), &len, sizeof(uint32_t));
 
-        if (!req.ParseFromArray(buffer.data(), buffer.size())) {
-          client->Log(proc->Name(), toolbelt::LogLevel::kError,
-                      "Failed to parse parameter stream message");
-          break;
+          // Write back to pipe in a loop.
+          char *buf = resp_buffer.data();
+          size_t remaining = len + sizeof(uint32_t);
+          while (remaining > 0) {
+            int wait_fd = c->Wait(wfd.Fd(), POLLOUT);
+            if (wait_fd != wfd.Fd()) {
+              return;
+            }
+            ssize_t n = ::write(wfd.Fd(), buf, remaining);
+            if (n <= 0) {
+              return;
+            }
+            remaining -= n;
+            buf += n;
+          }
         }
-      }
-      adastra::proto::parameters::Response resp;
-
-      proc->GetStageZero().HandleParameterServerRequest(proc, req, resp, client,
-                                                        c);
-
-      uint64_t len = resp.ByteSizeLong();
-      std::vector<char> resp_buffer(len + sizeof(uint32_t));
-      char *respbuf = resp_buffer.data() + 4;
-      if (!resp.SerializeToArray(respbuf, uint32_t(len))) {
-        client->Log(proc->Name(), toolbelt::LogLevel::kError,
-                    "Failed to serialize parameters response");
-        break;
-      }
-      // Copy length into buffer.
-      memcpy(resp_buffer.data(), &len, sizeof(uint32_t));
-
-      // Write back to pipe in a loop.
-      char *buf = resp_buffer.data();
-      size_t remaining = len + sizeof(uint32_t);
-      while (remaining > 0) {
-        int wait_fd = c->Wait(wfd.Fd(), POLLOUT);
-        if (wait_fd != wfd.Fd()) {
-          return;
-        }
-        ssize_t n = ::write(wfd.Fd(), buf, remaining);
-        if (n <= 0) {
-          return;
-        }
-        remaining -= n;
-        buf += n;
-      }
-    }
-  }));
+      }));
 }
 
 void Process::RunTelemetryServer() {
   std::shared_ptr<StreamInfo> tele_write_stream = FindTelemetryStream(false);
   assert(tele_write_stream != nullptr);
 
-  client_->AddCoroutine(std::make_unique<co::Coroutine>(scheduler_, [
-    proc = shared_from_this(), tele_write_stream, client = client_
-  ](co::Coroutine * c) {
-    toolbelt::FileDescriptor &rfd = tele_write_stream->pipe.ReadFd();
-    while (rfd.Valid()) {
-      adastra::proto::telemetry::Status status;
-      {
-        uint32_t len;
-        int wait_fd = c->Wait(rfd.Fd(), POLLIN);
-        if (wait_fd != rfd.Fd()) {
-          return;
-        }
-        ssize_t n = ::read(rfd.Fd(), &len, sizeof(len));
-        if (n <= 0) {
-          return;
-        }
-        std::vector<char> buffer(len);
-        char *buf = buffer.data();
-        size_t remaining = len;
-        while (remaining > 0) {
-          int wait_fd = c->Wait(rfd.Fd(), POLLIN);
-          if (wait_fd != rfd.Fd()) {
-            return;
-          }
-          ssize_t n = ::read(rfd.Fd(), buf, remaining);
-          if (n <= 0) {
-            return;
-          }
-          remaining -= n;
-          buf += n;
-        }
+  client_->AddCoroutine(std::make_unique<co::Coroutine>(
+      scheduler_, [proc = shared_from_this(), tele_write_stream,
+                   client = client_](co::Coroutine *c) {
+        toolbelt::FileDescriptor &rfd = tele_write_stream->pipe.ReadFd();
+        while (rfd.Valid()) {
+          adastra::proto::telemetry::Status status;
+          {
+            uint32_t len;
+            int wait_fd = c->Wait(rfd.Fd(), POLLIN);
+            if (wait_fd != rfd.Fd()) {
+              return;
+            }
+            ssize_t n = ::read(rfd.Fd(), &len, sizeof(len));
+            if (n <= 0) {
+              return;
+            }
+            std::vector<char> buffer(len);
+            char *buf = buffer.data();
+            size_t remaining = len;
+            while (remaining > 0) {
+              int wait_fd = c->Wait(rfd.Fd(), POLLIN);
+              if (wait_fd != rfd.Fd()) {
+                return;
+              }
+              ssize_t n = ::read(rfd.Fd(), buf, remaining);
+              if (n <= 0) {
+                return;
+              }
+              remaining -= n;
+              buf += n;
+            }
 
-        if (!status.ParseFromArray(buffer.data(), buffer.size())) {
-          client->Log(proc->Name(), toolbelt::LogLevel::kError,
-                      "Failed to parse telemetry status message");
-          break;
-        }
+            if (!status.ParseFromArray(buffer.data(), buffer.size())) {
+              client->Log(proc->Name(), toolbelt::LogLevel::kError,
+                          "Failed to parse telemetry status message");
+              break;
+            }
 
-        proc->GetStageZero().HandleTelemetryServerStatus(proc, status, client,
-                                                         c);
-      }
-    }
-  }));
+            proc->GetStageZero().HandleTelemetryServerStatus(proc, status,
+                                                             client, c);
+          }
+        }
+      }));
 }
 
 void Process::SendParameterUpdateEvent(const std::string &name,
@@ -898,6 +895,7 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
   }
   uid_t uid = geteuid();
   gid_t gid = getegid();
+  std::vector<gid_t> groups;
 
   if (!user_.empty()) {
     struct passwd *p = getpwnam(user_.c_str());
@@ -906,6 +904,21 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
     }
     uid = p->pw_uid;
     gid = p->pw_gid;
+    int ngroups{0};
+    getgrouplist(user_.c_str(), gid, nullptr, &ngroups);
+    if (ngroups > 0) {
+      groups.resize(ngroups);
+      if (getgrouplist(user_.c_str(), gid,
+                       reinterpret_cast<int *>(groups.data()),
+                       &ngroups) == -1) {
+        // -1 means ngroups was too small to store all groups
+        // But we just queried the number of necessary groups, and this should
+        // not be changing
+        return absl::InternalError(absl::StrFormat(
+            "Failed to determine all groups associated with user '%s' ('%s')",
+            user_, strerror(errno)));
+      }
+    }
   }
 
   if (!group_.empty()) {
@@ -920,6 +933,11 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
   RunParameterServer();
   if (UseTelemetry()) {
     RunTelemetryServer();
+  }
+
+  absl::StatusOr<toolbelt::Pipe> startup_pipe = toolbelt::Pipe::Create();
+  if (!startup_pipe.ok()) {
+    return startup_pipe.status();
   }
 
 #if defined(__linux__)
@@ -942,6 +960,9 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
         absl::StrFormat("Fork failed: %s", strerror(errno)));
   }
   if (pid_ == 0) {
+    // The parent will get EOF if we exit before writing to the pipe.
+    startup_pipe->ReadFd().Close();
+
     // Set some local variables for the process.
     local_symbols_.AddSymbol("pid", absl::StrFormat("%d", getpid()), false);
 
@@ -1117,7 +1138,7 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
 
     absl::flat_hash_map<std::string, Symbol *> env_vars =
         local_symbols_.GetEnvironmentSymbols();
-    for (auto & [ name, symbol ] : env_vars) {
+    for (auto &[name, symbol] : env_vars) {
       env_strings.push_back(absl::StrFormat("%s=%s", name, symbol->Value()));
     }
     for (auto &extra : extra_env_vars) {
@@ -1131,18 +1152,12 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
     }
     env.push_back(nullptr);
 
-    setpgrp();
-
-    if (geteuid() == 0) {
-      // We can only set the user and group if we are running as root.
-      e = setuid(uid);
-      if (e == -1) {
-        std::cerr << "Failed to setuid: " << strerror(errno) << std::endl;
-        exit(1);
-      }
-      e = setgid(gid);
-      if (e == -1) {
-        std::cerr << "Failed to setgid: " << strerror(errno) << std::endl;
+    if (!interactive_) {
+      // Can't set a process group on a new session.
+      int perr = setpgid(0, 0);
+      if (perr == -1) {
+        std::cerr << "Failed to set process group: " << strerror(errno)
+                  << std::endl;
         exit(1);
       }
     }
@@ -1154,6 +1169,180 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
       exit(1);
     }
 
+    if (geteuid() == 0) {
+#if defined(__linux__)
+      // Set the kernel scheduler if running as root.
+      if (kernel_scheduler_policy_.policy !=
+          KernelSchedulerPolicyType::kDefault) {
+        int policy = 0;
+
+        switch (kernel_scheduler_policy_.policy) {
+        case KernelSchedulerPolicyType::kDefault:
+          break;
+        case KernelSchedulerPolicyType::kBatch:
+          policy = SCHED_BATCH;
+          break;
+        case KernelSchedulerPolicyType::kIdle:
+          policy = SCHED_IDLE;
+          break;
+        case KernelSchedulerPolicyType::kFifo:
+          policy = SCHED_FIFO;
+          break;
+        case KernelSchedulerPolicyType::kRoundRobin:
+          policy = SCHED_RR;
+          break;
+        }
+        if (kernel_scheduler_policy_.reset_on_fork) {
+          policy |= SCHED_RESET_ON_FORK;
+        }
+        struct sched_param param = {0};
+        param.sched_priority = kernel_scheduler_policy_.priority;
+        int e = sched_setscheduler(0, policy, &param);
+        if (e == -1) {
+          std::cerr << "Failed to set scheduler policy: " << strerror(errno)
+                    << std::endl;
+          exit(1);
+        }
+      }
+
+      // Set the CPU affinity.
+      if (!cpus_.empty()) {
+        cpu_set_t cpuset;
+        CPU_ZERO(&cpuset);
+        for (int cpu : cpus_) {
+          CPU_SET(cpu, &cpuset);
+        }
+
+        e = sched_setaffinity(0, sizeof(cpuset), &cpuset);
+        if (e == -1) {
+          std::cerr << "Failed to set CPU affinity: " << strerror(errno)
+                    << std::endl;
+          cpu_set_t ccpuset;
+
+          int e2 = sched_getaffinity(0, sizeof(cpuset), &ccpuset);
+          if (e2 == 0) {
+            for (int i = 0; i < CPU_SETSIZE; i++) {
+              if (CPU_ISSET(i, &ccpuset)) {
+                std::cerr << "CPU " << i << " is available" << std::endl;
+              }
+            }
+          }
+          exit(1);
+        }
+      }
+
+      // Need to be able to set the use and group ids here.  We will drop the
+      // caps if the process doesn't want them.
+      bool drop_uid_cap = false;
+      bool drop_gid_cap = false;
+      adastra::Caps current_caps;
+
+      // Capabilities, only if we are not going to runs as root.
+      // We drop all the capabilities and then add the ones we want.
+      if (uid != 0 && !capabilities_.capabilities.empty()) {
+        int e = prctl(PR_SET_SECUREBITS, SECBIT_NO_SETUID_FIXUP, 0, 0, 0);
+        if (e == -1) {
+          std::cerr << "Failed to set secure bits: " << strerror(errno)
+                    << std::endl;
+          exit(1);
+        }
+
+        current_caps.Modify(CAP_SETGID);
+        current_caps.Modify(CAP_SETUID);
+        drop_gid_cap = true;
+        drop_uid_cap = true;
+
+        for (auto &cap : capabilities_.capabilities) {
+          int cap_number = 0;
+          auto number_or_status =
+              adastra::CapabilitySet::CapabilityFromString(cap);
+          if (number_or_status.ok()) {
+            cap_number = number_or_status.moveValue();
+          } else {
+            // Allow #<int> for a capability number for which we don't have a
+            // name.
+            if (cap[0] == '#') {
+              int num = 0;
+              bool ok = absl::SimpleAtoi(cap.substr(1), &num);
+              if (!ok) {
+                return cruise::GenericError(
+                    absl::StrFormat("Malformed capability number %s", cap));
+              }
+              cap_number = num;
+            } else {
+              std::cerr << "Unknown capability " << cap << std::endl;
+              // Print all caps.
+              for (auto &c : capabilities_.capabilities) {
+                std::cerr << "  Capability " << c << std::endl;
+              }
+              continue;
+            }
+          }
+
+          if (cap_number == CAP_SETUID) {
+            drop_uid_cap = false;
+          }
+          if (cap_number == CAP_SETGID) {
+            drop_gid_cap = false;
+          }
+          current_caps.Modify(cap_number);
+        }
+
+        if (cruise::Status status = current_caps.Set(); !status.ok()) {
+          std::cerr << "Failed to set capabilities: " << status.toString()
+                    << std::endl;
+          exit(1);
+        }
+      }
+
+      // We can only set the user and group if we are running as root.
+      if (!groups.empty()) {
+        e = setgroups(groups.size(), groups.data());
+        if (e == -1) {
+          std::cerr << "Failed to setgroups: " << strerror(errno) << std::endl;
+          exit(1);
+        }
+      }
+#endif
+
+      // We can only set the user and group if we are running as root.
+      e = setuid(uid);
+      if (e == -1) {
+        std::cerr << "Failed to setuid: " << strerror(errno) << std::endl;
+        exit(1);
+      }
+      e = setgid(gid);
+      if (e == -1) {
+        std::cerr << "Failed to setgid: " << strerror(errno) << std::endl;
+        exit(1);
+      }
+#if defined(__linux__)
+      if (drop_gid_cap || drop_uid_cap) {
+        if (drop_gid_cap) {
+          // Drop the setgid capability.
+          current_caps.Modify(CAP_SETGID, false);
+        }
+        if (drop_uid_cap) {
+          // Drop the setuid capability.
+          current_caps.Modify(CAP_SETUID, false);
+        }
+        if (cruise::Status status = current_caps.Set(); !status.ok()) {
+          std::cerr << "Failed to drop id caps: " << status.toString()
+                    << std::endl;
+          exit(1);
+        }
+      }
+#endif
+    }
+
+    int64_t val = 1;
+    ssize_t n = ::write(startup_pipe->WriteFd().Fd(), &val, sizeof(val));
+    if (n != sizeof(val)) {
+      std::cerr << "Failed to write to startup pipe: " << strerror(errno)
+                << std::endl;
+      exit(1);
+    }
+    startup_pipe->WriteFd().Close();
     execve(exe.c_str(),
            reinterpret_cast<char *const *>(const_cast<char **>(argv.data())),
            reinterpret_cast<char *const *>(const_cast<char **>(env.data())));
@@ -1161,6 +1350,7 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
               << std::endl;
     exit(1);
   }
+  startup_pipe->WriteFd().Close();
 #if defined(__linux__) && HAVE_PIDFD
   int pidfd = pidfd_open(pid_, 0);
   if (pidfd == -1) {
@@ -1186,6 +1376,23 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
               : stream->pipe.ReadFd();
       fd.Reset();
     }
+  }
+#if defined(__linux__)
+  if (absl::Status status = BuildLinuxParameterrs(); !status.ok()) {
+    return status;
+  }
+#endif
+
+  int64_t val;
+  ssize_t n = ::read(startup_pipe->ReadFd().Fd(), &val, sizeof(val));
+  if (n != sizeof(val)) {
+    if (n == 0) {
+      // EOF means the child exited before writing to the pipe.
+      return absl::InternalError(
+          absl::StrFormat("Process %s (PID %d) failed to start", Name(), pid_));
+    }
+    return absl::InternalError(absl::StrFormat(
+        "Failed to read from startup pipe: %s", strerror(errno)));
   }
   return absl::OkStatus();
 }
@@ -1263,7 +1470,7 @@ absl::Status Process::Stop(co::Coroutine *c) {
   stopping_ = true;
   client_->AddCoroutine(std::make_unique<co::Coroutine>(
       scheduler_,
-      [ proc = shared_from_this(), client = client_ ](co::Coroutine * c2) {
+      [proc = shared_from_this(), client = client_](co::Coroutine *c2) {
         if (!proc->IsRunning()) {
           return;
         }
@@ -1283,10 +1490,14 @@ absl::Status Process::Stop(co::Coroutine *c) {
                 proc->Name().c_str(), status.ToString().c_str());
           } else {
 #if defined(__linux__) && HAVE_PIDFD
-            c2->Wait(proc->GetPidFd().Fd(), POLLIN,
-                     std::chrono::duration_cast<std::chrono::nanoseconds>(
-                         std::chrono::seconds(timeout))
-                         .count());
+            int fd =
+                c2->Wait(proc->GetPidFd().Fd(), POLLIN,
+                         std::chrono::duration_cast<std::chrono::nanoseconds>(
+                             std::chrono::seconds(timeout))
+                             .count());
+            if (fd != -1) {
+              return;
+            }
 #else
             (void)proc->WaitLoop(c2, std::chrono::seconds(timeout));
 #endif
@@ -1298,28 +1509,27 @@ absl::Status Process::Stop(co::Coroutine *c) {
 
         timeout = proc->SigIntTimeoutSecs();
         if (timeout > 0) {
-          client->Log(proc->Name(), toolbelt::LogLevel::kDebug,
-                      "Killing process %s with SIGINT (timeout %d seconds)",
-                      proc->Name().c_str(), timeout);
-#if defined(__linux__) && HAVE_PIDFD
-          int e = pidfd_send_signal(proc->GetPidFd().Fd(), SIGINT, nullptr, 0);
-          if (e != 0) {
-            client->Log(proc->Name(), toolbelt::LogLevel::kError,
-                        "Failed to send SIGINT to %s: pidfd: %d: %s",
-                        proc->Name().c_str(), proc->GetPidFd().Fd(),
-                        strerror(errno));
-          }
-          c2->Wait(proc->GetPidFd().Fd(), POLLIN,
-                   std::chrono::duration_cast<std::chrono::nanoseconds>(
-                       std::chrono::seconds(timeout))
-                       .count());
-#else
-          int e = SafeKill(proc->GetPid(), SIGINT);
+          client->Log(
+              proc->Name(), toolbelt::LogLevel::kDebug,
+              "Killing process %s (pid %d) with SIGINT (timeout %d seconds)",
+              proc->Name().c_str(), proc->GetProcessGroupId(), timeout);
+          int e = SafeKill(proc->GetProcessGroupId(), SIGINT);
           if (e != 0) {
             client->Log(proc->Name(), toolbelt::LogLevel::kError,
                         "Failed to send SIGINT to %s: pid: %d: %s",
                         proc->Name().c_str(), proc->GetPid(), strerror(errno));
           }
+#if defined(__linux__) && HAVE_PIDFD
+          int fd =
+              c2->Wait(proc->GetPidFd().Fd(), POLLIN,
+                       std::chrono::duration_cast<std::chrono::nanoseconds>(
+                           std::chrono::seconds(timeout))
+                           .count());
+          if (fd != -1) {
+            return;
+          }
+#else
+
           (void)proc->WaitLoop(c2, std::chrono::seconds(timeout));
 #endif
           if (!proc->IsRunning()) {
@@ -1328,25 +1538,16 @@ absl::Status Process::Stop(co::Coroutine *c) {
         }
         timeout = proc->SigTermTimeoutSecs();
         if (timeout > 0) {
-#if defined(__linux__) && HAVE_PIDFD
-          int e = pidfd_send_signal(proc->GetPidFd().Fd(), SIGTERM, nullptr, 0);
-          if (e != 0) {
-            client->Log(proc->Name(), toolbelt::LogLevel::kError,
-                        "Failed to send SIGTERM to %s: pidfd: %d: %s",
-                        proc->Name().c_str(), proc->GetPidFd().Fd(),
-                        strerror(errno));
-          }
-#else
-          int e = SafeKill(proc->GetPid(), SIGTERM);
+          client->Log(proc->Name(), toolbelt::LogLevel::kDebug,
+                      "Killing process %s with SIGTERM (timeout %d seconds)",
+                      proc->Name().c_str(), timeout);
+          int e = SafeKill(proc->GetProcessGroupId(), SIGTERM);
           if (e != 0) {
             client->Log(proc->Name(), toolbelt::LogLevel::kError,
                         "Failed to send SIGTERM to %s: pid: %d: %s",
                         proc->Name().c_str(), proc->GetPid(), strerror(errno));
           }
-#endif
-          client->Log(proc->Name(), toolbelt::LogLevel::kDebug,
-                      "Killing process %s with SIGTERM (timeout %d seconds)",
-                      proc->Name().c_str(), timeout);
+
 #if defined(__linux__) && HAVE_PIDFD
           c2->Wait(proc->GetPidFd().Fd(), POLLIN,
                    std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -1361,25 +1562,15 @@ absl::Status Process::Stop(co::Coroutine *c) {
         if (proc->IsRunning()) {
           client->Log(proc->Name(), toolbelt::LogLevel::kDebug,
                       "Killing process %s with SIGKILL", proc->Name().c_str());
-
-#if defined(__linux__) && HAVE_PIDFD
-          int e = pidfd_send_signal(proc->GetPidFd().Fd(), SIGKILL, nullptr, 0);
-          if (e != 0) {
-            client->Log(proc->Name(), toolbelt::LogLevel::kError,
-                        "Failed to send SIGKILL to %s: pidfd: %d: %s",
-                        proc->Name().c_str(), proc->GetPidFd().Fd(),
-                        strerror(errno));
-          }
-#else
-          int e = SafeKill(proc->GetPid(), SIGKILL);
+          int e = SafeKill(proc->GetProcessGroupId(), SIGKILL);
           if (e != 0) {
             client->Log(proc->Name(), toolbelt::LogLevel::kError,
                         "Failed to send SIGKILL to %s: pid: %d: %s",
                         proc->Name().c_str(), proc->GetPid(), strerror(errno));
           }
-#endif
         }
-      }, "Stopper"));
+      },
+      "Stopper"));
   return client_->RemoveProcess(this);
 }
 
@@ -1445,10 +1636,11 @@ absl::Status Zygote::Start(co::Coroutine *c) {
   }
 
   // Wait for the zygote to connect to the socket in a coroutine.
-  auto acceptor = new co::Coroutine(scheduler_, [
-    proc = shared_from_this(), listen_socket = std::move(listen_socket),
-    client = client_
-  ](co::Coroutine * c) mutable {
+  auto acceptor = new co::Coroutine(scheduler_, [proc = shared_from_this(),
+                                                 listen_socket =
+                                                     std::move(listen_socket),
+                                                 client = client_](
+                                                    co::Coroutine *c) mutable {
     absl::StatusOr<toolbelt::UnixSocket> s = listen_socket.Accept(c);
     if (!s.ok()) {
       client->Log(proc->Name(), toolbelt::LogLevel::kError,
@@ -1503,7 +1695,6 @@ absl::Status Zygote::Start(co::Coroutine *c) {
         }
       }
     }
-
   });
   client_->AddCoroutine(std::unique_ptr<co::Coroutine>(acceptor));
   return absl::OkStatus();
@@ -1620,6 +1811,19 @@ Zygote::Spawn(const stagezero::control::LaunchVirtualProcessRequest &req,
   spawn.set_group(req.opts().group());
   spawn.set_cgroup(req.opts().cgroup());
 
+  for (auto cpu : req.opts().cpus()) {
+    spawn.add_cpus(cpu);
+  }
+
+  // kernel scheduler.
+  if (req.opts().has_kernel_scheduler_policy()) {
+    *spawn.mutable_kernel_scheduler_policy() =
+        req.opts().kernel_scheduler_policy();
+  }
+
+  // Capabilities.
+  *spawn.mutable_capabilities() = req.opts().capabilities();
+
   std::vector<char> buffer(spawn.ByteSizeLong() + sizeof(int32_t));
   char *buf = buffer.data() + sizeof(int32_t);
   size_t buflen = buffer.size() - sizeof(int32_t);
@@ -1695,6 +1899,15 @@ VirtualProcess::VirtualProcess(
     abort();
   }
   notify_pipe_ = *pipe;
+  for (auto cpu : req.opts().cpus()) {
+    cpus_.push_back(cpu);
+  }
+  // kernel scheduler.
+  if (req.opts().has_kernel_scheduler_policy()) {
+    kernel_scheduler_policy_.FromProto(req.opts().kernel_scheduler_policy());
+  }
+  // Capabilities.
+  capabilities_.FromProto(req_.opts().capabilities());
 }
 
 absl::Status VirtualProcess::Start(co::Coroutine *c) {
@@ -1769,60 +1982,99 @@ absl::Status VirtualProcess::Start(co::Coroutine *c) {
     RunTelemetryServer();
   }
 
-  client_->AddCoroutine(std::make_unique<co::Coroutine>(scheduler_, [
-    proc, vproc, zygote = zygote_, client = client_
-  ](co::Coroutine * c2) {
-    // Send start event to client.
-    absl::Status eventStatus;
-    if (proc->IsDetached()) {
-      eventStatus = proc->GetStageZero().SendProcessStartEvent(proc->GetId());
-    } else {
-      eventStatus = client->SendProcessStartEvent(proc->GetId());
-    }
-    if (!eventStatus.ok()) {
-      client->Log(proc->Name(), toolbelt::LogLevel::kError, "%s",
-                  eventStatus.ToString().c_str());
-      return;
-    }
+  client_->AddCoroutine(std::make_unique<co::Coroutine>(
+      scheduler_,
+      [proc, vproc, zygote = zygote_, client = client_](co::Coroutine *c2) {
+        // Send start event to client.
+        absl::Status eventStatus;
+        if (proc->IsDetached()) {
+          eventStatus =
+              proc->GetStageZero().SendProcessStartEvent(proc->GetId());
+        } else {
+          eventStatus = client->SendProcessStartEvent(proc->GetId());
+        }
+        if (!eventStatus.ok()) {
+          client->Log(proc->Name(), toolbelt::LogLevel::kError, "%s",
+                      eventStatus.ToString().c_str());
+          return;
+        }
 
-    int status = vproc->WaitForZygoteNotification(c2);
-    zygote->RemoveVirtualProcess(vproc);
+        int status = vproc->WaitForZygoteNotification(c2);
+        zygote->RemoveVirtualProcess(vproc);
 
-    bool signaled = WIFSIGNALED(status);
-    bool exited = WIFEXITED(status);
-    int term_sig = WTERMSIG(status);
-    int exit_status = WEXITSTATUS(status);
-    // Can't be both exit and signal, but can be neither in the case
-    // of a stop.  We don't expect anything to be stopped and don't
-    // support it.
-    if (!signaled && !exited) {
-      signaled = true;
-    }
-    if (exited) {
-      client->Log(proc->Name(), toolbelt::LogLevel::kDebug,
-                  "Virtual process %s exited with status %d",
-                  proc->Name().c_str(), exit_status);
-    } else {
-      client->Log(proc->Name(), toolbelt::LogLevel::kDebug,
-                  "Virtual process %s received signal %d \"%s\"",
-                  proc->Name().c_str(), term_sig, strsignal(term_sig));
-    }
-    if (proc->IsDetached()) {
-      eventStatus = proc->GetStageZero().SendProcessStopEvent(
-          proc->GetId(), !signaled, exit_status, term_sig);
-    } else {
-      eventStatus = client->SendProcessStopEvent(proc->GetId(), !signaled,
-                                                 exit_status, term_sig);
-    }
-    if (!eventStatus.ok()) {
-      client->Log(proc->Name(), toolbelt::LogLevel::kError, "%s\n",
-                  eventStatus.ToString().c_str());
-      return;
-    }
-  }));
+        bool signaled = WIFSIGNALED(status);
+        bool exited = WIFEXITED(status);
+        int term_sig = WTERMSIG(status);
+        int exit_status = WEXITSTATUS(status);
+        // Can't be both exit and signal, but can be neither in the case
+        // of a stop.  We don't expect anything to be stopped and don't
+        // support it.
+        if (!signaled && !exited) {
+          signaled = true;
+        }
+        if (exited) {
+          client->Log(proc->Name(), toolbelt::LogLevel::kDebug,
+                      "Virtual process %s exited with status %d",
+                      proc->Name().c_str(), exit_status);
+        } else {
+          client->Log(proc->Name(), toolbelt::LogLevel::kDebug,
+                      "Virtual process %s received signal %d \"%s\"",
+                      proc->Name().c_str(), term_sig, strsignal(term_sig));
+        }
+        if (proc->IsDetached()) {
+          eventStatus = proc->GetStageZero().SendProcessStopEvent(
+              proc->GetId(), !signaled, exit_status, term_sig);
+        } else {
+          eventStatus = client->SendProcessStopEvent(proc->GetId(), !signaled,
+                                                     exit_status, term_sig);
+        }
+        if (!eventStatus.ok()) {
+          client->Log(proc->Name(), toolbelt::LogLevel::kError, "%s\n",
+                      eventStatus.ToString().c_str());
+          return;
+        }
+      }));
+
+#if defined(__linux__)
+  if (absl::Status status = BuildLinuxParameterrs(); !status.ok()) {
+    return status;
+  }
+#endif
 
   return absl::OkStatus();
 }
+
+#if defined(__linux__)
+absl::Status Process::BuildLinuxParameters() {
+  // Build a local parameter for the policy and cpu affinity.  The process
+  // can read this to set the policy and cpu affinity for any threads it
+  // needs to.  This is up to the process as to how it will manage its threads.
+  stagezero::config::ProcessKernelPolicyAndCpuAffinity policy_and_affinity;
+  auto p = policy_and_affinity.mutable_policy();
+  kernel_scheduler_policy_.ToProto(p);
+  for (int cpu : cpus_) {
+    policy_and_affinity.add_cpus(cpu);
+  }
+  std::string encoded = policy_and_affinity.SerializeAsString();
+
+  if (auto status = local_parameters_.SetParameter(
+          "kernel_policy_and_cpu_affinity", encoded);
+      !status.ok()) {
+    return status;
+  }
+
+  // Build a local parameter for the capabilities.
+  stagezero::config::CapabilitySet caps;
+  capabilities_.ToProto(&caps);
+
+  encoded = caps.SerializeAsString();
+  if (auto status = local_parameters_.SetParameter("capabilities", encoded);
+      !status.ok()) {
+    return status;
+  }
+  return absl::OkStatus();
+}
+#endif
 
 int VirtualProcess::Wait() {
   int e = SafeKill(pid_, 0);

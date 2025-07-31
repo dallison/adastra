@@ -4,6 +4,7 @@ cc_library(
     name = "common",
     srcs = [
         "alarm.cc",
+        "capability.cc",
         "cgroup.cc",
         "event.cc",
         "namespace.cc",
@@ -14,10 +15,12 @@ cc_library(
     hdrs = [
         "alarm.h",
         "cgroup.h",
+        "capability.h",
         "event.h",
         "log.h",
         "namespace.h",
         "parameters.h",
+        "scheduler.h",
         "states.h",
         "stream.h",
         "subsystem_status.h",
