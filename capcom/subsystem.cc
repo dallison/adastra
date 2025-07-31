@@ -46,33 +46,35 @@ void Subsystem::ConnectUmbilical(const std::string &compute) {
 
   // Spawn a coroutine to connect to the stagezero instance via the client.
   // When the client connects a 'connect' event will be received.
-  capcom_.AddCoroutine(std::make_unique<co::Coroutine>(capcom_.co_scheduler_, [
-    subsystem = shared_from_this(), umbilical, compute
-  ](co::Coroutine * c) {
-    while (subsystem->IsConnecting()) {
-      // Connect the umbilical to the stagezero client.
-      if (absl::Status status =
-              subsystem->capcom_.ConnectUmbilical(compute, c);
-          !status.ok()) {
-        subsystem->capcom_.Log(subsystem->Name(), toolbelt::LogLevel::kError,
-                               "%s", status.ToString().c_str());
-        c->Sleep(1);
-        continue;
-      }
+  capcom_.AddCoroutine(std::make_unique<co::Coroutine>(
+      capcom_.co_scheduler_,
+      [subsystem = shared_from_this(), umbilical, compute](co::Coroutine *c) {
+        while (subsystem->IsConnecting()) {
+          // Connect the umbilical to the stagezero client.
+          if (absl::Status status =
+                  subsystem->capcom_.ConnectUmbilical(compute, c);
+              !status.ok()) {
+            subsystem->capcom_.Log(subsystem->Name(),
+                                   toolbelt::LogLevel::kError, "%s",
+                                   status.ToString().c_str());
+            c->Sleep(1);
+            continue;
+          }
 
-      if (absl::Status status = umbilical->Connect(kAllEvents, c);
-          !status.ok()) {
-        subsystem->capcom_.Log(subsystem->Name(), toolbelt::LogLevel::kError,
-                               "Failed to connect umbilical to %s: %s",
-                               compute.c_str(), status.ToString().c_str());
-        c->Sleep(1);
-        continue;
-      }
+          if (absl::Status status = umbilical->Connect(kAllEvents, c);
+              !status.ok()) {
+            subsystem->capcom_.Log(subsystem->Name(),
+                                   toolbelt::LogLevel::kError,
+                                   "Failed to connect umbilical to %s: %s",
+                                   compute.c_str(), status.ToString().c_str());
+            c->Sleep(1);
+            continue;
+          }
 
-      subsystem->Wakeup();
-      return;
-    }
-  }));
+          subsystem->Wakeup();
+          return;
+        }
+      }));
 }
 
 void Subsystem::DisconnectUmbilical(const std::string &compute) {
@@ -393,8 +395,9 @@ void Subsystem::RestartProcesses(
   }
 }
 
-void Subsystem::SendOutput(int fd, const std::string& name,
-  const std::string& process_id, const std::string &data, co::Coroutine *c) {
+void Subsystem::SendOutput(int fd, const std::string &name,
+                           const std::string &process_id,
+                           const std::string &data, co::Coroutine *c) {
   if (!interactive_output_.Valid()) {
     capcom_.SendOutputEvent(fd, name, process_id, data);
     return;
@@ -658,6 +661,13 @@ void Process::ParseOptions(const stagezero::config::ProcessOptions &options) {
   critical_ = options.critical();
   oneshot_ = options.oneshot();
   cgroup_ = options.cgroup();
+  if (options.has_kernel_scheduler_policy()) {
+    kernel_scheduler_policy_.FromProto(options.kernel_scheduler_policy());
+  }
+  for (int cpu : options.cpus()) {
+    cpus_.push_back(cpu);
+  }
+  capabilities_.FromProto(options.capabilities());
 }
 
 void Process::ParseStreams(
@@ -745,6 +755,9 @@ absl::Status StaticProcess::Launch(Subsystem *subsystem, co::Coroutine *c) {
       .group = group_,
       .critical = critical_,
       .cgroup = cgroup_,
+      .kernel_scheduler_policy = kernel_scheduler_policy_,
+      .cpus = cpus_,
+      .capabilities = capabilities_,
   };
   // Subsystem vars.
   for (auto &var : subsystem->Vars()) {
@@ -796,6 +809,9 @@ absl::Status Zygote::Launch(Subsystem *subsystem, co::Coroutine *c) {
       .group = group_,
       .critical = critical_,
       .cgroup = cgroup_,
+      .kernel_scheduler_policy = kernel_scheduler_policy_,
+      .cpus = cpus_,
+      .capabilities = capabilities_,
   };
   // Subsystem vars.
   for (auto &var : subsystem->Vars()) {
@@ -853,6 +869,9 @@ absl::Status VirtualProcess::Launch(Subsystem *subsystem, co::Coroutine *c) {
       .user = user_,
       .group = group_,
       .cgroup = cgroup_,
+      .kernel_scheduler_policy = kernel_scheduler_policy_,
+      .cpus = cpus_,
+      .capabilities = capabilities_,
   };
 
   // Subsystem vars.

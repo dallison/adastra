@@ -6,10 +6,12 @@
 
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
+#include "common/capability.h"
 #include "common/cgroup.h"
 #include "common/event.h"
 #include "common/namespace.h"
 #include "common/parameters.h"
+#include "common/scheduler.h"
 #include "common/stream.h"
 #include "common/tcp_client.h"
 #include "common/vars.h"
@@ -48,6 +50,9 @@ struct ProcessOptions {
   std::string cgroup;
   bool detached;
   std::optional<Namespace> ns;
+  KernelSchedulerPolicy kernel_scheduler_policy;
+  std::vector<int> cpus;
+  CapabilitySet capabilities;
 };
 
 class Client : public adastra::TCPClient<control::Request, control::Response,
@@ -138,7 +143,8 @@ public:
 
   absl::Status RegisterCgroup(const Cgroup &cgroup,
                               co::Coroutine *co = nullptr);
-  absl::Status RemoveCgroup(const std::string& cgroup, co::Coroutine *co = nullptr);
+  absl::Status RemoveCgroup(const std::string &cgroup,
+                            co::Coroutine *co = nullptr);
   absl::Status FreezeCgroup(const std::string &cgroup,
                             co::Coroutine *co = nullptr);
   absl::Status ThawCgroup(const std::string &cgroup,

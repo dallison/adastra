@@ -267,6 +267,10 @@ message SpawnRequest {
       16; // Index of telemetry read fd (into fds)
   optional int32 telemetry_write_fd_index =
       17; // Index of telemetry write fd (into fds)
+
+  repeated int32 cpus = 18;                        // CPUs to bind to.
+  config.KernelSchedulerPolicy kernel_scheduler_policy = 19;
+  config.CapabilitySet capabilities = 20;          // Capabilities to set.
 }
 
 message SpawnResponse {

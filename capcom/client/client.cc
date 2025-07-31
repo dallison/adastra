@@ -104,6 +104,24 @@ absl::Status Client::RemoveCompute(const std::string &name, co::Coroutine *c) {
   return absl::OkStatus();
 }
 
+
+template<typename Opts>
+void SetKernelSchedulerPolicyAndCpuAffinity(
+        const KernelSchedulerPolicy& scheduler,
+        const std::vector<int>& cpu_affinity,
+        Opts* opts) {
+    auto s = opts->mutable_kernel_scheduler_policy();
+    scheduler.ToProto(s);
+    for (auto& cpu : cpu_affinity) {
+        opts->add_cpus(cpu);
+    }
+}
+
+template<typename Opts>
+void SetCapabilities(const CapabilitySet& capabilities, Opts* opts) {
+    capabilities.ToProto(opts->mutable_capabilities());
+}
+
 absl::Status Client::AddSubsystem(const std::string &name,
                                   const SubsystemOptions &options,
                                   co::Coroutine *c) {
@@ -157,6 +175,8 @@ absl::Status Client::AddSubsystem(const std::string &name,
       auto *s = proc->add_streams();
       stream.ToProto(s);
     }
+    SetKernelSchedulerPolicyAndCpuAffinity(sproc.kernel_scheduler_policy, sproc.cpus, opts);
+    SetCapabilities(sproc.capabilities, opts);
   }
 
   // Add Zygotes.
@@ -191,6 +211,8 @@ absl::Status Client::AddSubsystem(const std::string &name,
       auto *s = proc->add_streams();
       stream.ToProto(s);
     }
+    SetKernelSchedulerPolicyAndCpuAffinity(z.kernel_scheduler_policy, z.cpus, opts);
+    SetCapabilities(z.capabilities, opts);
   }
 
   // Add all virtual processes to the proto message.
@@ -236,6 +258,8 @@ absl::Status Client::AddSubsystem(const std::string &name,
       auto *s = proc->add_streams();
       stream.ToProto(s);
     }
+    SetKernelSchedulerPolicyAndCpuAffinity(vproc.kernel_scheduler_policy, vproc.cpus, opts);
+    SetCapabilities(vproc.capabilities, opts);
   }
 
   // Variables.

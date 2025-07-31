@@ -43,6 +43,33 @@ message Namespace {
   // is, so it's not supported for now.
 }
 
+// This is used to set the kernel scheduler policy and priority for a process.
+// See sched_setscheduler(2) for more information.
+message KernelSchedulerPolicy {
+  enum Policy {
+    KERN_SCHED_DEFAULT = 0;
+    KERN_SCHED_BATCH = 1;
+    KERN_SCHED_IDLE = 2;
+    KERN_SCHED_FIFO = 3;
+    KERN_SCHED_RR = 4;
+  }
+  Policy policy = 1;
+  int32 priority = 2;
+  bool reset_on_fork = 3;
+}
+
+// This encapsulates both the kernel scheduler policy and the CPU affinity for a process.
+// It is passed to the process (encoded in protobuf wireformat) as a runtime parameter
+// (not a command line argument).
+message ProcessKernelPolicyAndCpuAffinity {
+  KernelSchedulerPolicy policy = 1;
+  repeated int32 cpus = 2;
+}
+
+message CapabilitySet {
+  repeated string capabilities = 3;
+}
+
 message ProcessOptions {
   string name = 1;
   string description = 2;
@@ -103,6 +130,12 @@ message ProcessOptions {
   // The telemetry API allows the process to accept commands and send
   // telemetry data through a pipe connected to StageZero.
   bool telemetry = 19;   // Use telemetry API.
+
+  // These options are only support on Linux.
+  repeated int32 cpus = 21;                            // CPUs to use.
+  KernelSchedulerPolicy kernel_scheduler_policy = 22;  // Scheduler to use.
+
+  CapabilitySet capabilities = 23;                     // Capabilities ()
 }
 
 message StaticProcess { string executable = 1; }

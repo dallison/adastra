@@ -7,8 +7,10 @@
 #include "absl/container/flat_hash_set.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
+#include "common/capability.h"
 #include "common/namespace.h"
 #include "common/parameters.h"
+#include "common/scheduler.h"
 #include "common/stream.h"
 #include "coroutine.h"
 #include "proto/config.pb.h"
@@ -25,8 +27,16 @@
 #include <signal.h>
 #include <string>
 
-// Change this to 0 if pidfd (on Linux only) is not available
+#define HAVE_PIDFD 0
+#if defined(__linux__)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 3, 0)
+// We use pidfds for waiting but not for signal-sending, instead we signal via
+// process group ids. Linux kernel versions >6.9 have the ability to kill
+// process groups via pidfd, so we can revisit this in the future.
+#undef HAVE_PIDFD
 #define HAVE_PIDFD 1
+#endif
+#endif
 
 namespace adastra::stagezero {
 
@@ -142,6 +152,18 @@ public:
                                 co::Coroutine *c);
   void SendParameterDeleteEvent(const std::string &name, co::Coroutine *c);
 
+  void SetKernelSchedulerPolicy(KernelSchedulerPolicy scheduler) {
+    kernel_scheduler_policy_ = scheduler;
+  }
+
+  KernelSchedulerPolicy GetKernelSchedulerPolicy() const {
+    return kernel_scheduler_policy_;
+  }
+
+  void SetCpus(const std::vector<int> &cpus) { cpus_ = cpus; }
+
+  const std::vector<int> &GetCpus() const { return cpus_; }
+
 protected:
   virtual int Wait() = 0;
   absl::Status BuildStreams(
@@ -157,6 +179,10 @@ protected:
   void
   SendParameterEvent(const adastra::proto::parameters::ParameterEvent &event,
                      co::Coroutine *c);
+
+                     #if defined(__linux__)
+  absl::Status BuildLinuxParameters();
+  #endif
 
   co::CoroutineScheduler &scheduler_;
   StageZero &stagezero_;
@@ -188,6 +214,9 @@ protected:
   bool wants_parameter_events_ = false;
   toolbelt::FileDescriptor parameters_event_read_fd_;
   toolbelt::FileDescriptor parameters_event_write_fd_;
+  std::vector<int> cpus_;
+  KernelSchedulerPolicy kernel_scheduler_policy_;
+  CapabilitySet capabilities_;
 };
 
 class StaticProcess : public Process {

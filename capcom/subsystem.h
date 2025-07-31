@@ -14,7 +14,9 @@
 #include "capcom/bitset.h"
 #include "capcom/umbilical.h"
 #include "common/alarm.h"
+#include "common/capability.h"
 #include "common/parameters.h"
+#include "common/scheduler.h"
 #include "common/states.h"
 #include "common/vars.h"
 #include "proto/capcom.pb.h"
@@ -181,9 +183,8 @@ protected:
   int max_restarts_;
 
   bool running_ = false;
-  bool maybe_connected_ =
-      false; // Not necessaryily connected, but contributing to
-             // dynamicRefs in umbilical.
+  bool maybe_connected_ = false; // Not necessaryily connected, but contributing
+                                 // to dynamicRefs in umbilical.
   std::string process_id_;
   int pid_;
   Alarm alarm_;
@@ -202,6 +203,10 @@ protected:
 
   static constexpr std::chrono::seconds kMaxRestartDelay = 32s;
   std::chrono::seconds restart_delay_ = 1s;
+
+  KernelSchedulerPolicy kernel_scheduler_policy_;
+  std::vector<int> cpus_;
+  CapabilitySet capabilities_;
 };
 
 class StaticProcess : public Process {
@@ -516,9 +521,9 @@ private:
 
   co::CoroutineScheduler &Scheduler();
 
-  void SendOutput(int fd, const std::string& name, 
-    const std::string &process_id,
-                  const std::string &data, co::Coroutine *c);
+  void SendOutput(int fd, const std::string &name,
+                  const std::string &process_id, const std::string &data,
+                  co::Coroutine *c);
 
   std::shared_ptr<Process> FindInteractiveProcess();
 
