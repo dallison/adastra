@@ -32,12 +32,6 @@ constexpr int64_t kStopped = 2;
 
 class ClientHandler;
 
-struct Compute {
-  std::string name;
-  toolbelt::InetAddress addr;
-  std::vector<Cgroup> cgroups;
-};
-
 class Capcom {
 public:
   Capcom(co::CoroutineScheduler &scheduler, toolbelt::InetAddress addr,
@@ -76,7 +70,7 @@ private:
 
   std::pair<std::shared_ptr<Compute>, bool> AddCompute(std::string name,
                                                        const Compute &compute) {
-    auto[it, inserted] = computes_.emplace(
+    auto [it, inserted] = computes_.emplace(
         std::make_pair(std::move(name), std::make_shared<Compute>(compute)));
     return {it->second, inserted};
   }
@@ -90,6 +84,14 @@ private:
     return absl::OkStatus();
   }
 
+  std::vector<std::string> ListComputes() const {
+    std::vector<std::string> names;
+    std::transform(computes_.cbegin(), computes_.cend(),
+                   std::back_inserter(names),
+                   [](const auto &pair) { return pair.first; });
+    return names;
+  }
+
   std::shared_ptr<Compute> FindCompute(const std::string &name) const {
     if (name.empty()) {
       return local_compute_;
@@ -100,6 +102,16 @@ private:
     }
     return it->second;
   }
+
+  absl::Status AddCgroup(const std::string &compute_name, const Cgroup &cgroup,
+                         co::Coroutine *c);
+  absl::Status RemoveCgroup(const std::string &compute_name,
+                            const std::string &cgroup_name, co::Coroutine *c);
+  absl::Status RemoveAllCgroups(const std::string &compute_name);
+
+  std::vector<CgroupAssignment>
+  ListCgroupAssignments(const std::string &compute_name,
+                        const std::string &cgroup_name) const;
 
   void AddUmbilical(std::shared_ptr<Compute> compute, bool is_static) {
     auto it = stagezero_umbilicals_.find(compute->name);
@@ -141,7 +153,7 @@ private:
   }
 
   bool AddSubsystem(std::string name, std::shared_ptr<Subsystem> subsystem) {
-    auto[it, inserted] = subsystems_.emplace(
+    auto [it, inserted] = subsystems_.emplace(
         std::make_pair(std::move(name), std::move(subsystem)));
     return inserted;
   }
@@ -164,7 +176,7 @@ private:
   }
 
   bool AddZygote(std::string name, Zygote *zygote) {
-    auto[it, inserted] =
+    auto [it, inserted] =
         zygotes_.emplace(std::make_pair(std::move(name), zygote));
     return inserted;
   }

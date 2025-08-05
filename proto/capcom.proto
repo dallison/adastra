@@ -9,6 +9,7 @@ package adastra.capcom.proto;
 import "proto/config.proto";
 import "proto/event.proto";
 import "proto/stream.proto";
+import "proto/cgroup.proto";
 import "proto/subsystem_status.proto";
 import "proto/parameters.proto";
 import "proto/telemetry.proto";
@@ -165,6 +166,40 @@ message CloseFdRequest {
 
 message CloseFdResponse { string error = 1; }
 
+message ListComputesRequest {}
+
+message ListComputesResponse {
+    repeated string computes = 1;
+}
+
+message AddCgroupRequest {
+    adastra.stagezero.config.Cgroup cgroup = 1;
+    string compute = 2;
+}
+
+message AddCgroupResponse {
+    string error = 1;
+}
+
+message RemoveCgroupsRequest {
+    string compute = 1;           // Empty means all.
+    repeated string cgroups = 2;  // Empty means all.
+}
+
+message RemoveCgroupsResponse {
+    string error = 1;
+}
+
+message GetCgroupsRequest {
+    string compute = 1;           // Empty means all.
+    repeated string cgroups = 2;  // Empty means all.
+}
+
+message GetCgroupsResponse {
+    string error = 1;
+    repeated adastra.stagezero.config.CgroupAssignment cgroups = 2;
+}
+
 message FreezeCgroupRequest {
   string compute = 1;
   string cgroup = 2;
@@ -248,8 +283,12 @@ message Request {
     SetParameterRequest set_parameter = 20;
     DeleteParametersRequest delete_parameters = 21;
     UploadParametersRequest upload_parameters = 22;
-    GetParametersRequest get_parameters = 23;
-    SendTelemetryCommandRequest send_telemetry_command = 24;
+    ListComputesRequest list_computes = 23;
+    GetParametersRequest get_parameters = 24;
+    SendTelemetryCommandRequest send_telemetry_command = 25;
+    AddCgroupRequest add_cgroup = 26;
+    RemoveCgroupsRequest remove_cgroups = 27;
+    GetCgroupsRequest get_cgroups = 28;
   }
 }
 
@@ -268,15 +307,19 @@ message Response {
     AddGlobalVariableResponse add_global_variable = 11;
     InputResponse input = 12;
     CloseFdResponse close_fd = 13;
-    RestartSubsystemResponse restart_subsystem = 14;
-    FreezeCgroupResponse freeze_cgroup = 15;
-    ThawCgroupResponse thaw_cgroup = 16;
-    KillCgroupResponse kill_cgroup = 17;
-    RestartProcessesResponse restart_processes = 19;
+    RestartSubsystemResponse restart_subsystem = 15;
+    FreezeCgroupResponse freeze_cgroup = 16;
+    ThawCgroupResponse thaw_cgroup = 17;
+    KillCgroupResponse kill_cgroup = 18;
     SetParameterResponse set_parameter = 20;
     DeleteParametersResponse delete_parameters = 21;
     UploadParametersResponse upload_parameters = 22;
-    GetParametersResponse get_parameters = 23;
-    SendTelemetryCommandResponse send_telemetry_command = 24;
+    RestartProcessesResponse restart_processes = 19;
+    ListComputesResponse list_computes = 23;
+    GetParametersResponse get_parameters = 24;
+    SendTelemetryCommandResponse send_telemetry_command = 25;
+    AddCgroupResponse add_cgroup = 26;
+    RemoveCgroupsResponse remove_cgroups = 27;
+    GetCgroupsResponse get_cgroups = 28;
   }
 }

@@ -6,7 +6,50 @@
 
 namespace adastra::capcom {
 
-struct Compute;
+struct Compute {
+  std::string name;
+  toolbelt::InetAddress addr;
+
+  // The set of cgroups that are assigned to this compute.  This is an ordered
+  // map that owns the cgroups.  The ordering is necessary for topological
+  // sorting of the cgroups.
+  std::map<std::string, std::shared_ptr<Cgroup>> cgroups;
+
+  friend bool operator==(const Compute &lhs, const Compute &rhs) {
+    return (lhs.name == rhs.name) && (lhs.addr == rhs.addr);
+  }
+  friend bool operator!=(const Compute &lhs, const Compute &rhs) {
+    return !(lhs == rhs);
+  }
+
+  absl::Status AddCgroup(std::shared_ptr<Cgroup> cgroup) {
+    auto it = cgroups.find(cgroup->name);
+    if (it != cgroups.end()) {
+      return absl::InternalError(absl::StrFormat(
+          "Cgroup %s already exists on compute %s", cgroup->name, name));
+    }
+    cgroups.emplace(cgroup->name, cgroup);
+    return absl::OkStatus();
+  }
+
+  absl::Status RemoveCgroup(const std::string &cgroup) {
+    auto it = cgroups.find(cgroup);
+    if (it != cgroups.end()) {
+      cgroups.erase(it);
+      return absl::OkStatus();
+    }
+    return absl::InternalError(absl::StrFormat(
+        "Cgroup %s does not exist on compute %s", cgroup, name));
+  }
+
+  std::shared_ptr<Cgroup> FindCgroup(const std::string &cgroup) const {
+    auto it = cgroups.find(cgroup);
+    if (it != cgroups.end()) {
+      return it->second;
+    }
+    return nullptr;
+  }
+};
 
 // An umbilical connects capcom to StageZero via a client connection.
 enum class UmbilicalState {
@@ -44,7 +87,7 @@ public:
   }
 
   bool IsStatic() const { return is_static_; }
-  
+
 private:
   std::string name_;
   toolbelt::Logger &logger_;

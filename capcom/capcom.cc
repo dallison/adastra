@@ -209,6 +209,7 @@ absl::Status Capcom::ConnectUmbilical(const std::string &compute,
 
 void Capcom::DisconnectUmbilical(const std::string &compute,
                                  bool dynamic_only) {
+
   auto it = stagezero_umbilicals_.find(compute);
   if (it == stagezero_umbilicals_.end()) {
     return;
@@ -771,8 +772,8 @@ absl::Status
 Capcom::RegisterComputeCgroups(std::shared_ptr<stagezero::Client> client,
                                std::shared_ptr<Compute> compute,
                                co::Coroutine *c) {
-  for (auto &cgroup : compute->cgroups) {
-    if (absl::Status status = client->RegisterCgroup(cgroup, c); !status.ok()) {
+  for (auto &[name, cgroup] : compute->cgroups) {
+    if (absl::Status status = client->RegisterCgroup(*cgroup, c); !status.ok()) {
       return status;
     }
   }
@@ -783,8 +784,8 @@ absl::Status
 Capcom::RemoveComputeCgroups(std::shared_ptr<stagezero::Client> client,
                              std::shared_ptr<Compute> compute,
                              co::Coroutine *c) {
-  for (auto &cgroup : compute->cgroups) {
-    if (absl::Status status = client->RemoveCgroup(cgroup.name, c);
+  for (auto &[name, cgroup] : compute->cgroups) {
+    if (absl::Status status = client->RemoveCgroup(cgroup->name, c);
         !status.ok()) {
       return status;
     }
@@ -794,9 +795,9 @@ Capcom::RemoveComputeCgroups(std::shared_ptr<stagezero::Client> client,
 
 static const Cgroup *FindCgroup(const Compute &comp,
                                 const std::string &cgroup) {
-  for (auto &cg : comp.cgroups) {
-    if (cg.name == cgroup) {
-      return &cg;
+  for (auto &[name, cg] : comp.cgroups) {
+    if (cg->name == cgroup) {
+      return cg.get();
     }
   }
   return nullptr;
@@ -896,5 +897,111 @@ Capcom::SendTelemetryCommand(const proto::SendTelemetryCommandRequest &req,
     return absl::InternalError(absl::StrFormat(
         "Unknown telemetry command destination %d", req.dest_case()));
   }
+}
+
+absl::Status Capcom::AddCgroup(
+        const std::string& compute_name,
+        const Cgroup& cgroup,
+        co::Coroutine* c) {
+    auto comp = FindCompute(compute_name);
+    if (comp == nullptr) {
+        return absl::InternalError(absl::StrFormat("No such compute %s", compute_name));
+    }
+    auto cg = comp->FindCgroup(cgroup.name);
+    if (cg == nullptr) {
+      if (auto status = comp->AddCgroup(std::make_shared<Cgroup>(cgroup));
+          !status.ok()) {
+        return status;  // Error adding cgroup to compute.
+      }
+    } else {
+        return absl::InternalError(absl::StrFormat(
+                "Cgroup %s already exists on compute %s", cgroup.name, compute_name));
+    }
+    // If the umbilical is connected we need to send the cgroup to stagezero.
+    // If it already exists, we need to delete it first.
+    // If the umbilical is not connected, we don't do anything since we will send
+    // the cgroups when we connect.
+    auto umbilical = FindUmbilical(compute_name);
+    if (umbilical == nullptr || umbilical->GetClient() == nullptr
+        || !umbilical->GetClient()->IsConnected()) {
+        return absl::OkStatus();
+    }
+    return umbilical->GetClient()->RegisterCgroup(*cg, c);
+}
+
+absl::Status Capcom::RemoveCgroup(
+        const std::string& compute_name,
+        const std::string& cgroup_name,
+        co::Coroutine* c) {
+    if (compute_name.empty()) {
+        // Remove all cgroups from all computes.
+        for (auto& [cname, compute] : computes_) {
+            if (auto status = RemoveCgroup(cname, cgroup_name, c); !status.ok()) {
+                return status;
+            }
+        }
+        return absl::OkStatus();
+    }
+
+    auto comp = FindCompute(compute_name);
+    if (comp == nullptr) {
+        return absl::InternalError(absl::StrFormat("No such compute %s", compute_name));
+    }
+    if (auto status = comp->RemoveCgroup(cgroup_name); !status.ok()) {
+        return status;
+    }
+
+    auto umbilical = FindUmbilical(compute_name);
+    if (umbilical == nullptr || umbilical->GetClient() == nullptr
+        || !umbilical->GetClient()->IsConnected()) {
+        return absl::OkStatus();
+    }
+    return umbilical->GetClient()->RemoveCgroup(cgroup_name, c);
+}
+
+absl::Status Capcom::RemoveAllCgroups(const std::string& compute_name) {
+    auto comp = FindCompute(compute_name);
+    if (comp == nullptr) {
+        return absl::InternalError(absl::StrFormat("No such compute %s", compute_name));
+    }
+    auto umbilical = FindUmbilical(compute_name);
+    if (umbilical == nullptr || umbilical->GetClient() == nullptr
+        || !umbilical->GetClient()->IsConnected()) {
+        comp->cgroups.clear();
+        return absl::OkStatus();
+    }
+    auto cgroups = comp->cgroups;
+    for (auto& [name, cgroup] : cgroups) {
+        if (auto status = umbilical->GetClient()->RemoveCgroup(name, nullptr); !status.ok()) {
+            return status;
+        }
+        if (auto status = comp->RemoveCgroup(name); !status.ok()) {
+            return status;
+        }
+    }
+    return absl::OkStatus();
+}
+
+std::vector<CgroupAssignment> Capcom::ListCgroupAssignments(
+        const std::string& compute_name,
+        const std::string& cgroup_name) const {
+    std::vector<CgroupAssignment> result;
+
+    for (auto& [name, compute] : computes_) {
+        if (!compute_name.empty() && compute_name != name) {
+            continue;
+        }
+        CgroupAssignment ca;
+        ca.compute = name;
+        for (auto& [name, cgroup] : compute->cgroups) {
+            if (!cgroup_name.empty() && cgroup_name != name) {
+                continue;
+            }
+            ca.cgroups.push_back(*cgroup);
+        }
+        result.push_back(std::move(ca));
+    }
+
+    return result;
 }
 } // namespace adastra::capcom

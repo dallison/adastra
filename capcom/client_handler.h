@@ -67,6 +67,9 @@ private:
   void HandleRemoveCompute(const proto::RemoveComputeRequest &req,
                            proto::RemoveComputeResponse *response,
                            co::Coroutine *c);
+  void HandleListComputes(const proto::ListComputesRequest &req,
+                          proto::ListComputesResponse *response,
+                          co::Coroutine *c);
 
   void HandleAddSubsystem(const proto::AddSubsystemRequest &req,
                           proto::AddSubsystemResponse *response,
@@ -132,6 +135,13 @@ private:
   void HandleGetParameters(const proto::GetParametersRequest &req,
                            proto::GetParametersResponse *response,
                            co::Coroutine *c);
+  void HandleAddCgroup(const proto::AddCgroupRequest &req,
+                       proto::AddCgroupResponse *response, co::Coroutine *c);
+  void HandleRemoveCgroups(const proto::RemoveCgroupsRequest &req,
+                           proto::RemoveCgroupsResponse *response,
+                           co::Coroutine *c);
+  void HandleGetCgroups(const proto::GetCgroupsRequest &req,
+                        proto::GetCgroupsResponse *response, co::Coroutine *c);
   Capcom &capcom_;
   uint32_t id_;
 };

@@ -120,6 +120,10 @@ absl::Status ClientHandler::HandleMessage(const proto::Request &req,
     HandleRemoveCompute(req.remove_compute(), resp.mutable_remove_compute(), c);
     break;
 
+  case proto::Request::kListComputes:
+    HandleListComputes(req.list_computes(), resp.mutable_list_computes(), c);
+    break;
+
   case proto::Request::kAddSubsystem:
     HandleAddSubsystem(req.add_subsystem(), resp.mutable_add_subsystem(), c);
     break;
@@ -201,6 +205,16 @@ absl::Status ClientHandler::HandleMessage(const proto::Request &req,
                                resp.mutable_send_telemetry_command(), c);
     break;
 
+  case proto::Request::kAddCgroup:
+    HandleAddCgroup(req.add_cgroup(), resp.mutable_add_cgroup(), c);
+    break;
+  case proto::Request::kGetCgroups:
+    HandleGetCgroups(req.get_cgroups(), resp.mutable_get_cgroups(), c);
+    break;
+  case proto::Request::kRemoveCgroups:
+    HandleRemoveCgroups(req.remove_cgroups(), resp.mutable_remove_cgroups(), c);
+    break;
+
   case proto::Request::REQUEST_NOT_SET:
     return absl::InternalError("Protocol error: unknown request");
   }
@@ -210,9 +224,9 @@ absl::Status ClientHandler::HandleMessage(const proto::Request &req,
 void ClientHandler::HandleInit(const proto::InitRequest &req,
                                proto::InitResponse *response,
                                co::Coroutine *c) {
-  absl::StatusOr<int> s =
-      Init(req.client_name(), req.event_mask(),
-           []() -> absl::Status { return absl::OkStatus(); }, c);
+  absl::StatusOr<int> s = Init(
+      req.client_name(), req.event_mask(),
+      []() -> absl::Status { return absl::OkStatus(); }, c);
   if (!s.ok()) {
     response->set_error(s.status().ToString());
     return;
@@ -226,25 +240,25 @@ void ClientHandler::HandleAddCompute(const proto::AddComputeRequest &req,
   const stagezero::config::Compute &compute = req.compute();
   struct sockaddr_in addr = {
 #if defined(__APPLE__)
-    .sin_len = sizeof(int),
+      .sin_len = sizeof(int),
 #endif
-    .sin_family = AF_INET,
-    .sin_port = htons(compute.port()),
+      .sin_family = AF_INET,
+      .sin_port = htons(compute.port()),
   };
   uint32_t ip_addr;
 
   memcpy(&ip_addr, compute.ip_addr().data(), compute.ip_addr().size());
   addr.sin_addr.s_addr = htonl(ip_addr);
 
-  std::vector<Cgroup> cgroups;
+  std::map<std::string, std::shared_ptr<Cgroup>> cgroups;
   for (auto &cg : compute.cgroups()) {
     Cgroup cgroup;
     cgroup.FromProto(cg);
-    cgroups.push_back(std::move(cgroup));
+    cgroups.emplace(cgroup.name, std::make_shared<Cgroup>(std::move(cgroup)));
   }
   Compute c2 = {compute.name(), toolbelt::InetAddress(addr),
                 std::move(cgroups)};
-  auto[compute_ptr, ok] = capcom_.AddCompute(compute.name(), c2);
+  auto [compute_ptr, ok] = capcom_.AddCompute(compute.name(), c2);
   if (!ok) {
     response->set_error(
         absl::StrFormat("Failed to add compute %s", compute.name()));
@@ -270,6 +284,13 @@ void ClientHandler::HandleRemoveCompute(const proto::RemoveComputeRequest &req,
     response->set_error(
         absl::StrFormat("Failed to remove compute %s", req.name()));
   }
+}
+
+void ClientHandler::HandleListComputes(const proto::ListComputesRequest &req,
+                                       proto::ListComputesResponse *response,
+                                       co::Coroutine *c) {
+  const auto computes = capcom_.ListComputes();
+  *(response->mutable_computes()) = {computes.cbegin(), computes.cend()};
 }
 
 void ClientHandler::HandleAddSubsystem(const proto::AddSubsystemRequest &req,
@@ -451,24 +472,24 @@ void ClientHandler::HandleStartSubsystem(
 
     // Spawn coroutine to read from the stdout pipe
     // and send as output events.
-    AddCoroutine(std::make_unique<co::Coroutine>(GetScheduler(), [
-      client = shared_from_this(), stdout = stdout->ReadFd()
-    ](co::Coroutine * c) {
-      for (;;) {
-        char buffer[4096];
-        c->Wait(stdout.Fd());
-        ssize_t n = ::read(stdout.Fd(), buffer, sizeof(buffer));
-        if (n <= 0) {
-          break;
-        }
-        if (absl::Status status =
-                client->SendOutputEvent("", STDOUT_FILENO, buffer, n);
-            !status.ok()) {
-          break;
-        }
-      }
-      client->Stop();
-    }));
+    AddCoroutine(std::make_unique<co::Coroutine>(
+        GetScheduler(), [client = shared_from_this(),
+                         stdout = stdout->ReadFd()](co::Coroutine *c) {
+          for (;;) {
+            char buffer[4096];
+            c->Wait(stdout.Fd());
+            ssize_t n = ::read(stdout.Fd(), buffer, sizeof(buffer));
+            if (n <= 0) {
+              break;
+            }
+            if (absl::Status status =
+                    client->SendOutputEvent("", STDOUT_FILENO, buffer, n);
+                !status.ok()) {
+              break;
+            }
+          }
+          client->Stop();
+        }));
   }
 
   if (absl::Status status = subsystem->SendMessage(message); !status.ok()) {
@@ -725,6 +746,104 @@ void ClientHandler::HandleSendTelemetryCommand(
   if (absl::Status status = capcom_.SendTelemetryCommand(req, c);
       !status.ok()) {
     response->set_error(status.ToString());
+  }
+}
+
+void ClientHandler::HandleAddCgroup(const proto::AddCgroupRequest &req,
+                                    proto::AddCgroupResponse *response,
+                                    co::Coroutine *c) {
+  Cgroup cgroup;
+  cgroup.FromProto(req.cgroup());
+
+  if (absl::Status status =
+          capcom_.AddCgroup(req.compute(), cgroup, c);
+      !status.ok()) {
+    response->set_error(status.ToString());
+  }
+}
+
+void ClientHandler::HandleRemoveCgroups(const proto::RemoveCgroupsRequest &req,
+                                        proto::RemoveCgroupsResponse *response,
+                                        co::Coroutine *c) {
+  if (req.compute().empty()) {
+    // No compute specified, apply to all computes.
+    if (req.cgroups().empty()) {
+      if (absl::Status status = capcom_.RemoveAllCgroups(""); !status.ok()) {
+        response->set_error(status.ToString());
+        return;
+      }
+    } else {
+      for (auto &cgroup : req.cgroups()) {
+        if (absl::Status status = capcom_.RemoveCgroup("", cgroup, c);
+            !status.ok()) {
+          response->set_error(status.ToString());
+          return;
+        }
+      }
+    }
+    return;
+  }
+
+  // Apply to specified computes.
+  if (req.cgroups().empty()) {
+    if (absl::Status status = capcom_.RemoveAllCgroups(req.compute());
+        !status.ok()) {
+      response->set_error(status.ToString());
+      return;
+    }
+  } else {
+    for (auto &cgroup : req.cgroups()) {
+      if (absl::Status status =
+              capcom_.RemoveCgroup(req.compute(), cgroup, c);
+          !status.ok()) {
+        response->set_error(status.ToString());
+        return;
+      }
+    }
+  }
+}
+
+void ClientHandler::HandleGetCgroups(const proto::GetCgroupsRequest &req,
+                                     proto::GetCgroupsResponse *response,
+                                     co::Coroutine *c) {
+  if (req.compute().empty()) {
+    // No compute specified, apply to all computes.
+    if (req.cgroups().empty()) {
+      std::vector<CgroupAssignment> assignments =
+          capcom_.ListCgroupAssignments("", "");
+      for (auto &assignment : assignments) {
+        auto *a = response->add_cgroups();
+        assignment.ToProto(a);
+      }
+    } else {
+      for (auto &cgroup : req.cgroups()) {
+        std::vector<CgroupAssignment> assignments =
+            capcom_.ListCgroupAssignments("", cgroup);
+        for (auto &assignment : assignments) {
+          auto *a = response->add_cgroups();
+          assignment.ToProto(a);
+        }
+      }
+    }
+    return;
+  }
+  // Apply to specified computes.
+  if (req.cgroups().empty()) {
+    std::vector<CgroupAssignment> assignments =
+        capcom_.ListCgroupAssignments(req.compute(), "");
+    for (auto &assignment : assignments) {
+      auto *a = response->add_cgroups();
+      assignment.ToProto(a);
+    }
+  } else {
+    for (auto &cgroup : req.cgroups()) {
+      std::vector<CgroupAssignment> assignments =
+          capcom_.ListCgroupAssignments(req.compute(), cgroup);
+      for (auto &assignment : assignments) {
+        auto *a = response->add_cgroups();
+        assignment.ToProto(a);
+      }
+    }
   }
 }
 } // namespace adastra::capcom
