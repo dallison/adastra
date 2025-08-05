@@ -55,13 +55,13 @@ private:
   void ListenerCoroutine(toolbelt::TCPSocket &listen_socket, co::Coroutine *c);
 
   bool AddProcess(std::string id, std::shared_ptr<Process> process) {
-    auto[it, inserted] =
+    auto [it, inserted] =
         processes_.emplace(std::make_pair(std::move(id), std::move(process)));
     return inserted;
   }
 
   bool AddProcessByName(std::string name, std::shared_ptr<Process> process) {
-    auto[it, inserted] = processes_by_name_.emplace(
+    auto [it, inserted] = processes_by_name_.emplace(
         std::make_pair(std::move(name), std::move(process)));
     return inserted;
   }
@@ -73,12 +73,12 @@ private:
       return false;
     }
 
-    auto[it, z_inserted] = zygotes_.emplace(name, zygote);
+    auto [it, z_inserted] = zygotes_.emplace(name, zygote);
     return z_inserted;
   }
 
   bool AddVirtualProcess(int pid, std::shared_ptr<Process> proc) {
-    auto[it, inserted] = virtual_processes_.emplace(pid, proc);
+    auto [it, inserted] = virtual_processes_.emplace(pid, proc);
     return inserted;
   }
 
@@ -166,7 +166,7 @@ private:
   }
 
   bool AddCgroup(std::string name, Cgroup cgroup) {
-    auto[it, inserted] =
+    auto [it, inserted] =
         cgroups_.emplace(std::make_pair(std::move(name), std::move(cgroup)));
     return inserted;
   }
@@ -188,10 +188,16 @@ private:
     return &it->second;
   }
 
+  void ListCgroups(std::function<void(const Cgroup &)> fn) {
+    for (auto &[name, cgroup] : cgroups_) {
+      fn(cgroup);
+    }
+  }
+
   void KillAllProcesses();
   void KillAllProcesses(bool emergency, co::Coroutine *c);
 
-  absl::Status RegisterCgroup(const Cgroup &cgroup, co::Coroutine* c);
+  absl::Status RegisterCgroup(const Cgroup &cgroup, co::Coroutine *c);
   absl::Status UnregisterCgroup(const std::string &cgroup);
 
   absl::Status SendProcessStartEvent(const std::string &process_id);
@@ -205,7 +211,8 @@ private:
 
   absl::Status SetParameter(const std::string &name,
                             const parameters::Value &value, co::Coroutine *c);
-  absl::Status DeleteParameters(const std::vector<std::string> &names, co::Coroutine *c);
+  absl::Status DeleteParameters(const std::vector<std::string> &names,
+                                co::Coroutine *c);
   absl::Status
   UploadParameters(const std::vector<parameters::Parameter> &params,
                    co::Coroutine *c);
@@ -217,15 +224,15 @@ private:
                                std::shared_ptr<ClientHandler> client,
                                co::Coroutine *c);
 
-  void
-  HandleTelemetryServerStatus(std::shared_ptr<Process> proc,
-                               const adastra::proto::telemetry::Status &s,
-                               std::shared_ptr<ClientHandler> client,
-                               co::Coroutine *c);
+  void HandleTelemetryServerStatus(std::shared_ptr<Process> proc,
+                                   const adastra::proto::telemetry::Status &s,
+                                   std::shared_ptr<ClientHandler> client,
+                                   co::Coroutine *c);
 
-  absl::Status SendTelemetryCommand(const std::string &process_id,
-                                    const adastra::proto::telemetry::Command &cmd,
-                                    co::Coroutine *c);
+  absl::Status
+  SendTelemetryCommand(const std::string &process_id,
+                       const adastra::proto::telemetry::Command &cmd,
+                       co::Coroutine *c);
 
   co::CoroutineScheduler &co_scheduler_;
   toolbelt::InetAddress addr_;

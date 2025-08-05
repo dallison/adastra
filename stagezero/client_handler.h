@@ -131,6 +131,9 @@ private:
   void HandleKillCgroup(const control::KillCgroupRequest &req,
                         control::KillCgroupResponse *response,
                         co::Coroutine *c);
+  void ListCgroups(const control::ListCgroupsRequest &req,
+                   control::ListCgroupsResponse *response,
+                   co::Coroutine *c);
   void HandleSetParameter(const control::SetParameterRequest &req,
                           control::SetParameterResponse *response,
                           co::Coroutine *c);

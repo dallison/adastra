@@ -46,6 +46,17 @@ public:
 
   void EnterTestMode() { test_mode_ = true; }
 
+  void ResetForTest() {
+    client_handlers_.clear();
+    subsystems_.clear();
+    zygotes_.clear();
+    client_ids_.ClearAll();
+    stagezero_umbilicals_.clear();
+    computes_.clear();
+    parameters_.Clear();
+    global_symbols_.Clear();
+}
+
 private:
   friend class ClientHandler;
   friend class Subsystem;

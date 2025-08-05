@@ -151,6 +151,8 @@ public:
                           co::Coroutine *co = nullptr);
   absl::Status KillCgroup(const std::string &cgroup,
                           co::Coroutine *co = nullptr);
+  absl::StatusOr<std::vector<Cgroup>> ListCgroups(co::Coroutine *co = nullptr);
+
   absl::Status SetParameter(const std::string &name, const parameters::Value &v,
                             co::Coroutine *c = nullptr);
 

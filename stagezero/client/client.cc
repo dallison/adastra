@@ -382,6 +382,33 @@ absl::Status Client::KillCgroup(const std::string &cgroup, co::Coroutine *co) {
   return absl::OkStatus();
 }
 
+absl::StatusOr<std::vector<Cgroup>> Client::ListCgroups(co::Coroutine *co) {
+  if (co == nullptr) {
+    co = co_;
+  }
+  adastra::stagezero::control::Request req;
+  req.mutable_list_cgroups();
+
+  adastra::stagezero::control::Response resp;
+  if (absl::Status status = SendRequestReceiveResponse(req, resp, co);
+      !status.ok()) {
+    return status;
+  }
+  auto &list_resp = resp.list_cgroups();
+  if (!list_resp.error().empty()) {
+    return absl::InternalError(
+        absl::StrFormat("Failed to list cgroups: %s", list_resp.error()));
+  }
+  std::vector<Cgroup> cgroups;
+  cgroups.reserve(list_resp.cgroups().size());
+  for (const auto &cgroup : list_resp.cgroups()) {
+    Cgroup cg;
+    cg.FromProto(cgroup);
+    cgroups.push_back(cg);
+  }
+  return cgroups;
+}
+
 absl::Status Client::SetParameter(const std::string &name,
                                   const parameters::Value &v,
                                   co::Coroutine *co) {

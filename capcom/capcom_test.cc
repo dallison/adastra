@@ -322,6 +322,10 @@ public:
     ASSERT_TRUE(status.ok());
   }
 
+  static void ResetCapcom() {
+    capcom_->ResetForTest();
+  }
+
   static const toolbelt::InetAddress &CapcomAddr() { return capcom_addr_; }
 
   static co::CoroutineScheduler &CapcomScheduler() { return capcom_scheduler_; }
@@ -2262,6 +2266,145 @@ TEST_F(CapcomTest, CgroupOps) {
 
   status = client.RemoveCompute("compute1");
   ASSERT_TRUE(status.ok());
+}
+
+static adastra::Cgroup CreateBasicRootCgroup() {
+    auto rootCpuset = std::make_shared<adastra::CgroupCpusetController>();
+    rootCpuset->subtree_control = adastra::SubtreeControl::kEnable;
+
+    auto rootCpu = std::make_shared<adastra::CgroupCpuController>();
+    rootCpu->subtree_control = adastra::SubtreeControl::kEnable;
+
+    auto rootMem = std::make_shared<adastra::CgroupMemoryController>();
+    rootMem->subtree_control = adastra::SubtreeControl::kEnable;
+
+    return adastra::Cgroup{.name = "", .cpuset = rootCpuset, .cpu = rootCpu, .memory = rootMem};
+}
+
+
+TEST_F(CapcomTest, CgroupDynamic) {
+    ResetCapcom();
+    adastra::capcom::client::Client client(ClientMode::kBlocking);
+    InitClient(client, "foobar1");
+
+    adastra::Cgroup cgroup = {
+            .type = adastra::CgroupType::kDomain,
+            .name = "test",
+    };
+
+    auto cpuset = std::make_unique<adastra::CgroupCpusetController>();
+    cpuset->cpus = "0-1";
+    cpuset->mems = "0";
+    cpuset->cpus_exclusive = "foo";
+    cpuset->partition = adastra::CgroupCpusetController::Partition::kMember;
+    cgroup.cpuset = std::move(cpuset);
+
+    // Add a single compute with a cgroup called test.
+    auto status = client.AddCompute(
+            "compute1",
+            toolbelt::InetAddress("localhost", 6522),
+            adastra::capcom::client::ComputeConnectionPolicy::kDynamic);
+    ASSERT_TRUE(status.ok());
+
+    // Must configure the root cgroup before any children
+    status = client.AddCgroup("compute1", CreateBasicRootCgroup());
+    ASSERT_TRUE(status.ok());
+
+    status = client.AddCgroup("compute1", cgroup);
+    ASSERT_TRUE(status.ok());
+
+    // Negative test (duplicate)
+    status = client.AddCgroup("compute1", cgroup);
+    ASSERT_FALSE(status.ok());
+
+    status = client.AddSubsystem(
+            "foobar1",
+            {.static_processes = {{
+                     .name = "loop",
+                     .executable = "${runfiles_dir}/_main/testdata/loop",
+                     .compute = "compute1",
+                     .cgroup = "test",
+             }}});
+    ASSERT_TRUE(status.ok());
+
+    // Another cgroup.
+    adastra::Cgroup cgroup2 = {
+            .type = adastra::CgroupType::kDomain,
+            .name = "test2",
+    };
+    auto cpuset2 = std::make_unique<adastra::CgroupCpusetController>();
+    cpuset2->cpus = "0-1";
+    cpuset2->mems = "0";
+    cpuset2->cpus_exclusive = "foo";
+    cpuset2->partition = adastra::CgroupCpusetController::Partition::kMember;
+    cgroup2.cpuset = std::move(cpuset2);
+
+    status = client.AddCgroup("compute1", cgroup2);
+    ASSERT_TRUE(status.ok());
+
+    {
+        absl::StatusOr<std::vector<adastra::CgroupAssignment>> assignments =
+                client.GetCgroups("compute1");
+        ASSERT_TRUE(assignments.ok());
+        ASSERT_EQ(1, assignments->size());
+        ASSERT_EQ("compute1", assignments->at(0).compute);
+        ASSERT_EQ(assignments->at(0).cgroups.size(), 3);
+        ASSERT_EQ("", assignments->at(0).cgroups[0].name);
+        ASSERT_EQ("test", assignments->at(0).cgroups[1].name);
+        ASSERT_EQ("test2", assignments->at(0).cgroups[2].name);
+    }
+
+    status = client.StartSubsystem("foobar1");
+    ASSERT_TRUE(status.ok());
+
+    sleep(1);
+
+    // Stop the subsystem.
+    status = client.StopSubsystem("foobar1");
+    ASSERT_TRUE(status.ok());
+
+    // Negative test
+    status = client.RemoveCgroup("compute1", "badtest");
+    ASSERT_FALSE(status.ok());
+
+    // Remove the cgroup from the compute.
+    status = client.RemoveCgroup("compute1", "test");
+    ASSERT_TRUE(status.ok());
+
+    {
+        absl::StatusOr<std::vector<adastra::CgroupAssignment>> assignments = client.GetCgroups();
+        ASSERT_TRUE(assignments.ok());
+        ASSERT_EQ(1, assignments->size());
+        ASSERT_EQ("compute1", assignments->at(0).compute);
+        ASSERT_EQ(2, assignments->at(0).cgroups.size());
+        ASSERT_EQ("", assignments->at(0).cgroups[0].name);
+        ASSERT_EQ("test2", assignments->at(0).cgroups[1].name);
+    }
+
+    status = client.RemoveCgroup("compute1", "test2");
+    ASSERT_TRUE(status.ok());
+
+    {
+        absl::StatusOr<std::vector<adastra::CgroupAssignment>> assignments = client.GetCgroups();
+        ASSERT_TRUE(assignments.ok());
+        ASSERT_EQ(1, assignments->size());
+        ASSERT_EQ("compute1", assignments->at(0).compute);
+        ASSERT_EQ(1, assignments->at(0).cgroups.size());
+        ASSERT_EQ("", assignments->at(0).cgroups[0].name);
+    }
+
+    // Remove the subsystem.
+    status = client.RemoveSubsystem("foobar1", false);
+    ASSERT_TRUE(status.ok());
+
+    status = client.RemoveCgroup("compute1", "badtest");
+    ASSERT_FALSE(status.ok());
+
+    status = client.RemoveCgroup("badcompute", "badtest");
+    ASSERT_FALSE(status.ok());
+
+    status = client.RemoveCompute("compute1");
+    ASSERT_TRUE(status.ok());
 }
 
 TEST_F(CapcomTest, Parameters) {

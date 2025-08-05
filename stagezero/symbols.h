@@ -71,6 +71,12 @@ public:
   void Encode(std::stringstream& str);
   void Decode(std::stringstream& str);
 
+  void Clear() {
+    symbols_.clear();
+    exported_symbols_.clear();
+    parent_ = nullptr;
+  }
+
 private:
   absl::flat_hash_map<std::string, std::unique_ptr<Symbol>> symbols_;
   std::vector<Symbol *> exported_symbols_;

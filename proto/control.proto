@@ -134,6 +134,13 @@ message SendTelemetryCommandRequest {
 
 message SendTelemetryCommandResponse { string error = 1; }
 
+message ListCgroupsRequest {}
+
+message ListCgroupsResponse {
+  repeated config.Cgroup cgroups = 1;
+  string error = 2;
+}
+
 message Request {
   oneof request {
     InitRequest init = 1;
@@ -155,6 +162,7 @@ message Request {
     DeleteParametersRequest delete_parameters = 17;
     UploadParametersRequest upload_parameters = 18;
     SendTelemetryCommandRequest send_telemetry_command = 19;
+    ListCgroupsRequest list_cgroups = 20;
   }
 }
 
@@ -177,6 +185,7 @@ message Response {
     DeleteParametersResponse delete_parameters = 15;
     UploadParametersResponse upload_parameters = 16;
     SendTelemetryCommandResponse send_telemetry_command = 17;
+    ListCgroupsResponse list_cgroups = 18;
   }
 }
 

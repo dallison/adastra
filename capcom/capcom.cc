@@ -772,11 +772,46 @@ absl::Status
 Capcom::RegisterComputeCgroups(std::shared_ptr<stagezero::Client> client,
                                std::shared_ptr<Compute> compute,
                                co::Coroutine *c) {
-  for (auto &[name, cgroup] : compute->cgroups) {
-    if (absl::Status status = client->RegisterCgroup(*cgroup, c); !status.ok()) {
-      return status;
+   // Get the current cgroups on the compute.
+    absl::StatusOr<std::vector<Cgroup>> existing_cgroups = client->ListCgroups();
+    if (!existing_cgroups.ok()) {
+        return absl::InternalError(absl::StrFormat(
+            "Failed to list cgroups on compute %s: %s", compute->name,
+            existing_cgroups.status().ToString()));
     }
-  }
+    // If there are cgroups, remove any that are not in the list of cgroups in the compute
+    // configuration.
+    for (auto& cgroup : *existing_cgroups) {
+        auto cg = compute->FindCgroup(cgroup.name);
+        if (cg != nullptr) {
+            // Cgroup is know, but if it's not the same as the one we have, remove it.
+            if (*cg == cgroup) {
+                continue;
+            }
+        }
+        // Remove the cgroup but don't worry if it fails.
+        client->RemoveCgroup(cgroup.name).IgnoreError();
+    }
+
+    // Now add all the cgroups that are not already there.
+    // These are ordered by name so that the parents are created
+    // before the children.
+    for (auto& [name, cgroup] : compute->cgroups) {
+        bool cgroup_present = false;
+        for (auto& cg : *existing_cgroups) {
+            if (cg.name == name) {
+                cgroup_present = true;
+                break;
+            }
+        }
+        if (cgroup_present) {
+            continue;
+        }
+        if (auto status = client->RegisterCgroup(*cgroup, nullptr);
+            !status.ok()) {
+            return status;
+        }
+    }
   return absl::OkStatus();
 }
 

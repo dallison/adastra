@@ -109,6 +109,10 @@ absl::Status ClientHandler::HandleMessage(const control::Request &req,
     HandleKillCgroup(req.kill_cgroup(), resp.mutable_kill_cgroup(), c);
     break;
 
+  case control::Request::kListCgroups:
+    ListCgroups(req.list_cgroups(), resp.mutable_list_cgroups(), c);
+    break;
+
   case control::Request::kSetParameter:
     HandleSetParameter(req.set_parameter(), resp.mutable_set_parameter(), c);
     break;
@@ -456,11 +460,11 @@ void ClientHandler::HandleAddCgroup(const control::AddCgroupRequest &req,
 
   if (!stagezero_.AddCgroup(req.cgroup().name(), cgroup)) {
     response->set_error(absl::StrFormat(
-        "Failed to add cgroup %s as it already exists", req.cgroup().name()));
+        "Failed to add cgroup '%s' as it already exists", req.cgroup().name()));
     return;
   }
   if (absl::Status status = stagezero_.RegisterCgroup(cgroup, c); !status.ok()) {
-    response->set_error(absl::StrFormat("Failed to register cgroup %s: %s",
+    response->set_error(absl::StrFormat("Failed to register cgroup '%s': %s",
                                         req.cgroup().name(),
                                         status.ToString()));
   }
@@ -514,6 +518,15 @@ void ClientHandler::HandleKillCgroup(const control::KillCgroupRequest &req,
     response->set_error(absl::StrFormat("Failed to freeze cgroup %s: %s",
                                         req.cgroup(), status.ToString()));
   }
+}
+
+void ClientHandler::ListCgroups(const control::ListCgroupsRequest &req,
+                                 control::ListCgroupsResponse *response,
+                                 co::Coroutine *c) {
+    stagezero_.ListCgroups([response](const Cgroup& cgroup) {
+        auto c = response->add_cgroups();
+        cgroup.ToProto(c);
+    });
 }
 
 void ClientHandler::HandleSetParameter(const control::SetParameterRequest &req,
