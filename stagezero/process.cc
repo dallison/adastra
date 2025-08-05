@@ -1824,11 +1824,13 @@ Zygote::Spawn(const stagezero::control::LaunchVirtualProcessRequest &req,
   // Capabilities.
   *spawn.mutable_capabilities() = req.opts().capabilities();
 
+  spawn.set_cgroup_root_dir(stagezero_.cgroup_root_dir_);
+
   std::vector<char> buffer(spawn.ByteSizeLong() + sizeof(int32_t));
   char *buf = buffer.data() + sizeof(int32_t);
   size_t buflen = buffer.size() - sizeof(int32_t);
   if (!spawn.SerializeToArray(buf, buflen)) {
-    return absl::InternalError("Failed to serilize spawn message");
+    return absl::InternalError("Failed to serialize spawn message");
   }
 
   absl::StatusOr<ssize_t> n = control_socket_.SendMessage(buf, buflen);
@@ -1858,7 +1860,7 @@ Zygote::Spawn(const stagezero::control::LaunchVirtualProcessRequest &req,
   control::SpawnResponse response;
   if (!response.ParseFromArray(buffer.data(), *n)) {
     control_socket_.Close();
-    return absl::InternalError("Failed to parse response");
+    return absl::InternalError("Failed to parse spawn response");
   }
   if (!response.error().empty()) {
     return absl::InternalError(response.error());
@@ -1869,7 +1871,7 @@ Zygote::Spawn(const stagezero::control::LaunchVirtualProcessRequest &req,
 #else
   return std::make_pair(response.pid(), toolbelt::FileDescriptor());
 #endif
-} // namespace adastra::stagezero
+}
 
 VirtualProcess::VirtualProcess(
     co::CoroutineScheduler &scheduler, StageZero &stagezero,
@@ -1898,7 +1900,7 @@ VirtualProcess::VirtualProcess(
   if (!pipe.ok()) {
     abort();
   }
-  notify_pipe_ = *pipe;
+  notify_pipe_ = std::move(*pipe);
   for (auto cpu : req.opts().cpus()) {
     cpus_.push_back(cpu);
   }
@@ -2109,6 +2111,6 @@ absl::Status Process::AddToCgroup(int pid) {
   if (cgroup_.empty()) {
     return absl::OkStatus();
   }
-  return stagezero::AddToCgroup(Name(), cgroup_, pid, client_->GetLogger());
+  return stagezero::AddToCgroup(Name(), cgroup_, pid, stagezero_.cgroup_root_dir_, client_->GetLogger());
 }
 } // namespace adastra::stagezero

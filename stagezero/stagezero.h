@@ -28,7 +28,8 @@ public:
   StageZero(co::CoroutineScheduler &scheduler, toolbelt::InetAddress addr,
             bool log_to_output, const std::string &logdir,
             const std::string &log_level = "debug",
-            const std::string &runfiles_dir = "", int notify_fd = -1);
+            const std::string &runfiles_dir = "", int notify_fd = -1,
+            const std::string &cgroup_root_dir = "/sys/fs/cgroup");
   ~StageZero();
   absl::Status Run();
   void Stop();
@@ -190,7 +191,7 @@ private:
   void KillAllProcesses();
   void KillAllProcesses(bool emergency, co::Coroutine *c);
 
-  absl::Status RegisterCgroup(const Cgroup &cgroup);
+  absl::Status RegisterCgroup(const Cgroup &cgroup, co::Coroutine* c);
   absl::Status UnregisterCgroup(const std::string &cgroup);
 
   absl::Status SendProcessStartEvent(const std::string &process_id);
@@ -249,6 +250,8 @@ private:
   SymbolTable global_symbols_;
 
   parameters::ParameterServer parameters_;
+  std::string cgroup_root_dir_;
+
 }; // namespace adastra::stagezero
 
 } // namespace adastra::stagezero

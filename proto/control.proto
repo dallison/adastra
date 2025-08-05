@@ -271,6 +271,8 @@ message SpawnRequest {
   repeated int32 cpus = 18;                        // CPUs to bind to.
   config.KernelSchedulerPolicy kernel_scheduler_policy = 19;
   config.CapabilitySet capabilities = 20;          // Capabilities to set.
+
+  string cgroup_root_dir = 21;
 }
 
 message SpawnResponse {

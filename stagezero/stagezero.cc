@@ -23,9 +23,10 @@ namespace adastra::stagezero {
 StageZero::StageZero(co::CoroutineScheduler &scheduler,
                      toolbelt::InetAddress addr, bool log_to_output,
                      const std::string &logdir, const std::string &log_level,
-                     const std::string &runfiles_dir, int notify_fd)
+                     const std::string &runfiles_dir, int notify_fd, const std::string& cgroup_root_dir)
     : co_scheduler_(scheduler), addr_(addr), runfiles_dir_(runfiles_dir),
-      notify_fd_(notify_fd), logger_("stagezero", log_to_output) {
+      notify_fd_(notify_fd), logger_("stagezero", log_to_output),
+      cgroup_root_dir_(cgroup_root_dir) {
   logger_.SetLogLevel(log_level);
   // Add a global symbol for where we want log files.
   global_symbols_.AddSymbol("logdir", logdir, false);
@@ -265,12 +266,12 @@ void StageZero::KillAllProcesses(bool emergency, co::Coroutine *c) {
   }
 }
 
-absl::Status StageZero::RegisterCgroup(const Cgroup &cgroup) {
-  return adastra::stagezero::CreateCgroup(cgroup, logger_);
+absl::Status StageZero::RegisterCgroup(const Cgroup &cgroup, co::Coroutine *c) {
+  return adastra::stagezero::CreateCgroup(cgroup, cgroup_root_dir_, logger_, c);
 }
 
 absl::Status StageZero::UnregisterCgroup(const std::string &cgroup) {
-  return adastra::stagezero::RemoveCgroup(cgroup, logger_);
+  return adastra::stagezero::RemoveCgroup(cgroup, cgroup_root_dir_, logger_);
 }
 
 absl::Status StageZero::SendProcessStartEvent(const std::string &process_id) {

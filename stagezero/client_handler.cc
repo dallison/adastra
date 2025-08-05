@@ -459,7 +459,7 @@ void ClientHandler::HandleAddCgroup(const control::AddCgroupRequest &req,
         "Failed to add cgroup %s as it already exists", req.cgroup().name()));
     return;
   }
-  if (absl::Status status = stagezero_.RegisterCgroup(cgroup); !status.ok()) {
+  if (absl::Status status = stagezero_.RegisterCgroup(cgroup, c); !status.ok()) {
     response->set_error(absl::StrFormat("Failed to register cgroup %s: %s",
                                         req.cgroup().name(),
                                         status.ToString()));
@@ -486,7 +486,7 @@ void ClientHandler::HandleFreezeCgroup(const control::FreezeCgroupRequest &req,
                                        control::FreezeCgroupResponse *response,
                                        co::Coroutine *c) {
   if (absl::Status status =
-          adastra::stagezero::FreezeCgroup(req.cgroup(), GetLogger());
+          adastra::stagezero::FreezeCgroup(req.cgroup(), stagezero_.cgroup_root_dir_, GetLogger());
       !status.ok()) {
     response->set_error(absl::StrFormat("Failed to freeze cgroup %s: %s",
                                         req.cgroup(), status.ToString()));
@@ -498,7 +498,7 @@ void ClientHandler::HandleThawCgroup(const control::ThawCgroupRequest &req,
                                      co::Coroutine *c) {
 
   if (absl::Status status =
-          adastra::stagezero::ThawCgroup(req.cgroup(), GetLogger());
+          adastra::stagezero::ThawCgroup(req.cgroup(), stagezero_.cgroup_root_dir_, GetLogger());
       !status.ok()) {
     response->set_error(absl::StrFormat("Failed to freeze cgroup %s: %s",
                                         req.cgroup(), status.ToString()));
@@ -509,7 +509,7 @@ void ClientHandler::HandleKillCgroup(const control::KillCgroupRequest &req,
                                      control::KillCgroupResponse *response,
                                      co::Coroutine *c) {
   if (absl::Status status =
-          adastra::stagezero::KillCgroup(req.cgroup(), GetLogger());
+          adastra::stagezero::KillCgroup(req.cgroup(), stagezero_.cgroup_root_dir_, GetLogger());
       !status.ok()) {
     response->set_error(absl::StrFormat("Failed to freeze cgroup %s: %s",
                                         req.cgroup(), status.ToString()));
