@@ -1,4 +1,4 @@
-load("@neutron//neutron:neutron_library.bzl", "neutron_serdes_library", "neutron_zeros_library")
+load("@davros//davros:davros_library.bzl", "davros_serdes_library", "davros_zeros_library")
 load("@phaser//phaser:phaser_library.bzl", "phaser_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -48,8 +48,8 @@ cc_library(
     ],
     deps = [
         ":module",
-        "@neutron//neutron:serdes_runtime",
-        "@neutron//neutron:zeros_runtime",
+        "@davros//davros:serdes_runtime",
+        "@davros//davros:zeros_runtime",
     ],
 )
 
@@ -128,14 +128,14 @@ cc_proto_library(
     deps = [":test_proto"],
 )
 
-neutron_serdes_library(
+davros_serdes_library(
     name = "test_ros",
     srcs = [
         "testdata/msg/Test.msg",
     ],
 )
 
-neutron_zeros_library(
+davros_zeros_library(
     name = "test_zeros",
     srcs = [
         "testdata/msg/Test.msg",

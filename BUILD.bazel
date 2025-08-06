@@ -15,7 +15,7 @@ config_setting(
   values = {"cpu": "darwin_x86_64"},
 )
 
-sh_binary(
+sh_binary( 
   name = "run_flight",
   srcs = ["run_flight.sh"],
   data = [

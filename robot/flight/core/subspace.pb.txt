@@ -3,7 +3,7 @@ subsystem {
 
  static_process {
   name: "subspace_server"
-  executable: "${runfiles_dir}/+_repo_rules+subspace/server/${name}"
+  executable: "${runfiles_dir}/_main~_repo_rules~subspace/server/${name}"
   options {
     args: "--socket=${subspace_socket}"
     args: "--interface=${subspace_interface}"
