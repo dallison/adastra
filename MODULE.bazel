@@ -21,9 +21,9 @@ bazel_dep(name = "zlib", version = "1.3.1.bcr.3")
 
 http_archive(
   name = "toolbelt",
-  urls = ["https://github.com/dallison/cpp_toolbelt/archive/refs/tags/1.2.2.tar.gz"],
-  strip_prefix = "cpp_toolbelt-1.2.2",
-  integrity = "sha256-ZVjTxhPStiGhheys3qIpwHHuP9h7r6BaT0BW0fVr4xM=",
+  urls = ["https://github.com/dallison/cpp_toolbelt/archive/refs/tags/1.2.7.tar.gz"],
+  strip_prefix = "cpp_toolbelt-1.2.7",
+  integrity = "sha256-O5SO3Bsx070QekVWUHUMwygB5HgSGmDi8IwlGEC5KKA="
 )
 
 # Coroutines
