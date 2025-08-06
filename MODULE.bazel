@@ -19,17 +19,11 @@ bazel_dep(name = "rules_cc", version = "0.0.9")
 bazel_dep(name = "rules_pkg", version = "0.9.1")
 bazel_dep(name = "zlib", version = "1.3.1.bcr.3")
 
-# http_archive(
-#   name = "toolbelt",
-#   urls = ["https://github.com/dallison/cpp_toolbelt/archive/refs/tags/1.2.2.tar.gz"],
-#   strip_prefix = "cpp_toolbelt-1.2.2",
-#   integrity = "sha256-ZVjTxhPStiGhheys3qIpwHHuP9h7r6BaT0BW0fVr4xM=",
-# )
-
-# For local debugging of toolbelt coroutine library.
-local_repository(
-    name = "toolbelt",
-    path = "../cpp_toolbelt",
+http_archive(
+  name = "toolbelt",
+  urls = ["https://github.com/dallison/cpp_toolbelt/archive/refs/tags/1.2.7.tar.gz"],
+  strip_prefix = "cpp_toolbelt-1.2.7",
+  integrity = "sha256-O5SO3Bsx070QekVWUHUMwygB5HgSGmDi8IwlGEC5KKA="
 )
 
 # Coroutines
@@ -73,16 +67,15 @@ http_archive(
 )
 
 http_archive(
-  name = "davros",
-  urls = ["https://github.com/dallison/davros/archive/refs/tags/1.0.1.tar.gz"],
-  strip_prefix = "davros-1.0.1",
-  integrity = "sha256-Ei4KE2gVewMDSK9jvsZMpOxlQxL4h12nBRrJ8lRNhng="
+  name = "neutron",
+  urls = ["https://github.com/dallison/neutron/archive/refs/tags/1.0.2.tar.gz"],
+  strip_prefix = "neutron-1.0.2",
 )
 
-# For local debugging of davros library.
+# For local debugging of neutron library.
 # local_repository(
-#     name = "davros",
-#     path = "../davros",
+#     name = "neutron",
+#     path = "../neutron",
 # )
 
 http_archive(
