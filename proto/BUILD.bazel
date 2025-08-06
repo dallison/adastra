@@ -38,6 +38,7 @@ proto_library(
     name = "capcom_proto",
     srcs = ["capcom.proto"],
     deps = [
+        ":cgroup_proto",
         ":config_proto",
         ":event_proto",
         ":log_proto",
