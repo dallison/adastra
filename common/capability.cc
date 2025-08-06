@@ -165,7 +165,7 @@ absl::Status Caps::Set() const {
       }
     }
   }
-  return absl::Status::Ok();
+  return absl::OkStatus();
 #else
   return absl::InternalError("Caps::Set() is not implemented on this platform");
 #endif

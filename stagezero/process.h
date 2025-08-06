@@ -29,6 +29,7 @@
 
 #define HAVE_PIDFD 0
 #if defined(__linux__)
+#include <linux/version.h>
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 3, 0)
 // We use pidfds for waiting but not for signal-sending, instead we signal via
 // process group ids. Linux kernel versions >6.9 have the ability to kill

@@ -22,6 +22,7 @@ static stagezero::config::SubtreeControl
 SubtreeControlToProto(SubtreeControl control) {
   switch (control) {
   case SubtreeControl::kDefault:
+  default:
     return stagezero::config::SubtreeControl::SUBTREE_DEFAULT;
   case SubtreeControl::kEnable:
     return stagezero::config::SubtreeControl::SUBTREE_ENABLE;

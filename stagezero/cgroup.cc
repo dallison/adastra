@@ -1,6 +1,8 @@
 #include "stagezero/cgroup.h"
 #include "absl/strings/str_format.h"
+#include "absl/strings/str_join.h"
 #include "absl/strings/strip.h"
+#include "toolbelt/fd.h"
 
 #include <filesystem>
 #include <fstream>
@@ -8,6 +10,7 @@
 #if defined(__linux__)
 #include <sys/inotify.h>
 #include <sys/stat.h>
+#include <chrono>
 #endif
 
 // Some of this code is provided by Cruise LLC.
@@ -20,6 +23,8 @@ namespace adastra::stagezero {
 
 
 #if defined(__linux__)
+using namespace std::chrono_literals;
+
 static absl::Status WriteFile(std::filesystem::path file,
                               std::optional<std::string> line) {
   if (!line.has_value()) {
@@ -210,11 +215,11 @@ GetMissingFiles(const std::filesystem::path &directory,
 }
 
 static absl::Status
-EnsureChildCgroupReady(const std::filesystem::path &cgroupPath,
+EnsureChildCgroupReady(const std::filesystem::path &cgroup_path,
                        const SubtreeControlSettings &parentSettings,
                        co::Coroutine *c) {
 
-  const auto expectedFiles = parentSettings.getExpectedSubtreeFiles();
+  const auto expectedFiles = parentSettings.GetExpectedSubtreeFiles();
 
   // The child directory has already been created.
   // This means the OS may populate it at any moment now.
@@ -224,48 +229,48 @@ EnsureChildCgroupReady(const std::filesystem::path &cgroupPath,
   // polling.
   //
   // Check if the OS has beat us, or go into a polling loop if necessary.
-  auto waitingOn = GetMissingFiles(cgroupPath, expectedFiles);
+  auto waitingOn = GetMissingFiles(cgroup_path, expectedFiles);
   if (waitingOn.empty()) {
-    return absl::Status::Ok();
+    return absl::OkStatus();
   }
 
   if (c) {
     auto ifd = toolbelt::FileDescriptor(inotify_init());
-    if (!ifd.valid()) {
+    if (!ifd.Valid()) {
       return absl::InternalError(absl::StrFormat(
           "Failed to create inotify fd to monitor directory '%s': %s",
-          cgroupPath, strerror(errno)));
+          cgroup_path, strerror(errno)));
     }
     auto wfd = toolbelt::FileDescriptor(inotify_add_watch(
-        ifd.fd(), cgroupPath.c_str(), IN_MODIFY | IN_CREATE | IN_DELETE));
-    if (!wfd.valid()) {
+        ifd.Fd(), cgroup_path.c_str(), IN_MODIFY | IN_CREATE | IN_DELETE));
+    if (!wfd.Valid()) {
       return absl::InternalError(absl::StrFormat(
           "Failed to add watch fd to monitor directory '%s': %s",
           strerror(errno)));
     }
 
-    const auto pollFrequency = 20ms;
+    const auto pollFrequency = 20s;
     const auto maxAttempts = 25;
     int attempt = 0;
 
     while (!waitingOn.empty() && attempt < maxAttempts) {
-            c->Wait(ifd.fd(), EPOLLIN, pollFrequency));
+            c->Wait(ifd.Fd(), EPOLLIN, pollFrequency.count());
             // Something in the directory has changed, or we timed out waiting
             // for events. We could use the event to determine exactly what has
             // updated and what remains. But let's re-query anyway in case we
             // missed an event while setting up poll
-            waitingOn = GetMissingFiles(cgroupPath, expectedFiles);
+            waitingOn = GetMissingFiles(cgroup_path, expectedFiles);
             attempt++;
     }
     if (waitingOn.empty()) {
-      return absl::Status::Ok();
+      return absl::OkStatus();
     }
   }
 
   std::sort(waitingOn.begin(), waitingOn.end());
   return absl::InternalError(
       absl::StrFormat("Cgroup directory '%s' is not ready, missing files: %s",
-                      cgroupPath, absl::StrJoin(waitingOn, ",")));
+                      cgroup_path, absl::StrJoin(waitingOn, ",")));
 }
 
 static absl::Status ConfigureRootCgroup(const Cgroup &cgroup,
@@ -302,21 +307,21 @@ static absl::Status ConfigureChildCgroup(const Cgroup &cgroup,
   // In practice, this is almost instantaneous but we have to prevent an access
   // race here
   const auto parentSubtreeFile =
-      cgroupPath.parent_path() / "cgroup.subtree_control";
+      cgroup_path.parent_path() / "cgroup.subtree_control";
   auto parentSubtreeSettings =
       SubtreeControlSettings::FromFile(parentSubtreeFile);
   if (!parentSubtreeSettings.ok()) {
     return parentSubtreeSettings.status();
   }
   if (auto status =
-          EnsureChildCgroupReady(cgroupPath, parentSubtreeSettings, c);
+          EnsureChildCgroupReady(cgroup_path, *parentSubtreeSettings, c);
       !status.ok()) {
     return status;
   }
 
   // With the child directory provisioned, begin configuring its settings
   const auto subtreeFile =
-      absl::StrFormat("%s/cgroup.subtree_control", cgroupPath);
+      absl::StrFormat("%s/cgroup.subtree_control", cgroup_path);
   const auto subtreeControlSettings = SubtreeControlSettings::ForCgroup(cgroup);
   if (auto status = subtreeControlSettings.Write(subtreeFile); !status.ok()) {
     return status;
@@ -366,8 +371,8 @@ static absl::Status ConfigureChildCgroup(const Cgroup &cgroup,
       return status;
     }
   }
-  if (cgroup.pid != nullptr) {
-    if (absl::Status status = SetPIDController(cgroup_path, *cgroup.pid);
+  if (cgroup.pids != nullptr) {
+    if (absl::Status status = SetPIDController(cgroup_path, *cgroup.pids);
         !status.ok()) {
       return status;
     }
@@ -378,7 +383,7 @@ static absl::Status ConfigureChildCgroup(const Cgroup &cgroup,
       return status;
     }
   }
-  return absl::Status::Ok();
+  return absl::OkStatus();
 }
 #endif // defined(__linux__)
 
@@ -405,17 +410,17 @@ absl::Status CreateCgroup(const Cgroup &cgroup,
   }
 #if defined(__linux__)
   std::error_code ec;
-  std::filesystem::create_directories(cgroup_path, ec);
+  std::filesystem::create_directories(cgroup_root_dir, ec);
   if (ec) {
     return absl::InternalError(
         absl::StrFormat("Failed to create cgroup directory %s: %s",
-                        cgroup_path.string(), ec.message()));
+                        cgroup_root_dir, ec.message()));
   }
 
   if (cgroup.name.empty() || cgroup.name == "/") {
-    return ConfigureRootCgroup(cgroup, cgroup_root_dir, fs);
+    return ConfigureRootCgroup(cgroup, cgroup_root_dir);
   }
-  return ConfigureChildCgroup(cgroup, cgroup_root_dir, fs, c);
+  return ConfigureChildCgroup(cgroup, cgroup_root_dir, c);
 #else
   // For non-Linux systems, we do not support cgroups.
   return absl::OkStatus();
@@ -434,18 +439,18 @@ static absl::Status RemoveRootCgroup(const std::string &cgroup_root_dir) {
 
 static absl::Status RemoveChildCgroup(const std::string &cgroup,
                                       const std::string &cgroup_root_dir) {
-  std::filesystem::path cgroupPath(
+  std::filesystem::path cgroup_path(
       absl::StrFormat("%s/%s", cgroup_root_dir, SanitizeCgroupName(cgroup)));
-  if (!std::filesystem::exists(cgroupPath)) {
+  if (!std::filesystem::exists(cgroup_path)) {
     return absl::NotFoundError(
-        absl::StrFormat("Cgroup %s does not exist", cgroupPath.string()));
+        absl::StrFormat("Cgroup %s does not exist", cgroup_path.string()));
   }
   // Use rmdir to remove the cgroup directory.
   // This will work even if the directory is not empty, as long as the
   // cgroup filesystem supports it.
-  if (int err = ::rmdir(cgroupPath.c_str()); err != 0) {
+  if (int err = ::rmdir(cgroup_path.c_str()); err != 0) {
     return absl::InternalError(absl::StrFormat("Failed to remove cgroup %s: %s",
-                                               cgroupPath.string(),
+                                               cgroup_path.string(),
                                                strerror(errno)));
   }
   return absl::OkStatus();

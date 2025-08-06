@@ -23,10 +23,17 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <grp.h>
+#include <pwd.h>
 
 #ifdef __linux__
 #include <linux/sched.h>
 #include <syscall.h>
+#include <linux/capability.h>
+#include <linux/securebits.h>
+#include <sched.h>
+#include <sys/prctl.h>
+
 static int pidfd_open(pid_t pid, unsigned int flags) {
   return syscall(__NR_pidfd_open, pid, flags);
 }
@@ -549,7 +556,7 @@ absl::Status ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
           auto number_or_status =
               adastra::CapabilitySet::CapabilityFromString(cap);
           if (number_or_status.ok()) {
-            cap_number = number_or_status.getValue();
+            cap_number = *number_or_status;
           } else {
             // Allow #<int> for a capability number for which we don't have a
             // name.
@@ -578,7 +585,7 @@ absl::Status ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
 
         if (absl::Status status = current_caps.Set(); !status.ok()) {
           return absl::InternalError(absl::StrFormat(
-              "Failed to set capabilities: %s", status.toString()));
+              "Failed to set capabilities: %s", status.ToString()));
         }
       }
 
@@ -625,7 +632,7 @@ absl::Status ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
         }
         if (absl::Status status = current_caps.Set(); !status.ok()) {
           return absl::InternalError(
-              absl::StrFormat("Failed to drop id caps: %s", status.toString()));
+              absl::StrFormat("Failed to drop id caps: %s", status.ToString()));
         }
       }
 

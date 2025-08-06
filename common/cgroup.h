@@ -5,6 +5,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <filesystem>
 #include <google/protobuf/util/message_differencer.h>
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"

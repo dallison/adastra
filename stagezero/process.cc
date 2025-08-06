@@ -28,6 +28,10 @@
 #include <pty.h>
 #include <sched.h>
 #include <syscall.h>
+#include <linux/capability.h>
+#include <linux/securebits.h>
+#include <sched.h>
+#include <sys/prctl.h>
 #elif defined(__APPLE__)
 #include <util.h>
 #else
@@ -42,11 +46,6 @@
 #include <syscall.h>
 static int pidfd_open(pid_t pid, unsigned int flags) {
   return syscall(__NR_pidfd_open, pid, flags);
-}
-
-static int pidfd_send_signal(int pidfd, int sig, siginfo_t *info,
-                             unsigned int flags) {
-  return syscall(__NR_pidfd_send_signal, pidfd, sig, info, flags);
 }
 
 #endif
@@ -904,12 +903,12 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
     }
     uid = p->pw_uid;
     gid = p->pw_gid;
-    int ngroups{0};
+    int  ngroups{0};
     getgrouplist(user_.c_str(), gid, nullptr, &ngroups);
     if (ngroups > 0) {
       groups.resize(ngroups);
       if (getgrouplist(user_.c_str(), gid,
-                       reinterpret_cast<int *>(groups.data()),
+                       groups.data(),
                        &ngroups) == -1) {
         // -1 means ngroups was too small to store all groups
         // But we just queried the number of necessary groups, and this should
@@ -1257,7 +1256,7 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
           auto number_or_status =
               adastra::CapabilitySet::CapabilityFromString(cap);
           if (number_or_status.ok()) {
-            cap_number = number_or_status.moveValue();
+            cap_number = *number_or_status;
           } else {
             // Allow #<int> for a capability number for which we don't have a
             // name.
@@ -1265,7 +1264,7 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
               int num = 0;
               bool ok = absl::SimpleAtoi(cap.substr(1), &num);
               if (!ok) {
-                return cruise::GenericError(
+                return absl::InternalError(
                     absl::StrFormat("Malformed capability number %s", cap));
               }
               cap_number = num;
@@ -1288,8 +1287,8 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
           current_caps.Modify(cap_number);
         }
 
-        if (cruise::Status status = current_caps.Set(); !status.ok()) {
-          std::cerr << "Failed to set capabilities: " << status.toString()
+        if (absl::Status status = current_caps.Set(); !status.ok()) {
+          std::cerr << "Failed to set capabilities: " << status.ToString()
                     << std::endl;
           exit(1);
         }
@@ -1326,8 +1325,8 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
           // Drop the setuid capability.
           current_caps.Modify(CAP_SETUID, false);
         }
-        if (cruise::Status status = current_caps.Set(); !status.ok()) {
-          std::cerr << "Failed to drop id caps: " << status.toString()
+        if (absl::Status status = current_caps.Set(); !status.ok()) {
+          std::cerr << "Failed to drop id caps: " << status.ToString()
                     << std::endl;
           exit(1);
         }
@@ -1378,7 +1377,7 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
     }
   }
 #if defined(__linux__)
-  if (absl::Status status = BuildLinuxParameterrs(); !status.ok()) {
+  if (absl::Status status = BuildLinuxParameters(); !status.ok()) {
     return status;
   }
 #endif
@@ -2038,7 +2037,7 @@ absl::Status VirtualProcess::Start(co::Coroutine *c) {
       }));
 
 #if defined(__linux__)
-  if (absl::Status status = BuildLinuxParameterrs(); !status.ok()) {
+  if (absl::Status status = BuildLinuxParameters(); !status.ok()) {
     return status;
   }
 #endif
