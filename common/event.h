@@ -73,6 +73,7 @@ struct Event {
     case EventType::kTelemetry:
       return (mask & kTelemetryEvents) != 0;
     }
+    return false;
   }
 };
 
