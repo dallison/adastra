@@ -894,8 +894,11 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
   }
   uid_t uid = geteuid();
   gid_t gid = getegid();
+#if defined(__APPLE__)
+  std::vector<int> groups;
+#else
   std::vector<gid_t> groups;
-
+#endif
   if (!user_.empty()) {
     struct passwd *p = getpwnam(user_.c_str());
     if (p == nullptr) {
