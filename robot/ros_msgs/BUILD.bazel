@@ -1,8 +1,8 @@
-load("@neutron//neutron:neutron_library.bzl", "neutron_zeros_library")
+load("@davros//davros:davros_library.bzl", "davros_zeros_library")
 
 package(default_visibility = ["//visibility:public"])
 
-neutron_zeros_library(
+davros_zeros_library(
     name = "robot_msgs",
     srcs = [
         "robot_msgs/msg/GpsLocation.msg",
@@ -13,7 +13,7 @@ neutron_zeros_library(
     ],
 )
 
-neutron_zeros_library(
+davros_zeros_library(
     name = "std_msgs",
     srcs = [
         "std_msgs/msg/Header.msg",

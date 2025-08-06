@@ -41,7 +41,7 @@ public:
         "/gps", kMaxMessageSize, kNumSlots,
         [this](auto pub, auto &msg, auto c) -> size_t {
           auto now = toolbelt::Now();
-          neutron::Time timestamp = {uint32_t(now / 1000000000), uint32_t(now % 1000000000)};
+          davros::Time timestamp = {uint32_t(now / 1000000000), uint32_t(now % 1000000000)};
           msg.header->timestamp = timestamp;
           msg.latitude = lat_;
           msg.longitude = long_;
