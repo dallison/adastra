@@ -56,14 +56,14 @@ public:
     stereo_ = std::move(*stereo);
 
     auto left_camera = RegisterSubscriber<robot::phaser::CameraImage>(
-        "/camera_left", {.max_shared_ptrs = 3},
+        "/camera_left", {.max_active_messages = 3},
         [this](auto sub, auto msg, auto c) { IncomingLeftCameraImage(msg); });
     if (!left_camera.ok()) {
       return left_camera.status();
     }
 
     auto right_camera = RegisterSubscriber<robot::phaser::CameraImage>(
-        "/camera_right", {.max_shared_ptrs = 3},
+        "/camera_right", {.max_active_messages = 3},
         [this](auto sub, auto msg, auto c) { IncomingRightCameraImage(msg); });
     if (!right_camera.ok()) {
       return right_camera.status();

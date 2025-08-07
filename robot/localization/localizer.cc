@@ -49,7 +49,7 @@ public:
     // This is zero-copy protobuf.
     auto stereo_image_subscriber =
         ProtobufModule::RegisterSubscriber<robot::phaser::StereoImage>(
-            kStereo, {.max_shared_ptrs = 3},
+            kStereo, {.max_active_messages = 3},
             [this](auto sub, auto msg, auto c) {
               IncomingStereoImage(msg, c);
             } );
