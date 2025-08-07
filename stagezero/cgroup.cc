@@ -246,6 +246,7 @@ EnsureChildCgroupReady(const std::filesystem::path &cgroup_path,
     if (!wfd.Valid()) {
       return absl::InternalError(absl::StrFormat(
           "Failed to add watch fd to monitor directory '%s': %s",
+	  cgroup_path,
           strerror(errno)));
     }
 
