@@ -41,7 +41,7 @@ public:
             auto left = left_image_.lock();
             msg.mutable_left()->CopyFrom(*left);
           }
-          if (!left_image_.expired()) {
+          if (!right_image_.expired()) {
             auto right = right_image_.lock();
             msg.mutable_right()->CopyFrom(*right);
           }

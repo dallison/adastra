@@ -21,10 +21,11 @@ bazel_dep(name = "zlib", version = "1.3.1.bcr.3")
 
 http_archive(
     name = "toolbelt",
-    integrity = "sha256-sMbIIW0Rin1J8oC4RB/83K68L0pHVaShv3l9fb3nczM=",
-    strip_prefix = "cpp_toolbelt-1.2.8",
-    urls = ["https://github.com/dallison/cpp_toolbelt/archive/refs/tags/1.2.8.tar.gz"],
+    integrity = "sha256-RwYojmkQeMEBe/jDW1BR9BTdGa0CVcxne46X9Qdxvh0=",
+    strip_prefix = "cpp_toolbelt-1.2.9",
+    urls = ["https://github.com/dallison/cpp_toolbelt/archive/refs/tags/1.2.9.tar.gz"],
 )
+
 # For local debugging of toolbelt coroutine library.
 # local_repository(
 #     name = "toolbelt",
@@ -46,17 +47,17 @@ http_archive(
 # )
 
 http_archive(
-    name = "subspace",
-    urls = ["https://github.com/dallison/subspace/archive/refs/tags/2.0.6.tar.gz"],
-    strip_prefix = "subspace-2.0.6",
-    integrity = "sha256-KnWaFHJsq7l7HJWvq16lILzWhlEfD9SWTisbSnUS15Q=",
+   name = "subspace",
+   urls = ["https://github.com/dallison/subspace/archive/refs/tags/2.0.6.tar.gz"],
+   strip_prefix = "subspace-2.0.6",
+  integrity = "sha256-KnWaFHJsq7l7HJWvq16lILzWhlEfD9SWTisbSnUS15Q=",
 )
 
 # For local debugging of subspace library.
 # local_repository(
 #     name = "subspace",
 #     path = "../subspace",
-#)
+# )
 
 # For local debugging of retro library.
 # local_repository(
@@ -85,10 +86,10 @@ http_archive(
 # )
 
 http_archive(
-  name = "phaser",
-  urls = ["https://github.com/dallison/phaser/archive/refs/tags/1.0.3.tar.gz"],
-  strip_prefix = "phaser-1.0.3",
-  integrity = "sha256-eVOGXPGjC3/NRSrYBPJoETrfm1dCnfBAP0EVfsWTD+E="
+ name = "phaser",
+ urls = ["https://github.com/dallison/phaser/archive/refs/tags/1.0.4.tar.gz"],
+ strip_prefix = "phaser-1.0.4",
+ integrity = "sha256-we8dVwqIuEzlJfcVzht1smKHJ0ohaq7gjTO2yw/vhOQ=",
 )
 
 # For local debugging of phaser library.
