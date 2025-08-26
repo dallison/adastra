@@ -97,7 +97,7 @@ using PhaserPublisher =
 // to the CreateSubscriber and CreatePublisher functions.
 class ProtobufModule : public virtual Module {
 public:
-  ProtobufModule() = default;
+  ProtobufModule() {}
 
   template <typename MessageType,
             typename = std::enable_if_t<std::is_base_of<

@@ -6,6 +6,12 @@ syntax = "proto3";
 
 package adastra.stagezero.config;
 
+enum SubtreeControl {
+  SUBTREE_DEFAULT = 0;
+  SUBTREE_ENABLE = 1;
+  SUBTREE_DISABLE = 2;
+}
+
 
 // Cgroups are supported only on Linux.
 // https://docs.kernel.org/admin-guide/cgroup-v2.html
@@ -15,6 +21,16 @@ package adastra.stagezero.config;
 // which I don't understand how to configure.
 //
 // TODO: add hugetlb controller.
+//
+// In each controller, the 'subtree_control' field specifies whether
+// and how the controller name will be written into the cgroup.subtree_control
+// file.  If the value is `SUBTREE_DEFAULT`, the controller will not be written
+// to the file. If it is `SUBTREE_ENABLE`, the controller will be written to the
+// file with a '+' prefix. If it is `SUBTREE_DISABLE`, the controller will be
+// written to the file with a '-' prefix.
+//
+//  See https://www.kernel.org/doc/Documentation/cgroup-v2.txt
+// for more information.
 message Cgroup {
   enum Type {
     CG_DOMAIN = 0;
@@ -30,6 +46,7 @@ message Cgroup {
     optional float uclamp_min = 5;
     optional float uclamp_max = 6;
     optional int32 idle = 7;
+    SubtreeControl subtree_control = 8;
   }
 
   message MemoryController {
@@ -42,6 +59,7 @@ message Cgroup {
     optional int64 swap_max = 7;
     optional int64 zswap_max = 9;
     optional int32 zswap_writeback = 10;
+    SubtreeControl subtree_control = 11;
   }
 
   message CpusetController {
@@ -54,15 +72,18 @@ message Cgroup {
     optional string mems = 2;
     optional string cpus_exclusive = 3;
     optional Partition partition = 4;
+    SubtreeControl subtree_control = 5;
   }
 
   message IOController {
     optional int32 weight = 1;
     optional string max = 2;
-  }
+    SubtreeControl subtree_control = 3;
+ }
 
   message PIDController {
     optional int32 max = 1;   // Omitted means "max"
+    SubtreeControl subtree_control = 2;
   }
 
   message RDMAController {
@@ -72,6 +93,7 @@ message Cgroup {
       optional int64 hca_object = 3;
     }
     repeated Device device = 1;
+    SubtreeControl subtree_control = 2;
   }
 
   Type type = 1;
@@ -82,4 +104,9 @@ message Cgroup {
   IOController io = 6;
   PIDController pid = 7;
   RDMAController rdma = 8;
+}
+
+message CgroupAssignment {
+    string compute = 1;
+    repeated Cgroup cgroups = 2;
 }

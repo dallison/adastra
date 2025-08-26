@@ -36,7 +36,7 @@ public:
                                     int exit_status, int term_signal);
   absl::Status SendConnectEvent();
 
-  absl::Status SendOutputEvent(const std::string &process_id, int fd,
+  absl::Status SendOutputEvent(const std::string& name, const std::string &process_id, int fd,
                                const char *data, size_t len);
   absl::Status SendParameterUpdateEvent(const std::string &name,
                                         const parameters::Value &value);
@@ -131,6 +131,9 @@ private:
   void HandleKillCgroup(const control::KillCgroupRequest &req,
                         control::KillCgroupResponse *response,
                         co::Coroutine *c);
+  void ListCgroups(const control::ListCgroupsRequest &req,
+                   control::ListCgroupsResponse *response,
+                   co::Coroutine *c);
   void HandleSetParameter(const control::SetParameterRequest &req,
                           control::SetParameterResponse *response,
                           co::Coroutine *c);

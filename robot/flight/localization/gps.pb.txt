@@ -1,6 +1,6 @@
 subsystem {
   name: "gps"
-  
+
    module {
     name: "gps"
     zygote: "standard_zygote"

@@ -34,8 +34,8 @@ public:
                                         const parameters::Value &value);
 
   absl::Status SendParameterDeleteEvent(const std::string &name);
-  absl::Status
-  SendTelemetryEvent(const adastra::proto::TelemetryEvent &event);
+  absl::Status SendTelemetryEvent(const adastra::proto::TelemetryEvent &event);
+  absl::Status SendOutputEvent(std::shared_ptr<adastra::proto::Event> event);
 
   co::CoroutineScheduler &GetScheduler() const override;
 
@@ -67,6 +67,9 @@ private:
   void HandleRemoveCompute(const proto::RemoveComputeRequest &req,
                            proto::RemoveComputeResponse *response,
                            co::Coroutine *c);
+  void HandleListComputes(const proto::ListComputesRequest &req,
+                          proto::ListComputesResponse *response,
+                          co::Coroutine *c);
 
   void HandleAddSubsystem(const proto::AddSubsystemRequest &req,
                           proto::AddSubsystemResponse *response,
@@ -121,8 +124,8 @@ private:
                           proto::SetParameterResponse *response,
                           co::Coroutine *c);
   void HandleDeleteParameters(const proto::DeleteParametersRequest &req,
-                             proto::DeleteParametersResponse *response,
-                             co::Coroutine *c);
+                              proto::DeleteParametersResponse *response,
+                              co::Coroutine *c);
   void HandleUploadParameters(const proto::UploadParametersRequest &req,
                               proto::UploadParametersResponse *response,
                               co::Coroutine *c);
@@ -132,6 +135,13 @@ private:
   void HandleGetParameters(const proto::GetParametersRequest &req,
                            proto::GetParametersResponse *response,
                            co::Coroutine *c);
+  void HandleAddCgroup(const proto::AddCgroupRequest &req,
+                       proto::AddCgroupResponse *response, co::Coroutine *c);
+  void HandleRemoveCgroups(const proto::RemoveCgroupsRequest &req,
+                           proto::RemoveCgroupsResponse *response,
+                           co::Coroutine *c);
+  void HandleGetCgroups(const proto::GetCgroupsRequest &req,
+                        proto::GetCgroupsResponse *response, co::Coroutine *c);
   Capcom &capcom_;
   uint32_t id_;
 };
