@@ -98,7 +98,9 @@ using ZerosPublisher =
 // type wrapper around the Module's template functions.
 class ROSModule : public virtual Module {
 public:
-  ROSModule() = default;
+  // Not '= default': GCC deletes a defaulted constructor here because the
+  // virtual base Module has no default constructor.
+  ROSModule() {}
 
   template <typename MessageType,
             typename = std::enable_if_t<

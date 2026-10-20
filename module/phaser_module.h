@@ -55,7 +55,9 @@ using PhaserPublisher =
 
 class PhaserModule : public virtual Module {
 public:
-  PhaserModule() = default;
+  // Not '= default': GCC deletes a defaulted constructor here because the
+  // virtual base Module has no default constructor.
+  PhaserModule() {}
 
   template <typename MessageType>
   absl::StatusOr<std::shared_ptr<PhaserSubscriber<MessageType>>>

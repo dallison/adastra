@@ -43,16 +43,17 @@ archive_override(
     urls = ["https://github.com/dallison/retro/archive/refs/tags/1.1.0.tar.gz"],
 )
 
-# neutron 1.0.3 predates Bazel 9 and the BCR versions of toolbelt; the patch
+# neutron predates Bazel 9 and the BCR versions of toolbelt; the patch
 # replaces its MODULE.bazel and adds the rule loads that Bazel 9 requires.
+# Pinned to the untagged commit after 1.0.3 that makes it build with GCC.
 bazel_dep(name = "neutron", version = "1.0.3")
 archive_override(
     module_name = "neutron",
-    integrity = "sha256-XNpB6mZSbpctyRSLXNMgw7KroXLplZdQzTZRs+LwzG8=",
+    integrity = "sha256-JsRcQoNJ72KyBWe4Auph41iiwLY60r38HvJ9MMEGLp4=",
     patch_strip = 1,
     patches = ["//patches:neutron_bazel9.patch"],
-    strip_prefix = "neutron-1.0.3",
-    urls = ["https://github.com/dallison/neutron/archive/refs/tags/1.0.3.tar.gz"],
+    strip_prefix = "neutron-0a47950f0325c65c2fc5aea7f087d5e608209166",
+    urls = ["https://github.com/dallison/neutron/archive/0a47950f0325c65c2fc5aea7f087d5e608209166.tar.gz"],
 )
 
 # For local debugging of any of the above, replace the override with e.g.:
