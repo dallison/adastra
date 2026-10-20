@@ -15,7 +15,7 @@
 #include "common/stream.h"
 #include "common/tcp_client.h"
 #include "common/vars.h"
-#include "coroutine.h"
+#include "co/coroutine.h"
 #include "proto/config.pb.h"
 #include "proto/control.pb.h"
 #include "stagezero/telemetry/telemetry.h"

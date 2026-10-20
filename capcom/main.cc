@@ -5,7 +5,7 @@
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
 #include "capcom/capcom.h"
-#include "coroutine.h"
+#include "co/coroutine.h"
 
 #include <iostream>
 #include <signal.h>

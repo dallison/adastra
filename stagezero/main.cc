@@ -4,7 +4,7 @@
 
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
-#include "coroutine.h"
+#include "co/coroutine.h"
 #include "stagezero/stagezero.h"
 
 #include <iostream>

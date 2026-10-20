@@ -12,7 +12,7 @@
 #include "common/parameters.h"
 #include "common/scheduler.h"
 #include "common/stream.h"
-#include "coroutine.h"
+#include "co/coroutine.h"
 #include "proto/config.pb.h"
 #include "proto/control.pb.h"
 #include "proto/parameters.pb.h"

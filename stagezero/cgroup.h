@@ -4,7 +4,7 @@
 #include "common/cgroup.h"
 #include "toolbelt/logging.h"
 #include <string>
-#include "coroutine.h"
+#include "co/coroutine.h"
 
 namespace adastra::stagezero {
 

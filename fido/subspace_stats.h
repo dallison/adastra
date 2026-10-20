@@ -22,7 +22,7 @@ private:
     int64_t time_diff;
     int64_t bytes_diff;
     int64_t msgs_diff;
-    int32_t slot_size;
+    int64_t slot_size;
     int32_t num_slots;
     int32_t num_pubs;
     int32_t num_subs;

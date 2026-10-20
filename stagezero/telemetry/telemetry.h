@@ -4,7 +4,7 @@
 #include "absl/container/flat_hash_set.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
-#include "coroutine.h"
+#include "co/coroutine.h"
 #include "proto/telemetry.pb.h"
 #include "toolbelt/sockets.h"
 #include "toolbelt/triggerfd.h"
