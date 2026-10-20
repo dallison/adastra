@@ -30,6 +30,8 @@ cc_test(
     name = "client_test",
     size = "small",
     srcs = ["client_test.cc"],
+    # Runs a StageZero server on the fixed port 6522, as does capcom_test.
+    tags = ["exclusive"],
     data = [
         "//stagezero/zygote:standard_zygote",
         "//testdata:echo",
