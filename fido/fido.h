@@ -15,7 +15,7 @@
 #include "fido/subsystems.h"
 
 #include "absl/container/flat_hash_set.h"
-#include "coroutine.h"
+#include "co/coroutine.h"
 #include "toolbelt/sockets.h"
 
 #include <memory>

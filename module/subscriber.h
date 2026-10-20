@@ -1,7 +1,7 @@
 #pragma once
 #include "absl/types/span.h"
 #include "client/client.h"
-#include "coroutine.h"
+#include "co/coroutine.h"
 #include "google/protobuf/message.h"
 #include "toolbelt/triggerfd.h"
 

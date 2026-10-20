@@ -14,7 +14,7 @@
 #include "common/subsystem_status.h"
 #include "common/tcp_client.h"
 #include "common/vars.h"
-#include "coroutine.h"
+#include "co/coroutine.h"
 #include "proto/capcom.pb.h"
 #include "proto/config.pb.h"
 #include "proto/flight.pb.h"

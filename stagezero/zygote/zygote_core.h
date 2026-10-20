@@ -6,7 +6,7 @@
 
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
-#include "coroutine.h"
+#include "co/coroutine.h"
 #include "proto/config.pb.h"
 #include "proto/control.pb.h"
 #include "stagezero/symbols.h"

@@ -3,6 +3,7 @@
 #include "client/client.h"
 #include "google/protobuf/message.h"
 #include <tuple>
+#include <type_traits>
 
 namespace adastra::module {
 
@@ -35,7 +36,7 @@ public:
     case 0:
       return std::get<0>(msg_).get();
     case 1:
-      return std::get<1>(msg_).get();
+      return SlotPtr();
     }
     return nullptr;
   }
@@ -45,7 +46,7 @@ public:
     case 0:
       return std::get<0>(msg_).get();
     case 1:
-      return std::get<1>(msg_).get();
+      return SlotPtr();
     default:
       return nullptr;
     }
@@ -56,7 +57,7 @@ public:
     case 0:
       return *std::get<0>(msg_);
     case 1:
-      return *std::get<1>(msg_);
+      return *SlotPtr();
     }
   }
 
@@ -65,7 +66,7 @@ public:
     case 0:
       return *std::get<0>(msg_);
     case 1:
-      return *std::get<1>(msg_);
+      return *SlotPtr();
     default:
       abort();
     }
@@ -76,7 +77,7 @@ public:
     case 0:
       return std::get<0>(msg_).get();
     case 1:
-      return std::get<1>(msg_).get();
+      return SlotPtr();
     }
     return nullptr;
   }
@@ -95,7 +96,7 @@ public:
     case 0:
       return std::get<0>(msg_).get() == nullptr;
     case 1:
-      return std::get<1>(msg_).get() == nullptr;
+      return SlotPtr() == nullptr;
     }
     return false;
   }
@@ -124,6 +125,17 @@ public:
 
 private:
   template <typename T> friend class WeakMessage;
+
+  // Subspace can only alias a standard-layout type directly onto the slot
+  // buffer.  Other types are only reachable through the std::shared_ptr.
+  MessageType *SlotPtr() const {
+    if constexpr (std::is_standard_layout_v<MessageType>) {
+      return std::get<1>(msg_).get();
+    } else {
+      return nullptr;
+    }
+  }
+
   std::tuple<std::shared_ptr<MessageType>, subspace::shared_ptr<MessageType>>
       msg_;
   int index_ = -1;
