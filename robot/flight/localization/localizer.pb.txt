@@ -1,6 +1,6 @@
 subsystem {
   name: "localizer"
-  
+
    module {
     name: "localizer"
     zygote: "standard_zygote"

@@ -109,6 +109,10 @@ absl::Status ClientHandler::HandleMessage(const control::Request &req,
     HandleKillCgroup(req.kill_cgroup(), resp.mutable_kill_cgroup(), c);
     break;
 
+  case control::Request::kListCgroups:
+    ListCgroups(req.list_cgroups(), resp.mutable_list_cgroups(), c);
+    break;
+
   case control::Request::kSetParameter:
     HandleSetParameter(req.set_parameter(), resp.mutable_set_parameter(), c);
     break;
@@ -167,7 +171,6 @@ void ClientHandler::HandleLaunchStaticProcess(
     }
     return;
   }
-  std::cerr << "Starting process " << proc->Name() << std::endl;
   absl::Status status = proc->Start(c);
   if (!status.ok()) {
     response->set_error(status.ToString());
@@ -232,8 +235,6 @@ void ClientHandler::HandleLaunchVirtualProcess(
       response->set_error(
           absl::StrFormat("Failed to send start event for process %s: %s",
                           existing->GetId(), status.ToString()));
-      std::cerr << "Failed to send start event for process "
-                << existing->GetId() << ": " << status << std::endl;
     }
     return;
   }
@@ -331,7 +332,8 @@ absl::Status ClientHandler::SendProcessStopEvent(const std::string &process_id,
   return QueueEvent(std::move(event));
 }
 
-absl::Status ClientHandler::SendOutputEvent(const std::string &process_id,
+absl::Status ClientHandler::SendOutputEvent(const std::string& name,
+  const std::string &process_id,
                                             int fd, const char *data,
                                             size_t len) {
   if ((event_mask_ & kOutputEvents) == 0) {
@@ -342,6 +344,7 @@ absl::Status ClientHandler::SendOutputEvent(const std::string &process_id,
   output->set_process_id(process_id);
   output->set_data(data, len);
   output->set_fd(fd);
+  output->set_name(name);
   return QueueEvent(std::move(event));
 }
 
@@ -423,7 +426,6 @@ void ClientHandler::TryRemoveProcess(std::shared_ptr<Process> proc) {
 void ClientHandler::HandleSetGlobalVariable(
     const control::SetGlobalVariableRequest &req,
     control::SetGlobalVariableResponse *response, co::Coroutine *c) {
-      std::cerr << "Setting global variable " << req.name() << " to " << req.value() << std::endl;
   stagezero_.global_symbols_.AddSymbol(req.name(), req.value(), req.exported());
 }
 
@@ -458,11 +460,11 @@ void ClientHandler::HandleAddCgroup(const control::AddCgroupRequest &req,
 
   if (!stagezero_.AddCgroup(req.cgroup().name(), cgroup)) {
     response->set_error(absl::StrFormat(
-        "Failed to add cgroup %s as it already exists", req.cgroup().name()));
+        "Failed to add cgroup '%s' as it already exists", req.cgroup().name()));
     return;
   }
-  if (absl::Status status = stagezero_.RegisterCgroup(cgroup); !status.ok()) {
-    response->set_error(absl::StrFormat("Failed to register cgroup %s: %s",
+  if (absl::Status status = stagezero_.RegisterCgroup(cgroup, c); !status.ok()) {
+    response->set_error(absl::StrFormat("Failed to register cgroup '%s': %s",
                                         req.cgroup().name(),
                                         status.ToString()));
   }
@@ -488,7 +490,7 @@ void ClientHandler::HandleFreezeCgroup(const control::FreezeCgroupRequest &req,
                                        control::FreezeCgroupResponse *response,
                                        co::Coroutine *c) {
   if (absl::Status status =
-          adastra::stagezero::FreezeCgroup(req.cgroup(), GetLogger());
+          adastra::stagezero::FreezeCgroup(req.cgroup(), stagezero_.cgroup_root_dir_, GetLogger());
       !status.ok()) {
     response->set_error(absl::StrFormat("Failed to freeze cgroup %s: %s",
                                         req.cgroup(), status.ToString()));
@@ -500,7 +502,7 @@ void ClientHandler::HandleThawCgroup(const control::ThawCgroupRequest &req,
                                      co::Coroutine *c) {
 
   if (absl::Status status =
-          adastra::stagezero::ThawCgroup(req.cgroup(), GetLogger());
+          adastra::stagezero::ThawCgroup(req.cgroup(), stagezero_.cgroup_root_dir_, GetLogger());
       !status.ok()) {
     response->set_error(absl::StrFormat("Failed to freeze cgroup %s: %s",
                                         req.cgroup(), status.ToString()));
@@ -511,11 +513,20 @@ void ClientHandler::HandleKillCgroup(const control::KillCgroupRequest &req,
                                      control::KillCgroupResponse *response,
                                      co::Coroutine *c) {
   if (absl::Status status =
-          adastra::stagezero::KillCgroup(req.cgroup(), GetLogger());
+          adastra::stagezero::KillCgroup(req.cgroup(), stagezero_.cgroup_root_dir_, GetLogger());
       !status.ok()) {
     response->set_error(absl::StrFormat("Failed to freeze cgroup %s: %s",
                                         req.cgroup(), status.ToString()));
   }
+}
+
+void ClientHandler::ListCgroups(const control::ListCgroupsRequest &req,
+                                 control::ListCgroupsResponse *response,
+                                 co::Coroutine *c) {
+    stagezero_.ListCgroups([response](const Cgroup& cgroup) {
+        auto c = response->add_cgroups();
+        cgroup.ToProto(c);
+    });
 }
 
 void ClientHandler::HandleSetParameter(const control::SetParameterRequest &req,

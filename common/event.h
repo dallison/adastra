@@ -44,6 +44,7 @@ struct Output {
   std::string process_id;
   std::string data;
   int fd;
+  std::string name;
 };
 
 struct Event {
@@ -72,6 +73,7 @@ struct Event {
     case EventType::kTelemetry:
       return (mask & kTelemetryEvents) != 0;
     }
+    return false;
   }
 };
 

@@ -4,21 +4,22 @@
 
 #include "capcom/capcom.h"
 #include "toolbelt/clock.h"
+#include "absl/strings/str_split.h"
 
 namespace adastra::capcom {
 
 Capcom::Capcom(co::CoroutineScheduler &scheduler, toolbelt::InetAddress addr,
                bool log_to_output, int local_stagezero_port,
                std::string log_file_name, std::string log_level, bool test_mode,
-               int notify_fd)
+               int notify_fd, bool log_process_output)
     : co_scheduler_(scheduler), addr_(std::move(addr)),
       log_to_output_(log_to_output), test_mode_(test_mode),
-      notify_fd_(notify_fd), logger_("capcom", log_to_output) {
+      notify_fd_(notify_fd), logger_("capcom", log_to_output),
+      log_process_output_(log_process_output) {
   logger_.SetLogLevel(log_level);
   Compute lc = {.name = "<localhost>",
                 .addr =
                     toolbelt::InetAddress("localhost", local_stagezero_port)};
-  std::cerr << "local compute: " << lc.addr.ToString() << std::endl;
   local_compute_ = std::make_shared<Compute>(lc);
 
   // Create the log message pipe.
@@ -141,14 +142,14 @@ absl::Status Capcom::ConnectUmbilical(const std::string &compute,
     return absl::InternalError(
         absl::StrFormat("No umbilical found for compute %s", compute));
   }
-  
+
   bool was_closed = umbilical->Precondition();
   if (!was_closed) {
     // Already connecting or connected.
     return absl::OkStatus();
   }
-  std::cerr << "Connecting capcom umbilical to " << compute << std::endl;
   if (absl::Status status = umbilical->Connect(kNoEvents, c); !status.ok()) {
+    umbilical->Fail();
     return status;
   }
 
@@ -162,6 +163,7 @@ absl::Status Capcom::ConnectUmbilical(const std::string &compute,
   if (absl::Status add_status = RegisterComputeCgroups(
           umbilical->GetClient(), umbilical->GetCompute(), nullptr);
       !add_status.ok()) {
+    umbilical->Disconnect();
     return absl::InternalError(absl::StrFormat(
         "Failed to add cgroup to compute %s: %s",
         umbilical->GetCompute()->name.c_str(), add_status.ToString().c_str()));
@@ -175,6 +177,7 @@ absl::Status Capcom::ConnectUmbilical(const std::string &compute,
     // connected, delete them.
     if (absl::Status s = umbilical->GetClient()->DeleteParameters({}, nullptr);
         !s.ok()) {
+      umbilical->Disconnect();
       return absl::InternalError(absl::StrFormat(
           "Failed to delete parameters from compute %s: %s",
           umbilical->GetCompute()->name.c_str(), s.ToString().c_str()));
@@ -184,22 +187,46 @@ absl::Status Capcom::ConnectUmbilical(const std::string &compute,
   if (absl::Status status =
           umbilical->GetClient()->UploadParameters(parameters, nullptr);
       !status.ok()) {
+    umbilical->Disconnect();
     return absl::InternalError(absl::StrFormat(
         "Failed to upload parameters to compute %s: %s",
         umbilical->GetCompute()->name.c_str(), status.ToString().c_str()));
   }
 
   // Add all global symbols to stagezero.
-  for (auto & [ name, sym ] : global_symbols_.GetSymbols()) {
+  for (auto &[name, sym] : global_symbols_.GetSymbols()) {
     if (absl::Status status = umbilical->GetClient()->SetGlobalVariable(
             sym->Name(), sym->Value(), sym->Exported(), nullptr);
         !status.ok()) {
+      umbilical->Disconnect();
       return absl::InternalError(absl::StrFormat(
           "Failed to set global variable %s on %s: %s", sym->Name().c_str(),
           umbilical->GetCompute()->name.c_str(), status.ToString().c_str()));
     }
   }
   return absl::OkStatus();
+}
+
+void Capcom::DisconnectUmbilical(const std::string &compute,
+                                 bool dynamic_only) {
+
+  auto it = stagezero_umbilicals_.find(compute);
+  if (it == stagezero_umbilicals_.end()) {
+    return;
+  }
+
+  Umbilical &umbilical = it->second;
+  if (absl::Status add_status = RemoveComputeCgroups(
+          umbilical.GetClient(), umbilical.GetCompute(), nullptr);
+      !add_status.ok()) {
+    umbilical.Disconnect();
+    logger_.Log(toolbelt::LogLevel::kError,
+                "Failed to remove cgroup from compute %s: %s",
+                umbilical.GetCompute()->name.c_str(),
+                add_status.ToString().c_str());
+  }
+
+  umbilical.Disconnect(dynamic_only);
 }
 
 void Capcom::LoggerCoroutine(co::Coroutine *c) {
@@ -241,7 +268,7 @@ void Capcom::FlushLogs() {
     }
   }
 
-  for (auto & [ timestamp, msg ] : log_buffer_) {
+  for (auto &[timestamp, msg] : log_buffer_) {
     toolbelt::LogLevel level;
     switch (msg->level()) {
     case adastra::proto::LogMessage::LOG_VERBOSE:
@@ -343,12 +370,12 @@ absl::Status Capcom::Run() {
       "Log Flusher"));
 
   // Start the listener coroutine.
-  coroutines_.insert(
-      std::make_unique<co::Coroutine>(co_scheduler_,
-                                      [this, &listen_socket](co::Coroutine *c) {
-                                        ListenerCoroutine(listen_socket, c);
-                                      },
-                                      "Listener Socket"));
+  coroutines_.insert(std::make_unique<co::Coroutine>(
+      co_scheduler_,
+      [this, &listen_socket](co::Coroutine *c) {
+        ListenerCoroutine(listen_socket, c);
+      },
+      "Listener Socket"));
 
   // Run the coroutine main loop.
   co_scheduler_.Run();
@@ -404,6 +431,67 @@ void Capcom::SendParameterDeleteEvent(const std::vector<std::string> &names) {
   }
 }
 
+void Capcom::SendOutputEvent(int fd, const std::string &name,
+                             const std::string &process_id,
+                             const std::string &data) {
+  auto event = std::make_shared<adastra::proto::Event>();
+  auto output = event->mutable_output();
+  output->set_process_id(process_id);
+  output->set_data(data);
+  output->set_fd(fd);
+  output->set_name(name);
+  for (auto &handler : client_handlers_) {
+    if (absl::Status status = handler->SendOutputEvent(event); !status.ok()) {
+      logger_.Log(toolbelt::LogLevel::kError,
+                  "Failed to send output event to client %s: %s",
+                  handler->GetClientName().c_str(), status.ToString().c_str());
+    }
+  }
+
+  if (!log_process_output_) {
+    // If we are not logging process output, we are done.
+    return;
+  }
+
+  // If the output contains escape sequences it's probably already a log message
+  // from a process that uses the logger.  In this case we don't want to nest
+  // this as our own log messages so we just output it directly to the
+  // appropriate stream.
+  std::ostream *output_stream = (fd == STDERR_FILENO) ? &std::cerr : &std::cout;
+
+  // Split the output in to lines and log each line separately.
+  std::vector<std::string> lines = absl::StrSplit(data, '\n');
+  for (auto &line : lines) {
+    bool has_escapes = line.find('\x1b') != std::string::npos;
+    if (has_escapes) {
+      *output_stream << line << std::endl;
+    } else {
+      // Format the output as a log message and send it to the logger.
+      while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) {
+        // Remove trailing newline or CR.
+        line.pop_back();
+      }
+      if (line.empty()) {
+        // If the line is empty, skip it.
+        continue;
+      }
+      LogMessage log = {.source = name,
+                        .level = fd == STDERR_FILENO ? toolbelt::LogLevel::kError
+                                                     : toolbelt::LogLevel::kInfo,
+                        .text = line};
+
+      struct timespec now_ts;
+      clock_gettime(CLOCK_REALTIME, &now_ts);
+      uint64_t now_ns = now_ts.tv_sec * 1000000000LL + now_ts.tv_nsec;
+      log.timestamp = now_ns;
+
+      adastra::proto::LogMessage proto_msg;
+      log.ToProto(&proto_msg);
+      this->Log(proto_msg);
+    }
+  }
+}
+
 void Capcom::SendTelemetryEvent(
     const std::string &subsystem,
     const adastra::stagezero::control::TelemetryEvent &event) {
@@ -455,7 +543,7 @@ absl::Status Capcom::Abort(const std::string &reason, bool emergency,
 
   emergency_aborting_ = emergency;
 
-  for (auto & [ name, subsys ] : subsystems_) {
+  for (auto &[name, subsys] : subsystems_) {
     if (subsys->IsCritical()) {
       continue;
     }
@@ -471,7 +559,7 @@ absl::Status Capcom::Abort(const std::string &reason, bool emergency,
   // get notified that their process has died and will attempt to restart it.
   for (;;) {
     bool all_offline = true;
-    for (auto & [ name, subsys ] : subsystems_) {
+    for (auto &[name, subsys] : subsystems_) {
       if (!subsys->IsCritical() && !subsys->IsOffline()) {
         all_offline = false;
         break;
@@ -485,7 +573,7 @@ absl::Status Capcom::Abort(const std::string &reason, bool emergency,
 
   // Now tell all computes (the stagezero running on them) to kill
   // all the processes.
-  for (auto & [ _, umbilical ] : stagezero_umbilicals_) {
+  for (auto &[_, umbilical] : stagezero_umbilicals_) {
     if (!umbilical.IsConnected()) {
       continue;
     }
@@ -522,7 +610,7 @@ absl::Status Capcom::Abort(const std::string &reason, bool emergency,
 absl::Status Capcom::AddGlobalVariable(const Variable &var, co::Coroutine *c) {
   global_symbols_.AddSymbol(var.name, var.value, var.exported);
   // Send the global variable to all the stagezeros.
-  for (auto & [ _, umbilical ] : stagezero_umbilicals_) {
+  for (auto &[_, umbilical] : stagezero_umbilicals_) {
     if (!umbilical.IsConnected()) {
       continue;
     }
@@ -543,7 +631,7 @@ absl::Status Capcom::PropagateParameterUpdate(const std::string &name,
                                               co::Coroutine *c) {
   absl::Status result = absl::OkStatus();
 
-  for (auto & [ _, umbilical ] : stagezero_umbilicals_) {
+  for (auto &[_, umbilical] : stagezero_umbilicals_) {
     if (!umbilical.IsConnected()) {
       continue;
     }
@@ -565,7 +653,7 @@ Capcom::PropagateParameterDelete(const std::vector<std::string> &names,
 
   absl::Status result = absl::OkStatus();
 
-  for (auto & [ _, umbilical ] : stagezero_umbilicals_) {
+  for (auto &[_, umbilical] : stagezero_umbilicals_) {
     if (!umbilical.IsConnected()) {
       continue;
     }
@@ -684,8 +772,56 @@ absl::Status
 Capcom::RegisterComputeCgroups(std::shared_ptr<stagezero::Client> client,
                                std::shared_ptr<Compute> compute,
                                co::Coroutine *c) {
-  for (auto &cgroup : compute->cgroups) {
-    if (absl::Status status = client->RegisterCgroup(cgroup, c); !status.ok()) {
+   // Get the current cgroups on the compute.
+    absl::StatusOr<std::vector<Cgroup>> existing_cgroups = client->ListCgroups();
+    if (!existing_cgroups.ok()) {
+        return absl::InternalError(absl::StrFormat(
+            "Failed to list cgroups on compute %s: %s", compute->name,
+            existing_cgroups.status().ToString()));
+    }
+    // If there are cgroups, remove any that are not in the list of cgroups in the compute
+    // configuration.
+    for (auto& cgroup : *existing_cgroups) {
+        auto cg = compute->FindCgroup(cgroup.name);
+        if (cg != nullptr) {
+            // Cgroup is know, but if it's not the same as the one we have, remove it.
+            if (*cg == cgroup) {
+                continue;
+            }
+        }
+        // Remove the cgroup but don't worry if it fails.
+        client->RemoveCgroup(cgroup.name).IgnoreError();
+    }
+
+    // Now add all the cgroups that are not already there.
+    // These are ordered by name so that the parents are created
+    // before the children.
+    for (auto& [name, cgroup] : compute->cgroups) {
+        bool cgroup_present = false;
+        for (auto& cg : *existing_cgroups) {
+            if (cg.name == name) {
+                cgroup_present = true;
+                break;
+            }
+        }
+        if (cgroup_present) {
+            continue;
+        }
+        if (auto status = client->RegisterCgroup(*cgroup, nullptr);
+            !status.ok()) {
+            return status;
+        }
+    }
+  return absl::OkStatus();
+}
+
+absl::Status
+Capcom::RemoveComputeCgroups(std::shared_ptr<stagezero::Client> client,
+                             std::shared_ptr<Compute> compute,
+                             co::Coroutine *c) {
+  for (auto &[name, cgroup] : compute->cgroups) {
+    if (absl::Status status = client->RemoveCgroup(cgroup->name, c);
+        !status.ok()) {
       return status;
     }
   }
@@ -694,9 +830,9 @@ Capcom::RegisterComputeCgroups(std::shared_ptr<stagezero::Client> client,
 
 static const Cgroup *FindCgroup(const Compute &comp,
                                 const std::string &cgroup) {
-  for (auto &cg : comp.cgroups) {
-    if (cg.name == cgroup) {
-      return &cg;
+  for (auto &[name, cg] : comp.cgroups) {
+    if (cg->name == cgroup) {
+      return cg.get();
     }
   }
   return nullptr;
@@ -796,5 +932,111 @@ Capcom::SendTelemetryCommand(const proto::SendTelemetryCommandRequest &req,
     return absl::InternalError(absl::StrFormat(
         "Unknown telemetry command destination %d", req.dest_case()));
   }
+}
+
+absl::Status Capcom::AddCgroup(
+        const std::string& compute_name,
+        const Cgroup& cgroup,
+        co::Coroutine* c) {
+    auto comp = FindCompute(compute_name);
+    if (comp == nullptr) {
+        return absl::InternalError(absl::StrFormat("No such compute %s", compute_name));
+    }
+    auto cg = comp->FindCgroup(cgroup.name);
+    if (cg == nullptr) {
+      if (auto status = comp->AddCgroup(std::make_shared<Cgroup>(cgroup));
+          !status.ok()) {
+        return status;  // Error adding cgroup to compute.
+      }
+    } else {
+        return absl::InternalError(absl::StrFormat(
+                "Cgroup %s already exists on compute %s", cgroup.name, compute_name));
+    }
+    // If the umbilical is connected we need to send the cgroup to stagezero.
+    // If it already exists, we need to delete it first.
+    // If the umbilical is not connected, we don't do anything since we will send
+    // the cgroups when we connect.
+    auto umbilical = FindUmbilical(compute_name);
+    if (umbilical == nullptr || umbilical->GetClient() == nullptr
+        || !umbilical->GetClient()->IsConnected()) {
+        return absl::OkStatus();
+    }
+    return umbilical->GetClient()->RegisterCgroup(*cg, c);
+}
+
+absl::Status Capcom::RemoveCgroup(
+        const std::string& compute_name,
+        const std::string& cgroup_name,
+        co::Coroutine* c) {
+    if (compute_name.empty()) {
+        // Remove all cgroups from all computes.
+        for (auto& [cname, compute] : computes_) {
+            if (auto status = RemoveCgroup(cname, cgroup_name, c); !status.ok()) {
+                return status;
+            }
+        }
+        return absl::OkStatus();
+    }
+
+    auto comp = FindCompute(compute_name);
+    if (comp == nullptr) {
+        return absl::InternalError(absl::StrFormat("No such compute %s", compute_name));
+    }
+    if (auto status = comp->RemoveCgroup(cgroup_name); !status.ok()) {
+        return status;
+    }
+
+    auto umbilical = FindUmbilical(compute_name);
+    if (umbilical == nullptr || umbilical->GetClient() == nullptr
+        || !umbilical->GetClient()->IsConnected()) {
+        return absl::OkStatus();
+    }
+    return umbilical->GetClient()->RemoveCgroup(cgroup_name, c);
+}
+
+absl::Status Capcom::RemoveAllCgroups(const std::string& compute_name) {
+    auto comp = FindCompute(compute_name);
+    if (comp == nullptr) {
+        return absl::InternalError(absl::StrFormat("No such compute %s", compute_name));
+    }
+    auto umbilical = FindUmbilical(compute_name);
+    if (umbilical == nullptr || umbilical->GetClient() == nullptr
+        || !umbilical->GetClient()->IsConnected()) {
+        comp->cgroups.clear();
+        return absl::OkStatus();
+    }
+    auto cgroups = comp->cgroups;
+    for (auto& [name, cgroup] : cgroups) {
+        if (auto status = umbilical->GetClient()->RemoveCgroup(name, nullptr); !status.ok()) {
+            return status;
+        }
+        if (auto status = comp->RemoveCgroup(name); !status.ok()) {
+            return status;
+        }
+    }
+    return absl::OkStatus();
+}
+
+std::vector<CgroupAssignment> Capcom::ListCgroupAssignments(
+        const std::string& compute_name,
+        const std::string& cgroup_name) const {
+    std::vector<CgroupAssignment> result;
+
+    for (auto& [name, compute] : computes_) {
+        if (!compute_name.empty() && compute_name != name) {
+            continue;
+        }
+        CgroupAssignment ca;
+        ca.compute = name;
+        for (auto& [name, cgroup] : compute->cgroups) {
+            if (!cgroup_name.empty() && cgroup_name != name) {
+                continue;
+            }
+            ca.cgroups.push_back(*cgroup);
+        }
+        result.push_back(std::move(ca));
+    }
+
+    return result;
 }
 } // namespace adastra::capcom

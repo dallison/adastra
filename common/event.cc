@@ -29,6 +29,7 @@ void Event::ToProto(proto::Event *dest) const {
     o->set_process_id(output.process_id);
     o->set_data(output.data);
     o->set_fd(output.fd);
+    o->set_name(output.name);
     break;
   }
   case EventType::kLog: {
@@ -79,7 +80,8 @@ absl::Status Event::FromProto(const proto::Event &src) {
   case adastra::proto::Event::kOutput: {
     Output output = {.process_id = src.output().process_id(),
                      .data = src.output().data(),
-                     .fd = src.output().fd()};
+                     .fd = src.output().fd(),
+                     .name = src.output().name()};
     this->event = output;
     this->type = EventType::kOutput;
     break;

@@ -1,6 +1,6 @@
 subsystem {
   name: "stereo"
-  
+
    module {
     name: "stereo_processor"
     zygote: "standard_zygote"
@@ -18,7 +18,7 @@ subsystem {
       where: LOGGER
     }
    }
-  
+
    dep: "camera"
 }
 

@@ -22,8 +22,11 @@ int main(int argc, char **argv) {
 
   std::string line;
   std::cout << "running" << std::endl;
+  std::cout.flush();
   while (std::getline(std::cin, line)) {
     std::cout << line << std::endl;
   }
+  std::cerr << "echo done" << std::endl;
   std::cout << "done" << std::endl;
+  std::cout.flush();
 }

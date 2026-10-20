@@ -1,6 +1,6 @@
 subsystem {
   name: "mapper"
-  
+
    module {
     name: "map_server"
     zygote: "standard_zygote"

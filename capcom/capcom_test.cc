@@ -164,7 +164,8 @@ public:
 
   Event WaitForState(adastra::capcom::client::Client &client,
                      std::string subsystem, AdminState admin_state,
-                     OperState oper_state) {
+                     OperState oper_state,
+                     std::stringstream *output = nullptr) {
     std::cout << "waiting for subsystem state change " << subsystem << " "
               << admin_state << " " << oper_state << std::endl;
     for (int retry = 0; retry < 30; retry++) {
@@ -186,6 +187,10 @@ public:
           std::cerr << "event OK" << std::endl;
           return *event;
         }
+      } else if (event->type == EventType::kOutput) {
+        if (output != nullptr) {
+          (*output) << std::get<2>(event->event).data;
+        }
       }
     }
     EXPECT_TRUE(false);
@@ -193,9 +198,16 @@ public:
   }
 
   std::string WaitForOutput(adastra::capcom::client::Client &client,
-                            std::string match) {
+                            std::string match,
+                            std::string *prev_output = nullptr) {
     std::cout << "waiting for output " << match << "\n";
     std::stringstream s;
+    if (prev_output != nullptr) {
+      s << *prev_output;
+    }
+    if (s.str().find(match) != std::string::npos) {
+      return s.str();
+    }
     for (int retry = 0; retry < 10; retry++) {
       absl::StatusOr<std::shared_ptr<adastra::Event>> e = client.WaitForEvent();
       std::cout << e.status().ToString() << "\n";
@@ -250,7 +262,7 @@ public:
       std::shared_ptr<adastra::Event> event = *e;
       std::cerr << "event: " << (int)event->type << std::endl;
       if (event->type == adastra::EventType::kParameterUpdate) {
-        const adastra::parameters::Parameter& p = std::get<4>(event->event);
+        const adastra::parameters::Parameter &p = std::get<4>(event->event);
         std::cerr << "update parameter: " << p.name << " " << p.value
                   << std::endl;
         if (p.name == name && p.value == v) {
@@ -308,6 +320,10 @@ public:
                  std::string process, int fd, std::string s) {
     absl::Status status = client.SendInput(subsystem, process, fd, s);
     ASSERT_TRUE(status.ok());
+  }
+
+  static void ResetCapcom() {
+    capcom_->ResetForTest();
   }
 
   static const toolbelt::InetAddress &CapcomAddr() { return capcom_addr_; }
@@ -1939,9 +1955,7 @@ TEST_F(CapcomTest, TalkAndListen) {
       "subspace",
       {.static_processes = {{
            .name = "subspace_server",
-           .executable = "${runfiles_dir}/_main/external/"
-                         "_main~_repo_rules~subspace/server/"
-                         "subspace_server",
+           .executable = "${runfiles_dir}/+_repo_rules+subspace/server/subspace_server",
            .args = {"--notify_fd=${notify_fd}"},
            .notify = true,
        }},
@@ -2029,6 +2043,70 @@ TEST_F(CapcomTest, InteractiveEcho) {
   adastra::capcom::client::Client client2(ClientMode::kNonBlocking);
   InitClient(client2, "foobar1");
   status = client2.RemoveSubsystem("echo", false);
+  std::cerr << "remove " << status << std::endl;
+  ASSERT_TRUE(status.ok());
+}
+
+TEST_F(CapcomTest, NonInteractiveEcho) {
+  adastra::capcom::client::Client client(ClientMode::kNonBlocking);
+  InitClient(client, "foobar1");
+
+  absl::Status status = client.AddSubsystem(
+      "echo",
+      {
+          .static_processes = {{
+              .name = "echo",
+              .executable = "${runfiles_dir}/_main/testdata/echo",
+              .notify = true,
+              .oneshot = true,
+          }},
+          .streams = {{
+                          .stream_fd = STDIN_FILENO,
+                          .tty = true,
+                          .disposition = adastra::Stream::Disposition::kClient,
+                      },
+                      {
+                          .stream_fd = STDOUT_FILENO,
+                          .tty = true,
+                          .disposition = adastra::Stream::Disposition::kClient,
+                      },
+                      {
+                          .stream_fd = STDERR_FILENO,
+                          .tty = true,
+                          .disposition = adastra::Stream::Disposition::kClient,
+                          .direction = adastra::Stream::Direction::kOutput,
+                      }},
+      });
+  ASSERT_TRUE(status.ok());
+
+  status = client.StartSubsystem("echo");
+  ASSERT_TRUE(status.ok());
+
+  std::stringstream current_output;
+  WaitForState(client, "echo", AdminState::kOnline, OperState::kOnline,
+               &current_output);
+
+  std::cerr << "waiting for output\n";
+  std::string currout = current_output.str();
+  std::string data = WaitForOutput(client, "running", &currout);
+  std::cout << "output: " << data;
+
+  // Send a string to the echo program and check that it's echoed.
+  SendInput(client, "echo", "echo", STDIN_FILENO, "testing\n");
+  data = WaitForOutput(client, "testing");
+  std::cout << "output: " << data;
+
+  // Close the input stream.
+  status = client.CloseFd("echo", "echo", STDIN_FILENO);
+  std::cerr << "close " << status << std::endl;
+  ASSERT_TRUE(status.ok());
+
+  status = client.StopSubsystem("echo");
+  ASSERT_TRUE(status.ok());
+
+  WaitForState(client, "echo", AdminState::kOffline, OperState::kOffline);
+
+  status = client.RemoveSubsystem("echo", false);
   std::cerr << "remove " << status << std::endl;
   ASSERT_TRUE(status.ok());
 }
@@ -2188,6 +2266,145 @@ TEST_F(CapcomTest, CgroupOps) {
 
   status = client.RemoveCompute("compute1");
   ASSERT_TRUE(status.ok());
+}
+
+static adastra::Cgroup CreateBasicRootCgroup() {
+    auto rootCpuset = std::make_shared<adastra::CgroupCpusetController>();
+    rootCpuset->subtree_control = adastra::SubtreeControl::kEnable;
+
+    auto rootCpu = std::make_shared<adastra::CgroupCpuController>();
+    rootCpu->subtree_control = adastra::SubtreeControl::kEnable;
+
+    auto rootMem = std::make_shared<adastra::CgroupMemoryController>();
+    rootMem->subtree_control = adastra::SubtreeControl::kEnable;
+
+    return adastra::Cgroup{.name = "", .cpuset = rootCpuset, .cpu = rootCpu, .memory = rootMem};
+}
+
+
+TEST_F(CapcomTest, CgroupDynamic) {
+    ResetCapcom();
+    adastra::capcom::client::Client client(ClientMode::kBlocking);
+    InitClient(client, "foobar1");
+
+    adastra::Cgroup cgroup = {
+            .type = adastra::CgroupType::kDomain,
+            .name = "test",
+    };
+
+    auto cpuset = std::make_unique<adastra::CgroupCpusetController>();
+    cpuset->cpus = "0-1";
+    cpuset->mems = "0";
+    cpuset->cpus_exclusive = "foo";
+    cpuset->partition = adastra::CgroupCpusetController::Partition::kMember;
+    cgroup.cpuset = std::move(cpuset);
+
+    // Add a single compute with a cgroup called test.
+    auto status = client.AddCompute(
+            "compute1",
+            toolbelt::InetAddress("localhost", 6522),
+            adastra::capcom::client::ComputeConnectionPolicy::kDynamic);
+    ASSERT_TRUE(status.ok());
+
+    // Must configure the root cgroup before any children
+    status = client.AddCgroup("compute1", CreateBasicRootCgroup());
+    ASSERT_TRUE(status.ok());
+
+    status = client.AddCgroup("compute1", cgroup);
+    ASSERT_TRUE(status.ok());
+
+    // Negative test (duplicate)
+    status = client.AddCgroup("compute1", cgroup);
+    ASSERT_FALSE(status.ok());
+
+    status = client.AddSubsystem(
+            "foobar1",
+            {.static_processes = {{
+                     .name = "loop",
+                     .executable = "${runfiles_dir}/_main/testdata/loop",
+                     .compute = "compute1",
+                     .cgroup = "test",
+             }}});
+    ASSERT_TRUE(status.ok());
+
+    // Another cgroup.
+    adastra::Cgroup cgroup2 = {
+            .type = adastra::CgroupType::kDomain,
+            .name = "test2",
+    };
+    auto cpuset2 = std::make_unique<adastra::CgroupCpusetController>();
+    cpuset2->cpus = "0-1";
+    cpuset2->mems = "0";
+    cpuset2->cpus_exclusive = "foo";
+    cpuset2->partition = adastra::CgroupCpusetController::Partition::kMember;
+    cgroup2.cpuset = std::move(cpuset2);
+
+    status = client.AddCgroup("compute1", cgroup2);
+    ASSERT_TRUE(status.ok());
+
+    {
+        absl::StatusOr<std::vector<adastra::CgroupAssignment>> assignments =
+                client.GetCgroups("compute1");
+        ASSERT_TRUE(assignments.ok());
+        ASSERT_EQ(1, assignments->size());
+        ASSERT_EQ("compute1", assignments->at(0).compute);
+        ASSERT_EQ(assignments->at(0).cgroups.size(), 3);
+        ASSERT_EQ("", assignments->at(0).cgroups[0].name);
+        ASSERT_EQ("test", assignments->at(0).cgroups[1].name);
+        ASSERT_EQ("test2", assignments->at(0).cgroups[2].name);
+    }
+
+    status = client.StartSubsystem("foobar1");
+    ASSERT_TRUE(status.ok());
+
+    sleep(1);
+
+    // Stop the subsystem.
+    status = client.StopSubsystem("foobar1");
+    ASSERT_TRUE(status.ok());
+
+    // Negative test
+    status = client.RemoveCgroup("compute1", "badtest");
+    ASSERT_FALSE(status.ok());
+
+    // Remove the cgroup from the compute.
+    status = client.RemoveCgroup("compute1", "test");
+    ASSERT_TRUE(status.ok());
+
+    {
+        absl::StatusOr<std::vector<adastra::CgroupAssignment>> assignments = client.GetCgroups();
+        ASSERT_TRUE(assignments.ok());
+        ASSERT_EQ(1, assignments->size());
+        ASSERT_EQ("compute1", assignments->at(0).compute);
+        ASSERT_EQ(2, assignments->at(0).cgroups.size());
+        ASSERT_EQ("", assignments->at(0).cgroups[0].name);
+        ASSERT_EQ("test2", assignments->at(0).cgroups[1].name);
+    }
+
+    status = client.RemoveCgroup("compute1", "test2");
+    ASSERT_TRUE(status.ok());
+
+    {
+        absl::StatusOr<std::vector<adastra::CgroupAssignment>> assignments = client.GetCgroups();
+        ASSERT_TRUE(assignments.ok());
+        ASSERT_EQ(1, assignments->size());
+        ASSERT_EQ("compute1", assignments->at(0).compute);
+        ASSERT_EQ(1, assignments->at(0).cgroups.size());
+        ASSERT_EQ("", assignments->at(0).cgroups[0].name);
+    }
+
+    // Remove the subsystem.
+    status = client.RemoveSubsystem("foobar1", false);
+    ASSERT_TRUE(status.ok());
+
+    status = client.RemoveCgroup("compute1", "badtest");
+    ASSERT_FALSE(status.ok());
+
+    status = client.RemoveCgroup("badcompute", "badtest");
+    ASSERT_FALSE(status.ok());
+
+    status = client.RemoveCompute("compute1");
+    ASSERT_TRUE(status.ok());
 }
 
 TEST_F(CapcomTest, Parameters) {
@@ -2473,7 +2690,7 @@ TEST_F(CapcomTest, AllParameterTypes) {
   // Print the parameters.
   for (auto &p : *params) {
     std::cerr << p.name << " = " << p.value << std::endl;
-  }  
+  }
 
   struct {
     std::string name;
