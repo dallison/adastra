@@ -59,13 +59,13 @@ void Subsystem::RunSubsystemInState(
   while (subsystem->running_) {
     std::vector<int> fds;
     for (auto & [ name, umbilical ] : umbilicals_) {
-      if (umbilical.state != UmbilicalState::kUmbilicalConnected) {
+      if (!umbilical.IsConnected()) {
         continue;
       }
-      if (!umbilical.client->GetEventFd().Valid()) {
+      if (!umbilical.GetClient()->GetEventFd().Valid()) {
         continue;
       }
-      fds.push_back(umbilical.client->GetEventFd().Fd());
+      fds.push_back(umbilical.GetClient()->GetEventFd().Fd());
     }
     fds.push_back(subsystem->interrupt_.GetPollFd().Fd());
     fds.push_back(subsystem->message_pipe_.ReadFd().Fd());
@@ -94,8 +94,8 @@ void Subsystem::RunSubsystemInState(
       // one or two clients per subsystem, most likely, so a linear
       // search is fine.
       for (auto & [ name, umbilical ] : umbilicals_) {
-        if (fd == umbilical.client->GetEventFd().Fd()) {
-          found_client = umbilical.client;
+        if (fd == umbilical.GetClient()->GetEventFd().Fd()) {
+          found_client = umbilical.GetClient();
           event_source = EventSource::kStageZero;
           break;
         }
@@ -178,12 +178,12 @@ void Subsystem::Offline(uint32_t client_id, co::Coroutine *c) {
       [subsystem, &next_state,
        client_id](EventSource event_source,
                   std::shared_ptr<stagezero::Client> stagezero_client,
-                  co::Coroutine *c) -> StateTransition {
+                  co::Coroutine *c2) -> StateTransition {
         switch (event_source) {
         case EventSource::kStageZero: {
           // Event from stagezero.
           absl::StatusOr<std::shared_ptr<adastra::stagezero::control::Event>>
-              e = stagezero_client->ReadEvent(c);
+              e = stagezero_client->ReadEvent(c2);
           if (!e.ok()) {
             subsystem->capcom_.Log(
                 subsystem->Name(), toolbelt::LogLevel::kError,
@@ -197,15 +197,16 @@ void Subsystem::Offline(uint32_t client_id, co::Coroutine *c) {
           case adastra::stagezero::control::Event::kStop:
             break;
           case adastra::stagezero::control::Event::kOutput:
-            subsystem->SendOutput(event->output().fd(), event->output().data(),
-                                  c);
+            subsystem->SendOutput(event->output().fd(), event->output().name(),
+                                  event->output().process_id(),
+                                  event->output().data(), c2);
             break;
           case adastra::stagezero::control::Event::kLog:
             subsystem->capcom_.Log(event->log());
             break;
           case adastra::stagezero::control::Event::kParameter:
             if (absl::Status status = subsystem->capcom_.HandleParameterEvent(
-                    event->parameter(), c);
+                    event->parameter(), c2);
                 !status.ok()) {
               subsystem->capcom_.Log(subsystem->Name(),
                                      toolbelt::LogLevel::kError, "%s",
@@ -234,6 +235,11 @@ void Subsystem::Offline(uint32_t client_id, co::Coroutine *c) {
           auto message = *msg;
           switch (message->code) {
           case Message::kChangeAdmin:
+            if (message->state.admin == AdminState::kOffline) {
+              // Stay offline.
+              subsystem->NotifyParents();
+              return StateTransition::kStay;
+            }
             next_state = subsystem->HandleAdminCommand(
                 *message, OperState::kStartingChildren, OperState::kOffline);
             if (next_state == OperState::kStartingChildren) {
@@ -315,14 +321,14 @@ void Subsystem::Connecting(uint32_t client_id, co::Coroutine *c) {
       [ subsystem = shared_from_this(),
         client_id ](EventSource event_source,
                     std::shared_ptr<stagezero::Client> stagezero_client,
-                    co::Coroutine * c)
+                    co::Coroutine * c2)
           ->StateTransition {
             switch (event_source) {
             case EventSource::kStageZero: {
               // Event from stagezero.
               absl::StatusOr<
                   std::shared_ptr<adastra::stagezero::control::Event>>
-                  e = stagezero_client->ReadEvent(c);
+                  e = stagezero_client->ReadEvent(c2);
               if (!e.ok()) {
                 subsystem->capcom_.Log(
                     subsystem->Name(), toolbelt::LogLevel::kError,
@@ -344,8 +350,9 @@ void Subsystem::Connecting(uint32_t client_id, co::Coroutine *c) {
                 return StateTransition::kStay;
 
               case adastra::stagezero::control::Event::kOutput:
-                subsystem->SendOutput(event->output().fd(),
-                                      event->output().data(), c);
+                subsystem->SendOutput(
+                    event->output().fd(), event->output().name(),
+                    event->output().process_id(), event->output().data(), c2);
                 break;
               case adastra::stagezero::control::Event::kLog:
                 subsystem->capcom_.Log(event->log());
@@ -353,7 +360,7 @@ void Subsystem::Connecting(uint32_t client_id, co::Coroutine *c) {
               case adastra::stagezero::control::Event::kParameter:
                 if (absl::Status status =
                         subsystem->capcom_.HandleParameterEvent(
-                            event->parameter(), c);
+                            event->parameter(), c2);
                     !status.ok()) {
                   subsystem->capcom_.Log(subsystem->Name(),
                                          toolbelt::LogLevel::kError, "%s",
@@ -450,14 +457,14 @@ void Subsystem::StartingChildren(uint32_t client_id, co::Coroutine *c) {
       [
         subsystem = shared_from_this(), &client_id, &child_notified, &next_state
       ](EventSource event_source,
-        std::shared_ptr<stagezero::Client> stagezero_client, co::Coroutine * c)
+        std::shared_ptr<stagezero::Client> stagezero_client, co::Coroutine * c2)
           ->StateTransition {
             switch (event_source) {
             case EventSource::kStageZero: {
               // Event from stagezero.
               absl::StatusOr<
                   std::shared_ptr<adastra::stagezero::control::Event>>
-                  e = stagezero_client->ReadEvent(c);
+                  e = stagezero_client->ReadEvent(c2);
               if (!e.ok()) {
                 subsystem->capcom_.Log(
                     subsystem->Name(), toolbelt::LogLevel::kError,
@@ -479,8 +486,9 @@ void Subsystem::StartingChildren(uint32_t client_id, co::Coroutine *c) {
                 return StateTransition::kStay;
 
               case adastra::stagezero::control::Event::kOutput:
-                subsystem->SendOutput(event->output().fd(),
-                                      event->output().data(), c);
+                subsystem->SendOutput(
+                    event->output().fd(), event->output().name(),
+                    event->output().process_id(), event->output().data(), c2);
                 break;
               case adastra::stagezero::control::Event::kLog:
                 subsystem->capcom_.Log(event->log());
@@ -488,7 +496,7 @@ void Subsystem::StartingChildren(uint32_t client_id, co::Coroutine *c) {
               case adastra::stagezero::control::Event::kParameter:
                 if (absl::Status status =
                         subsystem->capcom_.HandleParameterEvent(
-                            event->parameter(), c);
+                            event->parameter(), c2);
                     !status.ok()) {
                   subsystem->capcom_.Log(subsystem->Name(),
                                          toolbelt::LogLevel::kError, "%s",
@@ -542,6 +550,10 @@ void Subsystem::StartingChildren(uint32_t client_id, co::Coroutine *c) {
                   // We are admin offline and a child has gone offline.  We
                   // consider this a final notification from the child.
                   child_notified[message->sender] = true;
+                } else if (message->state.oper == OperState::kBroken) {
+                  // We are broken if any child is broken.
+                  subsystem->EnterState(OperState::kBroken, client_id);
+                  return StateTransition::kLeave;
                 }
                 subsystem->NotifyParents();
                 break;
@@ -599,6 +611,7 @@ void Subsystem::StartingChildren(uint32_t client_id, co::Coroutine *c) {
 
 void Subsystem::StartingProcesses(uint32_t client_id, co::Coroutine *c) {
   if (admin_state_ == AdminState::kOffline || processes_.empty()) {
+    capcom_.SendSubsystemStatusEvent(this);
     EnterState(admin_state_ == AdminState::kOffline ? OperState::kOffline
                                                     : OperState::kOnline,
                client_id);
@@ -622,14 +635,14 @@ void Subsystem::StartingProcesses(uint32_t client_id, co::Coroutine *c) {
       c, [ subsystem = shared_from_this(), &client_id,
            &next_state ](EventSource event_source,
                          std::shared_ptr<stagezero::Client> stagezero_client,
-                         co::Coroutine * c)
+                         co::Coroutine * c2)
              ->StateTransition {
                switch (event_source) {
                case EventSource::kStageZero: {
                  // Event from stagezero.
                  absl::StatusOr<
                      std::shared_ptr<adastra::stagezero::control::Event>>
-                     e = stagezero_client->ReadEvent(c);
+                     e = stagezero_client->ReadEvent(c2);
                  if (!e.ok()) {
                    subsystem->capcom_.Log(subsystem->Name(),
                                           toolbelt::LogLevel::kError,
@@ -684,13 +697,15 @@ void Subsystem::StartingProcesses(uint32_t client_id, co::Coroutine *c) {
                      }
                      return subsystem->RestartIfPossibleAfterProcessCrash(
                          stop.process_id(), client_id, exited, signal_or_status,
-                         c);
+                         c2);
                    }
                    break;
                  }
                  case adastra::stagezero::control::Event::kOutput:
                    subsystem->SendOutput(event->output().fd(),
-                                         event->output().data(), c);
+                                         event->output().name(),
+                                         event->output().process_id(),
+                                         event->output().data(), c2);
                    break;
                  case adastra::stagezero::control::Event::kLog:
                    subsystem->capcom_.Log(event->log());
@@ -698,7 +713,7 @@ void Subsystem::StartingProcesses(uint32_t client_id, co::Coroutine *c) {
                  case adastra::stagezero::control::Event::kParameter:
                    if (absl::Status status =
                            subsystem->capcom_.HandleParameterEvent(
-                               event->parameter(), c);
+                               event->parameter(), c2);
                        !status.ok()) {
                      subsystem->capcom_.Log(subsystem->Name(),
                                             toolbelt::LogLevel::kError, "%s",
@@ -791,14 +806,14 @@ void Subsystem::Online(uint32_t client_id, co::Coroutine *c) {
       [ subsystem = shared_from_this(), &client_id,
         &next_state ](EventSource event_source,
                       std::shared_ptr<stagezero::Client> stagezero_client,
-                      co::Coroutine * c)
+                      co::Coroutine * c2)
           ->StateTransition {
             switch (event_source) {
             case EventSource::kStageZero: {
               // Event from stagezero.
               absl::StatusOr<
                   std::shared_ptr<adastra::stagezero::control::Event>>
-                  e = stagezero_client->ReadEvent(c);
+                  e = stagezero_client->ReadEvent(c2);
               if (!e.ok()) {
                 subsystem->capcom_.Log(
                     subsystem->Name(), toolbelt::LogLevel::kError,
@@ -866,13 +881,14 @@ void Subsystem::Online(uint32_t client_id, co::Coroutine *c) {
                       stop.reason() != stagezero::control::StopEvent::SIGNAL;
                   return subsystem->RestartIfPossibleAfterProcessCrash(
                       stop.process_id(), client_id, exited, signal_or_status,
-                      c);
+                      c2);
                 }
                 return StateTransition::kStay;
               }
               case adastra::stagezero::control::Event::kOutput:
-                subsystem->SendOutput(event->output().fd(),
-                                      event->output().data(), c);
+                subsystem->SendOutput(
+                    event->output().fd(), event->output().name(),
+                    event->output().process_id(), event->output().data(), c2);
                 break;
               case adastra::stagezero::control::Event::kLog:
                 subsystem->capcom_.Log(event->log());
@@ -880,7 +896,7 @@ void Subsystem::Online(uint32_t client_id, co::Coroutine *c) {
               case adastra::stagezero::control::Event::kParameter:
                 if (absl::Status status =
                         subsystem->capcom_.HandleParameterEvent(
-                            event->parameter(), c);
+                            event->parameter(), c2);
                     !status.ok()) {
                   subsystem->capcom_.Log(subsystem->Name(),
                                          toolbelt::LogLevel::kError, "%s",
@@ -945,6 +961,10 @@ void Subsystem::Online(uint32_t client_id, co::Coroutine *c) {
                   // to do that too.
                   subsystem->EnterState(OperState::kRestarting, client_id);
                   return StateTransition::kLeave;
+                } else if (message->state.oper == OperState::kBroken) {
+                  // We are broken if any child is broken.
+                  subsystem->EnterState(OperState::kBroken, client_id);
+                  return StateTransition::kLeave;
                 }
                 break;
               case Message::kAbort:
@@ -955,7 +975,7 @@ void Subsystem::Online(uint32_t client_id, co::Coroutine *c) {
               case Message::kRestartProcesses:
                 // We are online and have been asked to restart a set of
                 // processes.
-                subsystem->RestartProcesses(message->processes, c);
+                subsystem->RestartProcesses(message->processes, c2);
                 subsystem->EnterState(OperState::kRestartingProcesses,
                                       message->client_id);
                 return StateTransition::kLeave;
@@ -967,7 +987,8 @@ void Subsystem::Online(uint32_t client_id, co::Coroutine *c) {
               case Message::kSendTelemetryCommand:
                 // Send message on to children.
                 if (absl::Status status =
-                        subsystem->PropagateTelemetryCommandMessage(message, c);
+                        subsystem->PropagateTelemetryCommandMessage(message,
+                                                                    c2);
                     !status.ok()) {
                   subsystem->capcom_.Log(
                       subsystem->Name(), toolbelt::LogLevel::kError,
@@ -979,7 +1000,7 @@ void Subsystem::Online(uint32_t client_id, co::Coroutine *c) {
                 // Now send it to all processes in this subsystem.
                 for (auto &process : subsystem->processes_) {
                   if (absl::Status status = process->SendTelemetryCommand(
-                          subsystem, *message->telemetry_command, c);
+                          subsystem, *message->telemetry_command, c2);
                       !status.ok()) {
                     subsystem->capcom_.Log(
                         subsystem->Name(), toolbelt::LogLevel::kError,
@@ -1025,12 +1046,12 @@ void Subsystem::StoppingProcesses(uint32_t client_id, co::Coroutine *c) {
       [subsystem, &client_id,
        &next_state](EventSource event_source,
                     std::shared_ptr<stagezero::Client> stagezero_client,
-                    co::Coroutine *c) -> StateTransition {
+                    co::Coroutine *c2) -> StateTransition {
         switch (event_source) {
         case EventSource::kStageZero: {
           // Event from stagezero.
           absl::StatusOr<std::shared_ptr<adastra::stagezero::control::Event>>
-              e = stagezero_client->ReadEvent(c);
+              e = stagezero_client->ReadEvent(c2);
           if (!e.ok()) {
             subsystem->capcom_.Log(
                 subsystem->Name(), toolbelt::LogLevel::kError,
@@ -1067,15 +1088,16 @@ void Subsystem::StoppingProcesses(uint32_t client_id, co::Coroutine *c) {
             break;
           }
           case adastra::stagezero::control::Event::kOutput:
-            subsystem->SendOutput(event->output().fd(), event->output().data(),
-                                  c);
+            subsystem->SendOutput(event->output().fd(), event->output().name(),
+                                  event->output().process_id(),
+                                  event->output().data(), c2);
             break;
           case adastra::stagezero::control::Event::kLog:
             subsystem->capcom_.Log(event->log());
             break;
           case adastra::stagezero::control::Event::kParameter:
             if (absl::Status status = subsystem->capcom_.HandleParameterEvent(
-                    event->parameter(), c);
+                    event->parameter(), c2);
                 !status.ok()) {
               subsystem->capcom_.Log(subsystem->Name(),
                                      toolbelt::LogLevel::kError, "%s",
@@ -1175,14 +1197,14 @@ void Subsystem::StoppingChildren(uint32_t client_id, co::Coroutine *c) {
         subsystem = shared_from_this(), &client_id, &child_notified,
         &next_state, &offline_requests
       ](EventSource event_source,
-        std::shared_ptr<stagezero::Client> stagezero_client, co::Coroutine * c)
+        std::shared_ptr<stagezero::Client> stagezero_client, co::Coroutine * c2)
           ->StateTransition {
             switch (event_source) {
             case EventSource::kStageZero: {
               // Event from stagezero.
               absl::StatusOr<
                   std::shared_ptr<adastra::stagezero::control::Event>>
-                  e = stagezero_client->ReadEvent(c);
+                  e = stagezero_client->ReadEvent(c2);
               if (!e.ok()) {
                 subsystem->capcom_.Log(
                     subsystem->Name(), toolbelt::LogLevel::kError,
@@ -1205,8 +1227,9 @@ void Subsystem::StoppingChildren(uint32_t client_id, co::Coroutine *c) {
                 break;
               }
               case adastra::stagezero::control::Event::kOutput:
-                subsystem->SendOutput(event->output().fd(),
-                                      event->output().data(), c);
+                subsystem->SendOutput(
+                    event->output().fd(), event->output().name(),
+                    event->output().process_id(), event->output().data(), c2);
                 break;
               case adastra::stagezero::control::Event::kLog:
                 subsystem->capcom_.Log(event->log());
@@ -1214,7 +1237,7 @@ void Subsystem::StoppingChildren(uint32_t client_id, co::Coroutine *c) {
               case adastra::stagezero::control::Event::kParameter:
                 if (absl::Status status =
                         subsystem->capcom_.HandleParameterEvent(
-                            event->parameter(), c);
+                            event->parameter(), c2);
                     !status.ok()) {
                   subsystem->capcom_.Log(subsystem->Name(),
                                          toolbelt::LogLevel::kError, "%s",
@@ -1389,8 +1412,9 @@ void Subsystem::WaitForRestart(co::Coroutine *c) {
                 break;
               }
               case adastra::stagezero::control::Event::kOutput:
-                subsystem->SendOutput(event->output().fd(),
-                                      event->output().data(), c2);
+                subsystem->SendOutput(
+                    event->output().fd(), event->output().name(),
+                    event->output().process_id(), event->output().data(), c2);
                 break;
               case adastra::stagezero::control::Event::kLog:
                 subsystem->capcom_.Log(event->log());
@@ -1708,14 +1732,14 @@ void Subsystem::Restarting(uint32_t client_id, co::Coroutine *c) {
       c, [ subsystem = shared_from_this(),
            client_id ](EventSource event_source,
                        std::shared_ptr<stagezero::Client> stagezero_client,
-                       co::Coroutine * c)
+                       co::Coroutine * c2)
              ->StateTransition {
                switch (event_source) {
                case EventSource::kStageZero: {
                  // Event from stagezero.
                  absl::StatusOr<
                      std::shared_ptr<adastra::stagezero::control::Event>>
-                     e = stagezero_client->ReadEvent(c);
+                     e = stagezero_client->ReadEvent(c2);
                  if (!e.ok()) {
                    subsystem->capcom_.Log(subsystem->Name(),
                                           toolbelt::LogLevel::kError,
@@ -1744,7 +1768,9 @@ void Subsystem::Restarting(uint32_t client_id, co::Coroutine *c) {
                  }
                  case adastra::stagezero::control::Event::kOutput:
                    subsystem->SendOutput(event->output().fd(),
-                                         event->output().data(), c);
+                                         event->output().name(),
+                                         event->output().process_id(),
+                                         event->output().data(), c2);
                    break;
                  case adastra::stagezero::control::Event::kLog:
                    subsystem->capcom_.Log(event->log());
@@ -1752,7 +1778,7 @@ void Subsystem::Restarting(uint32_t client_id, co::Coroutine *c) {
                  case adastra::stagezero::control::Event::kParameter:
                    if (absl::Status status =
                            subsystem->capcom_.HandleParameterEvent(
-                               event->parameter(), c);
+                               event->parameter(), c2);
                        !status.ok()) {
                      subsystem->capcom_.Log(subsystem->Name(),
                                             toolbelt::LogLevel::kError, "%s",
@@ -1910,6 +1936,8 @@ void Subsystem::RestartingProcesses(uint32_t client_id, co::Coroutine *c) {
                  }
                  case adastra::stagezero::control::Event::kOutput:
                    subsystem->SendOutput(event->output().fd(),
+                                         event->output().name(),
+                                         event->output().process_id(),
                                          event->output().data(), c2);
                    break;
                  case adastra::stagezero::control::Event::kLog:
@@ -2000,82 +2028,139 @@ void Subsystem::Broken(uint32_t client_id, co::Coroutine *c) {
   NotifyParents();
   capcom_.SendSubsystemStatusEvent(this);
   RunSubsystemInState(
-      c,
-      [ subsystem = shared_from_this(),
-        client_id ](EventSource event_source,
-                    std::shared_ptr<stagezero::Client> stagezero_client,
-                    co::Coroutine * c)
-          ->StateTransition {
-            if (event_source == EventSource::kMessage) {
-              // Incoming message.
-              absl::StatusOr<std::shared_ptr<Message>> msg =
-                  subsystem->ReadMessage();
-              if (!msg.ok()) {
-                subsystem->capcom_.Log(subsystem->Name(),
-                                       toolbelt::LogLevel::kError, "%s",
-                                       msg.status().ToString().c_str());
-              }
-              auto message = *msg;
-              switch (message->code) {
-              case Message::kChangeAdmin:
-              case Message::kRestart:
-                subsystem->num_restarts_ = 0; // Reset restart counter.
-                subsystem->restart_count_ = 0;
-                subsystem->ResetProcessRestarts();
-                if (message->state.admin == AdminState::kOnline ||
-                    message->code == Message::kRestart) {
-                  subsystem->active_clients_.Set(client_id);
-                  subsystem->EnterState(OperState::kStartingChildren,
-                                        client_id);
-                } else {
-                  // Stop all children.
-                  subsystem->active_clients_.Clear(client_id);
-                  subsystem->admin_state_ = AdminState::kOffline;
-                  subsystem->EnterState(OperState::kStoppingChildren,
-                                        client_id);
-                }
-                return StateTransition::kLeave;
-              case Message::kReportOper:
-                subsystem->capcom_.Log(subsystem->Name(),
-                                       toolbelt::LogLevel::kInfo,
-                                       "Subsystem %s has reported oper state "
-                                       "as %s while it is broken",
-                                       message->sender->Name().c_str(),
-                                       OperStateName(message->state.oper));
-                break;
-              case Message::kAbort:
-                return subsystem->Abort(message->emergency_abort);
-                break;
-              case Message::kRestartProcesses:
-                // Restarting processes while in broken state means the user
-                // wants to recover the subsystem.
-                subsystem->num_restarts_ = 0; // reset restart counter.
-                subsystem->restart_count_ = 0;
-                subsystem->ResetProcessRestarts();
-                subsystem->active_clients_.Set(client_id);
-                subsystem->EnterState(OperState::kConnecting, client_id);
-                return StateTransition::kLeave;
+      c, [ subsystem = shared_from_this(),
+           client_id ](EventSource event_source,
+                       std::shared_ptr<stagezero::Client> stagezero_client,
+                       co::Coroutine * c2)
+             ->StateTransition {
+               switch (event_source) {
+               case EventSource::kStageZero: {
+                 // Event from stagezero.
+                 absl::StatusOr<
+                     std::shared_ptr<adastra::stagezero::control::Event>>
+                     e = stagezero_client->ReadEvent(c2);
+                 if (!e.ok()) {
+                   subsystem->capcom_.Log(subsystem->Name(),
+                                          toolbelt::LogLevel::kError,
+                                          "Failed to read event %s",
+                                          e.status().ToString().c_str());
+                   return StateTransition::kStay;
+                 }
+                 std::shared_ptr<adastra::stagezero::control::Event> event = *e;
+                 switch (event->event_case()) {
+                 case adastra::stagezero::control::Event::kConnect:
+                 case adastra::stagezero::control::Event::kDisconnect:
+                   break;
+                 case adastra::stagezero::control::Event::kStart:
+                   break;
+                 case adastra::stagezero::control::Event::kStop:
+                   break;
 
-              case Message::kRestartCrashedProcesses:
-                // We are broken and got an event to restart crashed
-                // processes. This can happen if a process was in its restart
-                // delay.
-                return StateTransition::kStay;
-              case Message::kSendTelemetryCommand:
-                if (absl::Status status =
-                        subsystem->PropagateTelemetryCommandMessage(message, c);
-                    !status.ok()) {
-                  subsystem->capcom_.Log(
-                      subsystem->Name(), toolbelt::LogLevel::kError,
-                      "Failed to send telemetry command to "
-                      "child subsystem %s: %s",
-                      subsystem->Name().c_str(), status.ToString().c_str());
-                }
-                break;
-              }
-            }
-            return StateTransition::kStay;
-          });
+                 case adastra::stagezero::control::Event::kOutput:
+                   subsystem->SendOutput(event->output().fd(),
+                                         event->output().name(),
+                                         event->output().process_id(),
+                                         event->output().data(), c2);
+                   break;
+                 case adastra::stagezero::control::Event::kLog:
+                   subsystem->capcom_.Log(event->log());
+                   break;
+                 case adastra::stagezero::control::Event::kParameter:
+                   if (absl::Status status =
+                           subsystem->capcom_.HandleParameterEvent(
+                               event->parameter(), c2);
+                       !status.ok()) {
+                     subsystem->capcom_.Log(subsystem->Name(),
+                                            toolbelt::LogLevel::kError, "%s",
+                                            status.ToString().c_str());
+                   }
+                   break;
+                 case adastra::stagezero::control::Event::kTelemetry:
+                   subsystem->capcom_.SendTelemetryEvent(subsystem->Name(),
+                                                         event->telemetry());
+                   break;
+                 case adastra::stagezero::control::Event::EVENT_NOT_SET:
+                   break;
+                 }
+                 break;
+               }
+               case EventSource::kMessage: {
+                 // Incoming message.
+                 absl::StatusOr<std::shared_ptr<Message>> msg =
+                     subsystem->ReadMessage();
+                 if (!msg.ok()) {
+                   subsystem->capcom_.Log(subsystem->Name(),
+                                          toolbelt::LogLevel::kError, "%s",
+                                          msg.status().ToString().c_str());
+                 }
+                 auto message = *msg;
+                 switch (message->code) {
+                 case Message::kChangeAdmin:
+                 case Message::kRestart:
+                   subsystem->num_restarts_ = 0; // Reset restart counter.
+                   subsystem->restart_count_ = 0;
+                   subsystem->ResetProcessRestarts();
+                   if (message->state.admin == AdminState::kOnline ||
+                       message->code == Message::kRestart) {
+                     subsystem->active_clients_.Set(client_id);
+                     subsystem->EnterState(OperState::kStartingChildren,
+                                           client_id);
+                   } else {
+                     // Stop all children.
+                     subsystem->active_clients_.Clear(client_id);
+                     subsystem->admin_state_ = AdminState::kOffline;
+                     subsystem->EnterState(OperState::kStoppingChildren,
+                                           client_id);
+                   }
+                   subsystem->SendToChildren(message->state.admin,
+                                             message->client_id);
+                   return StateTransition::kLeave;
+                 case Message::kReportOper:
+                   subsystem->capcom_.Log(
+                       subsystem->Name(), toolbelt::LogLevel::kInfo,
+                       "Subsystem %s has reported oper state "
+                       "as %s while it is broken",
+                       message->sender->Name().c_str(),
+                       OperStateName(message->state.oper));
+                   break;
+                 case Message::kAbort:
+                   return subsystem->Abort(message->emergency_abort);
+                   break;
+                 case Message::kRestartProcesses:
+                   // Restarting processes while in broken state means the user
+                   // wants to recover the subsystem.
+                   subsystem->num_restarts_ = 0; // reset restart counter.
+                   subsystem->restart_count_ = 0;
+                   subsystem->ResetProcessRestarts();
+                   subsystem->active_clients_.Set(client_id);
+                   subsystem->EnterState(OperState::kConnecting, client_id);
+                   return StateTransition::kLeave;
+
+                 case Message::kRestartCrashedProcesses:
+                   // We are broken and got an event to restart crashed
+                   // processes. This can happen if a process was in its restart
+                   // delay.
+                   return StateTransition::kStay;
+                 case Message::kSendTelemetryCommand:
+                   if (absl::Status status =
+                           subsystem->PropagateTelemetryCommandMessage(message,
+                                                                       c2);
+                       !status.ok()) {
+                     subsystem->capcom_.Log(
+                         subsystem->Name(), toolbelt::LogLevel::kError,
+                         "Failed to send telemetry command to "
+                         "child subsystem %s: %s",
+                         subsystem->Name().c_str(), status.ToString().c_str());
+                   }
+                   break;
+                 }
+                 break;
+               }
+               case EventSource::kUnknown:
+                 break;
+               }
+               return StateTransition::kStay;
+             });
 }
 
 } // namespace adastra::capcom

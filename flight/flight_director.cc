@@ -9,6 +9,8 @@
 #include <fstream>
 #include <google/protobuf/io/zero_copy_stream_impl.h>
 #include <google/protobuf/text_format.h>
+#include "absl/strings/str_cat.h"
+
 #include <iostream>
 
 namespace adastra::flight {
@@ -405,7 +407,7 @@ absl::Status FlightDirector::LoadSubsystemGraph(
     }
     Compute compute = {c.name(), toolbelt::InetAddress(c.ip_addr(), c.port()),
                        std::move(cgroups)};
-
+    std::cerr << "adding compute " << c.name() << " addr " << compute.addr.ToString() << std::endl;
     AddCompute(c.name(), std::move(compute));
   }
 

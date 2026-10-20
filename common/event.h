@@ -44,12 +44,13 @@ struct Output {
   std::string process_id;
   std::string data;
   int fd;
+  std::string name;
 };
 
 struct Event {
   EventType type;
   std::variant<SubsystemStatus, Alarm, Output, LogMessage,
-               parameters::ParameterNode, std::string,
+               parameters::Parameter, std::string,
                ::adastra::proto::TelemetryEvent>
       event;
 
@@ -72,6 +73,7 @@ struct Event {
     case EventType::kTelemetry:
       return (mask & kTelemetryEvents) != 0;
     }
+    return false;
   }
 };
 

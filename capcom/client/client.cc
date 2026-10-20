@@ -104,6 +104,41 @@ absl::Status Client::RemoveCompute(const std::string &name, co::Coroutine *c) {
   return absl::OkStatus();
 }
 
+absl::StatusOr<std::vector<std::string>> Client::ListComputes(co::Coroutine* c) {
+    adastra::capcom::proto::Request req;
+    req.mutable_list_computes();
+
+    adastra::capcom::proto::Response resp;
+    if (auto status = SendRequestReceiveResponse(req, resp, c); !status.ok()) {
+        return status;
+    }
+
+    std::vector<std::string> computes(resp.list_computes().computes().size());
+    std::copy(
+            resp.list_computes().computes().cbegin(),
+            resp.list_computes().computes().cend(),
+            computes.begin());
+    return computes;
+}
+
+
+template<typename Opts>
+void SetKernelSchedulerPolicyAndCpuAffinity(
+        const KernelSchedulerPolicy& scheduler,
+        const std::vector<int>& cpu_affinity,
+        Opts* opts) {
+    auto s = opts->mutable_kernel_scheduler_policy();
+    scheduler.ToProto(s);
+    for (auto& cpu : cpu_affinity) {
+        opts->add_cpus(cpu);
+    }
+}
+
+template<typename Opts>
+void SetCapabilities(const CapabilitySet& capabilities, Opts* opts) {
+    capabilities.ToProto(opts->mutable_capabilities());
+}
+
 absl::Status Client::AddSubsystem(const std::string &name,
                                   const SubsystemOptions &options,
                                   co::Coroutine *c) {
@@ -157,6 +192,8 @@ absl::Status Client::AddSubsystem(const std::string &name,
       auto *s = proc->add_streams();
       stream.ToProto(s);
     }
+    SetKernelSchedulerPolicyAndCpuAffinity(sproc.kernel_scheduler_policy, sproc.cpus, opts);
+    SetCapabilities(sproc.capabilities, opts);
   }
 
   // Add Zygotes.
@@ -191,6 +228,8 @@ absl::Status Client::AddSubsystem(const std::string &name,
       auto *s = proc->add_streams();
       stream.ToProto(s);
     }
+    SetKernelSchedulerPolicyAndCpuAffinity(z.kernel_scheduler_policy, z.cpus, opts);
+    SetCapabilities(z.capabilities, opts);
   }
 
   // Add all virtual processes to the proto message.
@@ -236,6 +275,8 @@ absl::Status Client::AddSubsystem(const std::string &name,
       auto *s = proc->add_streams();
       stream.ToProto(s);
     }
+    SetKernelSchedulerPolicyAndCpuAffinity(vproc.kernel_scheduler_policy, vproc.cpus, opts);
+    SetCapabilities(vproc.capabilities, opts);
   }
 
   // Variables.
@@ -600,7 +641,7 @@ absl::Status Client::SendInput(const std::string &subsystem,
 }
 
 absl::Status Client::CloseFd(const std::string &subsystem,
-                             const std::string &process, int fd,
+                             const std::string &process_name, int fd,
                              co::Coroutine *c) {
   if (c == nullptr) {
     c = co_;
@@ -608,7 +649,7 @@ absl::Status Client::CloseFd(const std::string &subsystem,
   adastra::capcom::proto::Request req;
   auto close = req.mutable_close_fd();
   close->set_subsystem(subsystem);
-  close->set_process(process);
+  close->set_process(process_name);
   close->set_fd(fd);
 
   adastra::capcom::proto::Response resp;
@@ -850,4 +891,91 @@ absl::Status Client::SendTelemetryCommandToProcess(
   }
   return absl::OkStatus();
 }
+
+
+absl::Status Client::AddCgroup(
+        const std::string& compute,
+        const Cgroup& cgroup,
+        co::Coroutine* co) {
+    if (co == nullptr) {
+        co = co_;
+    }
+    adastra::capcom::proto::Request req;
+    auto x = req.mutable_add_cgroup();
+    x->set_compute(compute);
+    auto c = x->mutable_cgroup();
+    cgroup.ToProto(c);
+
+    adastra::capcom::proto::Response resp;
+    if (absl::Status status = SendRequestReceiveResponse(req, resp, co); !status.ok()) {
+        return status;
+    }
+    auto& cgroup_resp = resp.add_cgroup();
+    if (!cgroup_resp.error().empty()) {
+        return absl::InternalError(
+                absl::StrFormat("Failed to add cgroup: %s", cgroup_resp.error()));
+    }
+    return absl::OkStatus();
+}
+
+absl::StatusOr<std::vector<CgroupAssignment>> Client::GetCgroups(
+        const std::string& compute,
+        const std::vector<std::string>& cgroup_names,
+        co::Coroutine* co) {
+    if (co == nullptr) {
+        co = co_;
+    }
+    adastra::capcom::proto::Request req;
+    auto x = req.mutable_get_cgroups();
+    x->set_compute(compute);
+    for (auto& cgroup : cgroup_names) {
+        x->add_cgroups(cgroup);
+    }
+
+    adastra::capcom::proto::Response resp;
+    if (absl::Status status = SendRequestReceiveResponse(req, resp, co); !status.ok()) {
+        return status;
+    }
+    auto& cgroup_resp = resp.get_cgroups();
+    if (!cgroup_resp.error().empty()) {
+        return absl::InternalError(
+                absl::StrFormat("Failed to get cgroups: %s", cgroup_resp.error()));
+    }
+    std::vector<CgroupAssignment> result;
+    result.reserve(cgroup_resp.cgroups_size());
+    for (auto& assignment : cgroup_resp.cgroups()) {
+        CgroupAssignment c;
+        c.FromProto(assignment);
+        result.push_back(std::move(c));
+    }
+    return result;
+}
+
+absl::Status Client::RemoveCgroups(
+        const std::string& compute,
+        const std::vector<std::string>& cgroup_names,
+        co::Coroutine* co) {
+    if (co == nullptr) {
+        co = co_;
+    }
+    adastra::capcom::proto::Request req;
+    auto x = req.mutable_remove_cgroups();
+    x->set_compute(compute);
+    for (auto& cgroup : cgroup_names) {
+        x->add_cgroups(cgroup);
+    }
+
+    adastra::capcom::proto::Response resp;
+    if (absl::Status status = SendRequestReceiveResponse(req, resp, co); !status.ok()) {
+        return status;
+    }
+    auto& cgroup_resp = resp.remove_cgroups();
+    if (!cgroup_resp.error().empty()) {
+        return absl::InternalError(
+                absl::StrFormat("Failed to delete cgroups: %s", cgroup_resp.error()));
+    }
+
+    return absl::OkStatus();
+}
+
 } // namespace adastra::capcom::client

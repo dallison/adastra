@@ -74,7 +74,7 @@ struct PidStatus : public ::stagezero::TelemetryStatus {
     ::testdata::telemetry::PidTelemetryStatus pid_status;
     pid_status.set_pid(pid);
     proto.mutable_status()->PackFrom(pid_status);
-  };
+  }
 
   bool FromProto(const adastra::proto::telemetry::Status &proto) override {
     ::testdata::telemetry::PidTelemetryStatus status;
@@ -92,7 +92,7 @@ struct TimeStatus : public ::stagezero::TelemetryStatus {
     ::testdata::telemetry::TimeTelemetryStatus time_status;
     time_status.set_time(time);
     proto.mutable_status()->PackFrom(time_status);
-  };
+  }
 
   bool FromProto(const adastra::proto::telemetry::Status &proto) override {
     ::testdata::telemetry::TimeTelemetryStatus status;

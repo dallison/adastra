@@ -202,7 +202,6 @@ inline absl::StatusOr<int> TCPClientHandler<Request, Response, Event>::Init(
     return status;
   }
   int event_port = listen_socket.BoundAddress().Port();
-
   if (absl::Status status = stop_trigger_.Open(); !status.ok()) {
     return status;
   }
@@ -295,7 +294,6 @@ inline void TCPClientHandler<Request, Response, Event>::SendEvent(
     std::shared_ptr<Event> event, co::Coroutine *c) {
   char *sendbuf = event_buffer_ + sizeof(int32_t);
   constexpr size_t kSendBufLen = sizeof(event_buffer_) - sizeof(int32_t);
-  // std::cerr << "Sending event " << event->DebugString() << std::endl;
   if (!event->SerializeToArray(sendbuf, kSendBufLen)) {
     GetLogger().Log(toolbelt::LogLevel::kError, "Failed to serialize event");
   } else {

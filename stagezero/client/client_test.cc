@@ -117,7 +117,8 @@ public:
   }
 
   std::string WaitForOutput(adastra::stagezero::Client &client,
-                            std::string match, bool* got_stop = nullptr, int retries = 10) {
+                            std::string match, bool *got_stop = nullptr,
+                            int retries = 10) {
     std::cout << "waiting for output " << match << "\n";
     std::stringstream s;
     for (int retry = 0; retry < retries; retry++) {
@@ -130,7 +131,8 @@ public:
       std::shared_ptr<adastra::stagezero::control::Event> event = *e;
       std::cout << event->DebugString();
       if (event->event_case() == adastra::stagezero::control::Event::kStop) {
-        if (got_stop != nullptr) *got_stop = true;
+        if (got_stop != nullptr)
+          *got_stop = true;
       }
       if (event->event_case() == adastra::stagezero::control::Event::kOutput) {
         s << event->output().data();
@@ -157,8 +159,8 @@ public:
       }
       if (event->event_case() ==
           adastra::stagezero::control::Event::kTelemetry) {
-            std::cerr << "Got telemetry event " << event->DebugString()
-                      << std::endl;
+        std::cerr << "Got telemetry event " << event->DebugString()
+                  << std::endl;
         return std::make_unique<adastra::stagezero::control::TelemetryEvent>(
             event->telemetry());
       }
@@ -284,6 +286,24 @@ TEST_F(ClientTest, LaunchAndStopSigKill) {
   WaitForEvent(client, adastra::stagezero::control::Event::kStop);
 }
 
+TEST_F(ClientTest, LaunchExitBeforeNotify) {
+  adastra::stagezero::Client client;
+  InitClient(client, "foobar2");
+
+  absl::StatusOr<std::pair<std::string, int>> status =
+      client.LaunchStaticProcess("loop", "${runfiles_dir}/_main/testdata/loop",
+                                 {
+                                     .args =
+                                         {
+                                             "exit_before_notify",
+                                         },
+                                     .startup_timeout_secs = 100,
+                                     .notify = true,
+                                 });
+  ASSERT_TRUE(status.ok());
+  WaitForEvent(client, adastra::stagezero::control::Event::kStop);
+}
+
 TEST_F(ClientTest, LaunchAndStopTelemetry) {
   adastra::stagezero::Client client;
   InitClient(client, "foobar2");
@@ -379,7 +399,9 @@ TEST_F(ClientTest, LaunchAndStopCustomTelemetryCommand) {
   absl::Status s = client.SendTelemetryCommand(process_id, cmd);
 
   auto ts_event = WaitForTelemetryEvent(client);
-  if (ts_event->telemetry().status().Is<::testdata::telemetry::PidTelemetryStatus>()) {
+  if (ts_event->telemetry()
+          .status()
+          .Is<::testdata::telemetry::PidTelemetryStatus>()) {
     ::testdata::telemetry::PidTelemetryStatus status;
     auto ok = ts_event->telemetry().status().UnpackTo(&status);
     ASSERT_TRUE(ok);
@@ -407,7 +429,9 @@ TEST_F(ClientTest, LaunchAndStopCustomTelemetryStatus) {
 
   for (int i = 0; i < 5; i++) {
     auto ts_event = WaitForTelemetryEvent(client);
-    if (ts_event->telemetry().status().Is<::testdata::telemetry::TimeTelemetryStatus>()) {
+    if (ts_event->telemetry()
+            .status()
+            .Is<::testdata::telemetry::TimeTelemetryStatus>()) {
       ::testdata::telemetry::TimeTelemetryStatus status;
       auto ok = ts_event->telemetry().status().UnpackTo(&status);
       ASSERT_TRUE(ok);

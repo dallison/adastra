@@ -7,12 +7,14 @@ cc_library(
         "client_handler.cc",
         "state_machine.cc",
         "subsystem.cc",
+        "umbilical.cc",
     ],
     hdrs = [
         "bitset.h",
         "capcom.h",
         "client_handler.h",
         "subsystem.h",
+        "umbilical.h",
     ],
     deps = [
         "//common",

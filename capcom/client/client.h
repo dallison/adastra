@@ -6,9 +6,11 @@
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "common/alarm.h"
+#include "common/capability.h"
 #include "common/cgroup.h"
 #include "common/event.h"
 #include "common/parameters.h"
+#include "common/scheduler.h"
 #include "common/states.h"
 #include "common/stream.h"
 #include "common/subsystem_status.h"
@@ -62,6 +64,9 @@ struct StaticProcess {
   bool oneshot = false;
   std::string cgroup = "";
   int32_t max_restarts = kDefaultMaxRestarts;
+  KernelSchedulerPolicy kernel_scheduler_policy;
+  std::vector<int> cpus;
+  CapabilitySet capabilities;
 };
 
 struct Zygote {
@@ -80,6 +85,9 @@ struct Zygote {
   std::string group;
   std::string cgroup = "";
   int32_t max_restarts = kDefaultMaxRestarts;
+  KernelSchedulerPolicy kernel_scheduler_policy;
+  std::vector<int> cpus;
+  CapabilitySet capabilities;
 };
 
 struct VirtualProcess {
@@ -103,6 +111,9 @@ struct VirtualProcess {
   std::string group;
   std::string cgroup = "";
   int32_t max_restarts = kDefaultMaxRestarts;
+  KernelSchedulerPolicy kernel_scheduler_policy;
+  std::vector<int> cpus;
+  CapabilitySet capabilities;
 };
 
 struct SubsystemOptions {
@@ -152,6 +163,9 @@ public:
 
   absl::Status RemoveCompute(const std::string &name,
                              co::Coroutine *c = nullptr);
+
+  absl::StatusOr<std::vector<std::string>>
+  ListComputes(co::Coroutine *c = nullptr);
 
   absl::Status AddSubsystem(const std::string &name,
                             const SubsystemOptions &options,
@@ -222,8 +236,9 @@ public:
                          const std::string &process, int fd,
                          const std::string &data, co::Coroutine *c = nullptr);
 
-  absl::Status CloseFd(const std::string &subsystem, const std::string &process,
-                       int fd, co::Coroutine *c = nullptr);
+  absl::Status CloseFd(const std::string &subsystem,
+                       const std::string &process_name, int fd,
+                       co::Coroutine *c = nullptr);
 
   absl::Status FreezeCgroup(const std::string &compute,
                             const std::string &cgroup,
@@ -240,6 +255,53 @@ public:
   absl::Status SendTelemetryCommandToProcess(
       const std::string &subsystem, const std::string &process_id,
       const ::stagezero::TelemetryCommand &command, co::Coroutine *c = nullptr);
+
+  // Add a cgroup definition to an existing compute.  If the cgroup already
+  // exists, the policy
+  // determines what to do.  If the cgroup does not exist, it will be created.
+  // If the umbililal is connected the cgroup will be created on the StageZero
+  // running on that compute.  If it's not connected, all the cgroups on the
+  // compute will be created on the next connection.
+  absl::Status AddCgroup(const std::string &compute, const Cgroup &cgroup,
+                         co::Coroutine *c = nullptr);
+
+  // Get the cgroups for a set of computes.  If compute is empty all computes
+  // are queried.  If no cgroups are specified, all cgroups are queried.
+  absl::StatusOr<std::vector<CgroupAssignment>>
+  GetCgroups(const std::string &compute,
+             const std::vector<std::string> &cgroups = {},
+             co::Coroutine *c = nullptr);
+
+  absl::StatusOr<std::vector<CgroupAssignment>>
+  GetCgroups(co::Coroutine *c = nullptr) {
+    return GetCgroups("", {}, c);
+  }
+
+  absl::StatusOr<CgroupAssignment> GetCgroup(const std::string &compute,
+                                             const std::string &cgroup_name,
+                                             co::Coroutine *c = nullptr) {
+    auto cgroups = GetCgroups(compute, {cgroup_name}, c);
+    if (!cgroups.ok()) {
+      return cgroups.status();
+    }
+    if (cgroups->empty()) {
+      return absl::InternalError("Cgroup not found");
+    }
+    return cgroups->front();
+  }
+
+  // Remove a set of cgroups from a set of computes.  If compute is empty, all
+  // computes are affected.  If no cgroups are specified, all cgroups are
+  // removed from the computes.
+  absl::Status RemoveCgroups(const std::string &compute,
+                             const std::vector<std::string> &cgroup_names,
+                             co::Coroutine *c = nullptr);
+
+  absl::Status RemoveCgroup(const std::string &compute,
+                            const std::string &cgroup_name,
+                            co::Coroutine *c = nullptr) {
+    return RemoveCgroups(compute, {cgroup_name}, c);
+  }
 
 private:
   absl::Status WaitForSubsystemState(const std::string &subsystem,

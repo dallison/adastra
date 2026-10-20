@@ -19,11 +19,11 @@ s0_pid=$!
 sleep 1
 
 echo Running capcom
-bazel-bin/flight/flight.runfiles/_main/capcom/capcom --silent=$SILENT --test_mode=$TEST_MODE 0<&1 &
+$RUNFILES_DIR/_main/capcom/capcom --silent=$SILENT --test_mode=$TEST_MODE 0<&1 &
 capcom_pid=$!
 sleep 1
 trap "kill -INT $s0_pid $capcom_pid; exit" SIGINT EXIT
 
-bazel-bin//flight/flight.runfiles/_main/flight/flight_director $*
+$RUNFILES_DIR/_main/flight/flight_director $*
 #wait
 

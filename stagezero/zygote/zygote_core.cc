@@ -4,6 +4,7 @@
 
 #include "stagezero/zygote/zygote_core.h"
 #include "common/namespace.h"
+#include "common/capability.h"
 #include "stagezero/cgroup.h"
 
 #include "absl/container/flat_hash_set.h"
@@ -22,10 +23,17 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <grp.h>
+#include <pwd.h>
 
 #ifdef __linux__
 #include <linux/sched.h>
 #include <syscall.h>
+#include <linux/capability.h>
+#include <linux/securebits.h>
+#include <sched.h>
+#include <sys/prctl.h>
+
 static int pidfd_open(pid_t pid, unsigned int flags) {
   return syscall(__NR_pidfd_open, pid, flags);
 }
@@ -106,15 +114,14 @@ absl::Status ZygoteCore::Run() {
         "Zygote failed to connect to control socket: %s", status.ToString()));
   }
 
-  server_ =
-      std::make_unique<co::Coroutine>(scheduler_,
-                                      [this](co::Coroutine *c) {
-                                        while (control_socket_->Connected()) {
-                                          WaitForSpawn(c);
-                                        }
-
-                                      },
-                                      "ZygoteServer");
+  server_ = std::make_unique<co::Coroutine>(
+      scheduler_,
+      [this](co::Coroutine *c) {
+        while (control_socket_->Connected()) {
+          WaitForSpawn(c);
+        }
+      },
+      "ZygoteServer");
 
   if (telemetry_.IsOpen()) {
     auto zt = std::make_shared<ZygoteSystemTelemetry>(telemetry_);
@@ -148,7 +155,6 @@ absl::Status ZygoteCore::Run() {
           }
           c->Millisleep(kWaitTimeMs);
         }
-
       },
       "ZygoteMonitor");
 
@@ -344,17 +350,19 @@ absl::Status ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
     }
 
     // The notify fd is added as an exported symbol.
+    unsetenv("STAGEZERO_NOTIFY_FD");
     if (req.has_notify_fd_index()) {
       toolbelt::FileDescriptor &notify_fd = fds[req.notify_fd_index()];
       fds_to_keep_open.insert(notify_fd.Fd());
 
       // The zygote's notify fd is in the current environment and we will
       // replace it.
-      unsetenv("STAGEZERO_NOTIFY_FD");
-      local_symbols->AddSymbol("STAGEZERO_NOTIFY_FD",
-                               absl::StrFormat("%d", notify_fd.Fd()), true);
+      std::string notify_fd_str = absl::StrFormat("%d", notify_fd.Fd());
+      local_symbols->AddSymbol("STAGEZERO_NOTIFY_FD", notify_fd_str, true);
+      setenv("STAGEZERO_NOTIFY_FD", notify_fd_str.c_str(), 1);
     }
 
+    unsetenv("STAGEZERO_PARAMETERS_FDS");
     int parameters_read_fd = -1, parameters_write_fd = -1,
         parameters_events_fd = -1;
     if (req.has_parameters_read_fd_index()) {
@@ -375,14 +383,37 @@ absl::Status ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
       parameters_events_fd = parameters_fd.Fd();
       fds_to_keep_open.insert(parameters_fd.Fd());
     }
+
     if (parameters_read_fd != -1 && parameters_write_fd != -1 &&
         parameters_events_fd != -1) {
-      unsetenv("STAGEZERO_PARAMETERS_FDS");
-      local_symbols->AddSymbol("STAGEZERO_PARAMETERS_FDS",
-                               absl::StrFormat("%d:%d:%d", parameters_read_fd,
-                                               parameters_write_fd,
-                                               parameters_events_fd),
+      std::string parameters_fds_str =
+          absl::StrFormat("%d:%d:%d", parameters_read_fd, parameters_write_fd,
+                          parameters_events_fd);
+      local_symbols->AddSymbol("STAGEZERO_PARAMETERS_FDS", parameters_fds_str,
                                true);
+      setenv("STAGEZERO_PARAMETERS_FDS", parameters_fds_str.c_str(), 1);
+    }
+
+    unsetenv("STAGEZERO_TELEMETRY_FDS");
+    int telemetry_read_fd = -1, telemetry_write_fd = -1;
+    if (req.has_telemetry_read_fd_index()) {
+      toolbelt::FileDescriptor &telemetry_fd =
+          fds[req.telemetry_read_fd_index()];
+      telemetry_read_fd = telemetry_fd.Fd();
+      fds_to_keep_open.insert(telemetry_fd.Fd());
+    }
+    if (req.has_telemetry_write_fd_index()) {
+      toolbelt::FileDescriptor &telemetry_fd =
+          fds[req.telemetry_write_fd_index()];
+      telemetry_write_fd = telemetry_fd.Fd();
+      fds_to_keep_open.insert(telemetry_fd.Fd());
+    }
+    if (telemetry_read_fd != -1 && telemetry_write_fd != -1) {
+      std::string telemetry_fds_str =
+          absl::StrFormat("%d:%d", telemetry_read_fd, telemetry_write_fd);
+      local_symbols->AddSymbol("STAGEZERO_TELEMETRY_FDS", telemetry_fds_str,
+                               true);
+      setenv("STAGEZERO_TELEMETRY_FDS", telemetry_fds_str.c_str(), 1);
     }
 
     for (auto &stream : req.streams()) {
@@ -448,12 +479,171 @@ absl::Status ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
     after_fork_.local_symbols = std::move(local_symbols);
     forked_ = true;
 
-    if (!req.cgroup().empty()) {
-      if (absl::Status status = stagezero::AddToCgroup(req.name(), req.cgroup(),
-                                                       getpid(), logger_);
-          !status.ok()) {
-        return status;
+    // If we are root, set the things that root can set.  Otherwise we ignore
+    // the settings.
+    if (getuid() == 0) {
+#if defined(__linux__)
+      // Set the kernel scheduler if running as root.
+      if (req.kernel_scheduler_policy().policy() !=
+          stagezero::config::KernelSchedulerPolicy::KERN_SCHED_DEFAULT) {
+        int policy = 0;
+
+        switch (req.kernel_scheduler_policy().policy()) {
+        case stagezero::config::KernelSchedulerPolicy::KERN_SCHED_DEFAULT:
+        default:
+          break;
+        case stagezero::config::KernelSchedulerPolicy::KERN_SCHED_BATCH:
+          policy = SCHED_BATCH;
+          break;
+        case stagezero::config::KernelSchedulerPolicy::KERN_SCHED_IDLE:
+          policy = SCHED_IDLE;
+          break;
+        case stagezero::config::KernelSchedulerPolicy::KERN_SCHED_FIFO:
+          policy = SCHED_FIFO;
+          break;
+        case stagezero::config::KernelSchedulerPolicy::KERN_SCHED_RR:
+          policy = SCHED_RR;
+          break;
+        }
+        if (req.kernel_scheduler_policy().reset_on_fork()) {
+          policy |= SCHED_RESET_ON_FORK;
+        }
+        struct sched_param param = {0};
+        param.sched_priority = req.kernel_scheduler_policy().priority();
+        int e = sched_setscheduler(0, policy, &param);
+        if (e == -1) {
+          return absl::InternalError(absl::StrFormat(
+              "Failed to set scheduler policy: %s", strerror(errno)));
+        }
       }
+
+      // Set the CPU affinity.
+      if (!req.cpus().empty()) {
+        cpu_set_t cpuset;
+        CPU_ZERO(&cpuset);
+        for (int cpu : req.cpus()) {
+          CPU_SET(cpu, &cpuset);
+        }
+        int e = sched_setaffinity(0, sizeof(cpuset), &cpuset);
+        if (e == -1) {
+          return absl::InternalError(absl::StrFormat(
+              "Failed to set CPU affinity: %s", strerror(errno)));
+        }
+      }
+
+      // Need to be able to set the use and group ids here.  We will drop the
+      // caps if the process doesn't want them.
+      bool drop_uid_cap = false;
+      bool drop_gid_cap = false;
+      adastra::Caps current_caps;
+
+      // Capabilities, only if we are not going to runs as root.
+      // We drop all the capabilities and then add the ones we want.
+      if (req.user() != "root" && req.capabilities().capabilities().empty()) {
+        int e = prctl(PR_SET_SECUREBITS, SECBIT_NO_SETUID_FIXUP, 0, 0, 0);
+        if (e == -1) {
+          return absl::InternalError(absl::StrFormat(
+              "Failed to set secure bits: %s", strerror(errno)));
+        }
+
+        current_caps.Modify(CAP_SETGID);
+        current_caps.Modify(CAP_SETUID);
+        drop_gid_cap = true;
+        drop_uid_cap = true;
+
+        for (auto cap : req.capabilities().capabilities()) {
+          int cap_number = 0;
+          auto number_or_status =
+              adastra::CapabilitySet::CapabilityFromString(cap);
+          if (number_or_status.ok()) {
+            cap_number = *number_or_status;
+          } else {
+            // Allow #<int> for a capability number for which we don't have a
+            // name.
+            if (cap[0] == '#') {
+              int num = 0;
+              bool ok = absl::SimpleAtoi(cap.substr(1), &num);
+              if (!ok) {
+                return absl::InternalError(
+                    absl::StrFormat("Malformed capability number %s", cap));
+              }
+              cap_number = num;
+            } else {
+              return absl::InternalError(
+                  absl::StrFormat("Unknown capability %s", cap));
+            }
+          }
+
+          if (cap_number == CAP_SETUID) {
+            drop_uid_cap = false;
+          }
+          if (cap_number == CAP_SETGID) {
+            drop_gid_cap = false;
+          }
+          current_caps.Modify(cap_number);
+        }
+
+        if (absl::Status status = current_caps.Set(); !status.ok()) {
+          return absl::InternalError(absl::StrFormat(
+              "Failed to set capabilities: %s", status.ToString()));
+        }
+      }
+
+      if (!req.user().empty()) {
+        struct passwd *pw = getpwnam(req.user().c_str());
+        if (pw == nullptr) {
+          return absl::InternalError(absl::StrFormat(
+              "Failed to get user %s: %s", req.user(), strerror(errno)));
+        }
+        int e = setgid(pw->pw_gid);
+        if (e == -1) {
+          return absl::InternalError(
+              absl::StrFormat("Failed to setgid: %s", strerror(errno)));
+        }
+
+        e = setuid(pw->pw_uid);
+        if (e == -1) {
+          return absl::InternalError(
+              absl::StrFormat("Failed to setuid: %s", strerror(errno)));
+        }
+      }
+
+      if (!req.group().empty()) {
+        struct group *gr = getgrnam(req.group().c_str());
+        if (gr == nullptr) {
+          return absl::InternalError(absl::StrFormat(
+              "Failed to get group %s: %s", req.group(), strerror(errno)));
+        }
+        int e = setgid(gr->gr_gid);
+        if (e == -1) {
+          return absl::InternalError(
+              absl::StrFormat("Failed to setgid: %s", strerror(errno)));
+        }
+      }
+
+      if (drop_gid_cap || drop_uid_cap) {
+        if (drop_gid_cap) {
+          // Drop the setgid capability.
+          current_caps.Modify(CAP_SETGID, false);
+        }
+        if (drop_uid_cap) {
+          // Drop the setuid capability.
+          current_caps.Modify(CAP_SETUID, false);
+        }
+        if (absl::Status status = current_caps.Set(); !status.ok()) {
+          return absl::InternalError(
+              absl::StrFormat("Failed to drop id caps: %s", status.ToString()));
+        }
+      }
+
+      if (!req.cgroup().empty()) {
+        if (absl::Status status =
+                stagezero::AddToCgroup(req.name(), req.cgroup(), getpid(),
+                                       req.cgroup_root_dir(), logger_); !status.ok()) {
+          return status;
+        }
+      }
+#endif // defined(__linux__)
     }
 
     // Shutdown the telemetry in the zygote fork.
@@ -479,6 +669,25 @@ absl::Status ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
     }
   }
 
+  // Close this end of all the fds that the child has duplicated.
+  if (req.has_notify_fd_index()) {
+    fds[req.notify_fd_index()].Reset();
+  }
+  if (req.has_parameters_read_fd_index()) {
+    fds[req.parameters_read_fd_index()].Reset();
+  }
+  if (req.has_parameters_write_fd_index()) {
+    fds[req.parameters_write_fd_index()].Reset();
+  }
+  if (req.has_parameters_events_fd_index()) {
+    fds[req.parameters_events_fd_index()].Reset();
+  }
+  if (req.has_telemetry_read_fd_index()) {
+    fds[req.telemetry_read_fd_index()].Reset();
+  }
+  if (req.has_telemetry_write_fd_index()) {
+    fds[req.telemetry_write_fd_index()].Reset();
+  }
   resp->set_pid(pid);
   fds.clear();
 
@@ -487,6 +696,9 @@ absl::Status ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
   fds.push_back(toolbelt::FileDescriptor(pidfd));
   resp->set_pidfd_index(0);
 #endif
+  logger_.Log(toolbelt::LogLevel::kDebug,
+              "Zygote spawned virtual process %s with pid %d",
+              req.name().c_str(), pid);
   return absl::OkStatus();
 }
 
@@ -529,7 +741,7 @@ void ZygoteCore::InvokeMainAfterSpawn(
 
   absl::flat_hash_map<std::string, Symbol *> env_vars =
       local_symbols->GetEnvironmentSymbols();
-  for (auto & [ name, symbol ] : env_vars) {
+  for (auto &[name, symbol] : env_vars) {
     setenv(name.c_str(), symbol->Value().c_str(), 1);
   }
 
