@@ -326,7 +326,9 @@ absl::StatusOr<std::shared_ptr<Message>> Subsystem::ReadMessage() {
 
 absl::Status Subsystem::LaunchProcesses(co::Coroutine *c) {
   for (auto &proc : processes_) {
-    if (proc->IsRunning()) {
+    if (proc->IsAlive()) {
+      // A process still waiting for its start event exists in StageZero;
+      // launching it again would start a second copy beside it.
       continue;
     }
     proc->SetExit(false, -1);
@@ -336,6 +338,7 @@ absl::Status Subsystem::LaunchProcesses(co::Coroutine *c) {
       // A failure to launch one is a failure for all.
       return status;
     }
+    proc->SetLaunched();
     RecordProcessId(proc->GetProcessId(), proc);
   }
   return absl::OkStatus();
@@ -343,8 +346,8 @@ absl::Status Subsystem::LaunchProcesses(co::Coroutine *c) {
 
 void Subsystem::StopProcesses(co::Coroutine *c) {
   for (auto &proc : processes_) {
-    if (!proc->IsRunning()) {
-      // Proc isn't running, but it might be connected.
+    if (!proc->IsAlive()) {
+      // Proc isn't alive, but it might be connected.
       proc->Disconnect(shared_from_this());
       continue;
     }
@@ -382,7 +385,7 @@ void Subsystem::RestartProcesses(
     capcom_.Log(Name(), toolbelt::LogLevel::kInfo,
                 "Restarting process %s in subsystem %s", proc->Name().c_str(),
                 Name().c_str());
-    if (!proc->IsRunning()) {
+    if (!proc->IsAlive()) {
       continue;
     }
     absl::Status status = proc->Stop(this, c);

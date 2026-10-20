@@ -86,11 +86,12 @@ absl::Status ZygoteCore::Run() {
   char *notify = getenv("STAGEZERO_NOTIFY_FD");
   if (notify != nullptr) {
     int notify_fd;
-    bool ok = absl::SimpleAtoi(notify, &notify_fd);
-    if (ok) {
-      int64_t val = 1;
-      (void)write(notify_fd, &val, 8);
+    if (!absl::SimpleAtoi(notify, &notify_fd)) {
+      return absl::InternalError(
+          absl::StrFormat("Invalid STAGEZERO_NOTIFY_FD value: %s", notify));
     }
+    int64_t val = 1;
+    (void)write(notify_fd, &val, 8);
     notification_pipe_.SetFd(notify_fd);
   }
 
@@ -198,7 +199,7 @@ void ZygoteCore::WaitForSpawn(co::Coroutine *c) {
 
   if (absl::Status status = control_socket_->ReceiveFds(fds); !status.ok()) {
     logger_.Log(toolbelt::LogLevel::kError, "Failed to receive fds %s\n",
-                n.status().ToString().c_str());
+                status.ToString().c_str());
     control_socket_->Close();
     return;
   }

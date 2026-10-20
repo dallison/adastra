@@ -52,6 +52,33 @@ static int pidfd_open(pid_t pid, unsigned int flags) {
 
 namespace adastra::stagezero {
 
+// Unblocks all signals and resets every disposition to its default.  Used in
+// a forked child before exec.
+static absl::Status ResetSignals() {
+  sigset_t empty_mask;
+  sigemptyset(&empty_mask);
+  if (sigprocmask(SIG_SETMASK, &empty_mask, nullptr) == -1) {
+    return absl::InternalError(
+        absl::StrFormat("Failed to set signal mask: %s", strerror(errno)));
+  }
+
+  struct sigaction default_action = {};
+  default_action.sa_handler = SIG_DFL;
+  sigemptyset(&default_action.sa_mask);
+  for (int sig = 1; sig < NSIG; sig++) {
+    if (sig == SIGKILL || sig == SIGSTOP) {
+      continue;
+    }
+    // EINVAL is returned for signal numbers that can't be changed.
+    if (sigaction(sig, &default_action, nullptr) == -1 && errno != EINVAL) {
+      return absl::InternalError(
+          absl::StrFormat("Failed to reset disposition for signal %d: %s", sig,
+                          strerror(errno)));
+    }
+  }
+  return absl::OkStatus();
+}
+
 Process::Process(co::CoroutineScheduler &scheduler, StageZero &stagezero,
                  std::shared_ptr<ClientHandler> client, std::string name)
     : scheduler_(scheduler), stagezero_(stagezero), client_(std::move(client)),
@@ -89,7 +116,10 @@ int Process::WaitLoop(co::Coroutine *c,
   // We can't really get here unless the process has exited.
   running_ = false;
   siginfo_t siginfo;
-  int e = waitid(idtype_t(P_PIDFD), pid_fd_.Fd(), &siginfo, WEXITED | WNOHANG);
+  // Processes in namespaces are created by clone3 with no exit signal, so
+  // __WALL is needed to reap them.
+  int e = waitid(idtype_t(P_PIDFD), pid_fd_.Fd(), &siginfo,
+                 WEXITED | WNOHANG | __WALL);
   if (e != 0) {
     return 127;
   }
@@ -991,7 +1021,7 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
         if (e == -1) {
           std::cerr << "Failed to redirect interactive file descriptor: " << i
                     << " " << strerror(errno) << std::endl;
-          exit(1);
+          _exit(1);
         }
       }
       interactive_proc_end_.Reset();
@@ -1024,7 +1054,7 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
             if (file_fd == -1) {
               std::cerr << "Failed to open file " << filename << ": "
                         << strerror(errno) << std::endl;
-              exit(1);
+              _exit(1);
             }
             // Set the process end of the stream (the fd that will be
             // redirected) to the file's open fd.
@@ -1044,7 +1074,7 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
           if (e == -1) {
             std::cerr << "Failed to redirect file descriptor: "
                       << strerror(errno) << std::endl;
-            exit(1);
+            _exit(1);
           }
 
           if (!stream->term_name.empty()) {
@@ -1160,7 +1190,7 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
       if (perr == -1) {
         std::cerr << "Failed to set process group: " << strerror(errno)
                   << std::endl;
-        exit(1);
+        _exit(1);
       }
     }
 
@@ -1168,7 +1198,7 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
     if (absl::Status status = AddToCgroup(getpid()); !status.ok()) {
       std::cerr << "Failed to add process to cgroup " << cgroup_ << status
                 << std::endl;
-      exit(1);
+      _exit(1);
     }
 
     if (geteuid() == 0) {
@@ -1203,7 +1233,7 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
         if (e == -1) {
           std::cerr << "Failed to set scheduler policy: " << strerror(errno)
                     << std::endl;
-          exit(1);
+          _exit(1);
         }
       }
 
@@ -1229,7 +1259,7 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
               }
             }
           }
-          exit(1);
+          _exit(1);
         }
       }
 
@@ -1246,7 +1276,7 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
         if (e == -1) {
           std::cerr << "Failed to set secure bits: " << strerror(errno)
                     << std::endl;
-          exit(1);
+          _exit(1);
         }
 
         current_caps.Modify(CAP_SETGID);
@@ -1267,8 +1297,9 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
               int num = 0;
               bool ok = absl::SimpleAtoi(cap.substr(1), &num);
               if (!ok) {
-                return absl::InternalError(
-                    absl::StrFormat("Malformed capability number %s", cap));
+                std::cerr << "Malformed capability number " << cap
+                          << std::endl;
+                _exit(1);
               }
               cap_number = num;
             } else {
@@ -1293,7 +1324,7 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
         if (absl::Status status = current_caps.Set(); !status.ok()) {
           std::cerr << "Failed to set capabilities: " << status.ToString()
                     << std::endl;
-          exit(1);
+          _exit(1);
         }
       }
 
@@ -1302,7 +1333,7 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
         e = setgroups(groups.size(), groups.data());
         if (e == -1) {
           std::cerr << "Failed to setgroups: " << strerror(errno) << std::endl;
-          exit(1);
+          _exit(1);
         }
       }
 #endif
@@ -1311,12 +1342,12 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
       e = setuid(uid);
       if (e == -1) {
         std::cerr << "Failed to setuid: " << strerror(errno) << std::endl;
-        exit(1);
+        _exit(1);
       }
       e = setgid(gid);
       if (e == -1) {
         std::cerr << "Failed to setgid: " << strerror(errno) << std::endl;
-        exit(1);
+        _exit(1);
       }
 #if defined(__linux__)
       if (drop_gid_cap || drop_uid_cap) {
@@ -1331,10 +1362,17 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
         if (absl::Status status = current_caps.Set(); !status.ok()) {
           std::cerr << "Failed to drop id caps: " << status.ToString()
                     << std::endl;
-          exit(1);
+          _exit(1);
         }
       }
 #endif
+    }
+
+    // Don't let the process inherit StageZero's signal mask or ignored
+    // signals (StageZero ignores SIGPIPE).
+    if (absl::Status status = ResetSignals(); !status.ok()) {
+      std::cerr << "Failed to reset signals: " << status << std::endl;
+      _exit(1);
     }
 
     int64_t val = 1;
@@ -1342,7 +1380,7 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
     if (n != sizeof(val)) {
       std::cerr << "Failed to write to startup pipe: " << strerror(errno)
                 << std::endl;
-      exit(1);
+      _exit(1);
     }
     startup_pipe->WriteFd().Close();
     execve(exe.c_str(),
@@ -1350,7 +1388,7 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
            reinterpret_cast<char *const *>(const_cast<char **>(env.data())));
     std::cerr << "Failed to exec " << argv[0] << ": " << strerror(errno)
               << std::endl;
-    exit(1);
+    _exit(1);
   }
   startup_pipe->WriteFd().Close();
 #if defined(__linux__) && HAVE_PIDFD
@@ -1401,7 +1439,20 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
 
 int StaticProcess::Wait() {
   int status = 0;
-  pid_t pid = waitpid(pid_, &status, WNOHANG);
+  // __WALL: see WaitLoop.
+  pid_t pid = waitpid(pid_, &status, WNOHANG | __WALL);
+  if (pid == -1) {
+    if (errno == EINTR) {
+      return 0;
+    }
+    // The process can never be reaped, so treat it as gone rather than
+    // having WaitLoop poll it forever.
+    client_->Log(Name(), toolbelt::LogLevel::kError,
+                 "Failed to reap process %s (pid %d): %s", Name().c_str(), pid_,
+                 strerror(errno));
+    running_ = false;
+    return 127;
+  }
   if (pid == 0) {
     // Process is running.
     return 0;
@@ -1627,6 +1678,11 @@ absl::Status Zygote::Start(co::Coroutine *c) {
   if (!status.ok()) {
     return status;
   }
+  // The zygote connects by name, so neither it nor any other process we
+  // launch needs to inherit the listening socket.
+  if (absl::Status status = listen_socket.SetCloseOnExec(); !status.ok()) {
+    return status;
+  }
 
   std::vector<std::string> zygoteEnv = {
       absl::StrFormat("STAGEZERO_ZYGOTE_SOCKET_NAME=%s", socket_name)};
@@ -1648,6 +1704,12 @@ absl::Status Zygote::Start(co::Coroutine *c) {
       client->Log(proc->Name(), toolbelt::LogLevel::kError,
                   "Unable to accept connection from zygote %s: %s",
                   proc->Name().c_str(), s.status().ToString().c_str());
+      return;
+    }
+    if (absl::Status status = s->SetCloseOnExec(); !status.ok()) {
+      client->Log(proc->Name(), toolbelt::LogLevel::kError,
+                  "Unable to set close-on-exec on zygote %s control socket: %s",
+                  proc->Name().c_str(), status.ToString().c_str());
       return;
     }
     auto zygote = std::static_pointer_cast<Zygote>(proc);

@@ -89,9 +89,19 @@ public:
 
   const std::string &Name() const { return name_; }
 
+  // StageZero accepted the launch but the start event may not have arrived.
+  void SetLaunched() { launched_ = true; }
   void SetRunning() { running_ = true; }
-  void SetStopped() { running_ = false; }
+  void SetStopped() {
+    running_ = false;
+    launched_ = false;
+  }
+  // True once the start event has been received.
   bool IsRunning() const { return running_; }
+  // True from an accepted launch until the process is seen to stop.  A
+  // process that is alive but not yet running still exists in StageZero, so
+  // it must be stopped, not relaunched.
+  bool IsAlive() const { return launched_ || running_; }
 
   const std::string &GetProcessId() const { return process_id_; }
   const std::string &GetCompute() const { return compute_; }
@@ -182,6 +192,7 @@ protected:
   bool telemetry_;
   int max_restarts_;
 
+  bool launched_ = false;
   bool running_ = false;
   bool maybe_connected_ = false; // Not necessaryily connected, but contributing
                                  // to dynamicRefs in umbilical.
@@ -439,7 +450,7 @@ private:
   bool AllProcessesStopped(
       const std::vector<std::shared_ptr<Process>> &procs) const {
     for (auto &p : procs) {
-      if (p->IsRunning()) {
+      if (p->IsAlive()) {
         return false;
       }
     }

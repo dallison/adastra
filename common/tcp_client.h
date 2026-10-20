@@ -160,7 +160,7 @@ absl::Status TCPClient<Request, Response, Event>::SendRequestReceiveResponse(
 
   if (!respbuffer.ok()) {
     command_socket_.Close();
-    return n.status();
+    return respbuffer.status();
   }
   if (!response.ParseFromArray(respbuffer->data(), respbuffer->size())) {
     command_socket_.Close();

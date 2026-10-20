@@ -870,6 +870,84 @@ TEST_F(ClientTest, LaunchZygoteAndStop) {
   WaitForEvent(client, adastra::stagezero::control::Event::kStop);
 }
 
+TEST_F(ClientTest, LaunchFailureNamesWhatWasLaunched) {
+  adastra::stagezero::Client client;
+  InitClient(client, "foobar2");
+
+  // Zygotes and static processes share a launch path, so the error must say
+  // which one failed.
+  absl::StatusOr<std::pair<std::string, int>> zygote = client.LaunchZygote(
+      "missing_zygote", "${runfiles_dir}/_main/no_such_zygote");
+  ASSERT_FALSE(zygote.ok());
+  EXPECT_NE(zygote.status().ToString().find(
+                "Failed to launch zygote 'missing_zygote'"),
+            std::string::npos)
+      << zygote.status();
+
+  absl::StatusOr<std::pair<std::string, int>> process =
+      client.LaunchStaticProcess("missing_process",
+                                 "${runfiles_dir}/_main/no_such_process");
+  ASSERT_FALSE(process.ok());
+  EXPECT_NE(process.status().ToString().find(
+                "Failed to launch static process 'missing_process'"),
+            std::string::npos)
+      << process.status();
+}
+
+TEST_F(ClientTest, LaunchedProcessesDoNotInheritStageZeroState) {
+  adastra::stagezero::Client client;
+  InitClient(client, "foobar2", adastra::kOutputEvents);
+
+  struct ProbeResult {
+    int sockets = -1;
+    int eventfds = -1;
+    int sigpipe_ignored = -1;
+  };
+  auto run_probe = [this, &client](const std::string &name) {
+    ProbeResult result;
+    adastra::Stream output = {
+        .stream_fd = 1,
+        .disposition = adastra::Stream::Disposition::kClient,
+        .direction = adastra::Stream::Direction::kOutput,
+    };
+    absl::StatusOr<std::pair<std::string, int>> status =
+        client.LaunchStaticProcess(
+            name, "${runfiles_dir}/_main/testdata/probe", {.streams = {output}});
+    if (!status.ok()) {
+      ADD_FAILURE() << status.status();
+      return result;
+    }
+    bool got_stop = false;
+    std::string data = WaitForOutput(client, "\n", &got_stop);
+    if (!got_stop) {
+      WaitForEvent(client, adastra::stagezero::control::Event::kStop);
+    }
+    std::istringstream s(data);
+    if (!(s >> result.sockets >> result.eventfds >> result.sigpipe_ignored)) {
+      ADD_FAILURE() << "Invalid probe output: " << data;
+    }
+    return result;
+  };
+
+  ProbeResult before = run_probe("probe_before_zygote");
+  // StageZero ignores SIGPIPE; its processes must not.
+  EXPECT_EQ(0, before.sigpipe_ignored);
+
+  absl::StatusOr<std::pair<std::string, int>> zygote = client.LaunchZygote(
+      "zygote", "${runfiles_dir}/_main/stagezero/zygote/standard_zygote");
+  ASSERT_TRUE(zygote.ok()) << zygote.status();
+  WaitForEvent(client, adastra::stagezero::control::Event::kStart);
+
+  // The zygote's control sockets must not leak into other processes.
+  ProbeResult after = run_probe("probe_after_zygote");
+  ASSERT_GE(before.sockets, 0);
+  EXPECT_EQ(before.sockets, after.sockets);
+  EXPECT_EQ(before.eventfds, after.eventfds);
+
+  ASSERT_TRUE(client.StopProcess(zygote->first).ok());
+  WaitForEvent(client, adastra::stagezero::control::Event::kStop);
+}
+
 TEST_F(ClientTest, LaunchZygoteAndKill) {
   adastra::stagezero::Client client;
   InitClient(client, "foobar2");

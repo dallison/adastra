@@ -16,6 +16,13 @@ cc_binary(
 )
 
 cc_binary(
+    name = "probe",
+    srcs = [
+        "probe.cc",
+    ],
+)
+
+cc_binary(
     name = "params",
     srcs = [
         "params.cc",

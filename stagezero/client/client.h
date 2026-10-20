@@ -46,9 +46,9 @@ struct ProcessOptions {
   adastra::Terminal interactive_terminal;
   std::string user;
   std::string group;
-  bool critical;
+  bool critical = false;
   std::string cgroup;
-  bool detached;
+  bool detached = false;
   std::optional<Namespace> ns;
   KernelSchedulerPolicy kernel_scheduler_policy;
   std::vector<int> cpus;

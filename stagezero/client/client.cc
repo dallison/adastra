@@ -58,7 +58,8 @@ absl::StatusOr<std::pair<std::string, int>> Client::LaunchStaticProcessInternal(
   auto &launch_resp = resp.launch();
   if (!launch_resp.error().empty()) {
     return absl::InternalError(absl::StrFormat(
-        "Failed to launch static process: %s", launch_resp.error()));
+        "Failed to launch %s '%s': %s", zygote ? "zygote" : "static process",
+        name, launch_resp.error()));
   }
   return std::make_pair(launch_resp.process_id(), launch_resp.pid());
 }
