@@ -37,7 +37,12 @@ const std::string &ClientHandler::GetCompute() const {
   return stagezero_.compute_;
 }
 
-void ClientHandler::StopAllCoroutines() { stagezero_.coroutines_.clear(); }
+void ClientHandler::StopAllCoroutines() {
+  // Called in a forked child that is about to exec.  The child is running on
+  // the stack of one of these coroutines, so they must not be destroyed;
+  // abandon them instead.
+  (void)new auto(std::move(stagezero_.coroutines_));
+}
 
 absl::Status ClientHandler::HandleMessage(const control::Request &req,
                                           control::Response &resp,
