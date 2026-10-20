@@ -1141,6 +1141,186 @@ TEST_F(ClientTest, VirtualOutput) {
   WaitForEvent(client, adastra::stagezero::control::Event::kStop);
 }
 
+// Returns the next event that isn't output.
+static std::shared_ptr<adastra::stagezero::control::Event>
+NextNonOutputEvent(adastra::stagezero::Client &client) {
+  for (;;) {
+    absl::StatusOr<std::shared_ptr<adastra::stagezero::control::Event>> e =
+        client.WaitForEvent();
+    if (!e.ok()) {
+      ADD_FAILURE() << e.status();
+      return nullptr;
+    }
+    if ((*e)->event_case() != adastra::stagezero::control::Event::kOutput) {
+      return *e;
+    }
+  }
+}
+
+TEST_F(ClientTest, ConcurrentVirtualLaunchesFromOneZygote) {
+  adastra::stagezero::Client owner;
+  InitClient(owner, "concurrent_zygote_owner");
+
+  absl::StatusOr<std::pair<std::string, int>> zygote = owner.LaunchZygote(
+      "concurrent_zygote",
+      "${runfiles_dir}/_main/stagezero/zygote/standard_zygote");
+  ASSERT_TRUE(zygote.ok()) << zygote.status();
+  WaitForEvent(owner, adastra::stagezero::control::Event::kStart);
+
+  // StageZero serves each client in its own coroutine, so launches from
+  // separate clients put several spawn requests in flight to the zygote at
+  // once.
+  constexpr int kNumLaunches = 8;
+  std::vector<std::unique_ptr<adastra::stagezero::Client>> clients;
+  for (int i = 0; i < kNumLaunches; i++) {
+    clients.push_back(std::make_unique<adastra::stagezero::Client>());
+    InitClient(*clients.back(), absl::StrFormat("concurrent_launcher_%d", i),
+               adastra::kOutputEvents);
+  }
+
+  adastra::Stream output = {
+      .stream_fd = 1,
+      .disposition = adastra::Stream::Disposition::kClient,
+      .direction = adastra::Stream::Direction::kOutput,
+  };
+  std::vector<absl::StatusOr<std::pair<std::string, int>>> launches(
+      kNumLaunches, absl::UnknownError("not launched"));
+  std::vector<std::thread> threads;
+  for (int i = 0; i < kNumLaunches; i++) {
+    threads.emplace_back([&clients, &launches, &output, i]() {
+      launches[i] = clients[i]->LaunchVirtualProcess(
+          absl::StrFormat("vp_%d", i), "concurrent_zygote",
+          "${runfiles_dir}/_main/testdata/module.so", "Main",
+          {.streams = {output}, .notify = true});
+    });
+  }
+  for (auto &thread : threads) {
+    thread.join();
+  }
+
+  for (int i = 0; i < kNumLaunches; i++) {
+    ASSERT_TRUE(launches[i].ok()) << launches[i].status();
+    // The process prints its real pid.  A spawn response matched to the wrong
+    // request would have given this launch another process's pid.
+    std::string expected = absl::StrFormat("pid: %d\n", launches[i]->second);
+    bool got_start = false;
+    std::string data;
+    while (!got_start || data.find("pid: ") == std::string::npos ||
+           data.find('\n', data.find("pid: ")) == std::string::npos) {
+      absl::StatusOr<std::shared_ptr<adastra::stagezero::control::Event>> e =
+          clients[i]->WaitForEvent();
+      ASSERT_TRUE(e.ok()) << e.status();
+      if ((*e)->event_case() == adastra::stagezero::control::Event::kOutput) {
+        data += (*e)->output().data();
+      } else {
+        ASSERT_EQ(adastra::stagezero::control::Event::kStart,
+                  (*e)->event_case());
+        got_start = true;
+      }
+    }
+    EXPECT_NE(data.find(expected), std::string::npos)
+        << "launch " << i << " expected " << expected << "got: " << data;
+  }
+
+  for (int i = 0; i < kNumLaunches; i++) {
+    ASSERT_TRUE(clients[i]->StopProcess(launches[i]->first).ok());
+    std::shared_ptr<adastra::stagezero::control::Event> event =
+        NextNonOutputEvent(*clients[i]);
+    ASSERT_NE(nullptr, event);
+    ASSERT_EQ(adastra::stagezero::control::Event::kStop, event->event_case());
+  }
+  ASSERT_TRUE(owner.StopProcess(zygote->first).ok());
+  WaitForEvent(owner, adastra::stagezero::control::Event::kStop);
+}
+
+TEST_F(ClientTest, VirtualLaunchDoesNotWaitForReadiness) {
+  adastra::stagezero::Client client;
+  InitClient(client, "virtual_launch_no_wait");
+
+  absl::StatusOr<std::pair<std::string, int>> zygote = client.LaunchZygote(
+      "zygote", "${runfiles_dir}/_main/stagezero/zygote/standard_zygote");
+  ASSERT_TRUE(zygote.ok()) << zygote.status();
+  WaitForEvent(client, adastra::stagezero::control::Event::kStart);
+
+  // Neither process ever notifies, so with a long startup timeout a launch
+  // that waited for readiness would not return within the test's lifetime.
+  std::vector<std::string> process_ids;
+  for (int i = 0; i < 2; i++) {
+    absl::StatusOr<std::pair<std::string, int>> virt =
+        client.LaunchVirtualProcess(
+            absl::StrFormat("never_ready_%d", i), "zygote",
+            "${runfiles_dir}/_main/testdata/module.so", "Main",
+            {.args = {"no_notify"}, .startup_timeout_secs = 600, .notify = true});
+    ASSERT_TRUE(virt.ok()) << virt.status();
+    process_ids.push_back(virt->first);
+  }
+
+  for (auto &process_id : process_ids) {
+    ASSERT_TRUE(client.StopProcess(process_id).ok());
+    std::shared_ptr<adastra::stagezero::control::Event> event =
+        NextNonOutputEvent(client);
+    ASSERT_NE(nullptr, event);
+    ASSERT_EQ(adastra::stagezero::control::Event::kStop, event->event_case());
+    EXPECT_EQ(process_id, event->stop().process_id());
+  }
+  ASSERT_TRUE(client.StopProcess(zygote->first).ok());
+  WaitForEvent(client, adastra::stagezero::control::Event::kStop);
+}
+
+TEST_F(ClientTest, VirtualProcessThatExitsBeforeNotifyingIsReportedStopped) {
+  adastra::stagezero::Client client;
+  InitClient(client, "virtual_exit_before_notify");
+
+  absl::StatusOr<std::pair<std::string, int>> zygote = client.LaunchZygote(
+      "zygote", "${runfiles_dir}/_main/stagezero/zygote/standard_zygote");
+  ASSERT_TRUE(zygote.ok()) << zygote.status();
+  WaitForEvent(client, adastra::stagezero::control::Event::kStart);
+
+  // As for a static process, the launch succeeds once the process exists and
+  // its exit before becoming ready is reported as a stop with no start.
+  absl::StatusOr<std::pair<std::string, int>> virt =
+      client.LaunchVirtualProcess(
+          "modtest", "zygote", "${runfiles_dir}/_main/testdata/module.so",
+          "Main", {.args = {"exit_before_notify"}, .notify = true});
+  ASSERT_TRUE(virt.ok()) << virt.status();
+  std::shared_ptr<adastra::stagezero::control::Event> event =
+      NextNonOutputEvent(client);
+  ASSERT_NE(nullptr, event);
+  ASSERT_EQ(adastra::stagezero::control::Event::kStop, event->event_case());
+  EXPECT_EQ(virt->first, event->stop().process_id());
+  EXPECT_EQ(adastra::stagezero::control::StopEvent::EXIT,
+            event->stop().reason());
+  EXPECT_EQ(3, event->stop().sig_or_status());
+
+  ASSERT_TRUE(client.StopProcess(zygote->first).ok());
+  WaitForEvent(client, adastra::stagezero::control::Event::kStop);
+}
+
+TEST_F(ClientTest, VirtualProcessThatNeverNotifiesIsStoppedAtStartupTimeout) {
+  adastra::stagezero::Client client;
+  InitClient(client, "virtual_never_notifies");
+
+  absl::StatusOr<std::pair<std::string, int>> zygote = client.LaunchZygote(
+      "zygote", "${runfiles_dir}/_main/stagezero/zygote/standard_zygote");
+  ASSERT_TRUE(zygote.ok()) << zygote.status();
+  WaitForEvent(client, adastra::stagezero::control::Event::kStart);
+
+  absl::StatusOr<std::pair<std::string, int>> virt =
+      client.LaunchVirtualProcess(
+          "modtest", "zygote", "${runfiles_dir}/_main/testdata/module.so",
+          "Main",
+          {.args = {"no_notify"}, .startup_timeout_secs = 1, .notify = true});
+  ASSERT_TRUE(virt.ok()) << virt.status();
+  std::shared_ptr<adastra::stagezero::control::Event> event =
+      NextNonOutputEvent(client);
+  ASSERT_NE(nullptr, event);
+  ASSERT_EQ(adastra::stagezero::control::Event::kStop, event->event_case());
+  EXPECT_EQ(virt->first, event->stop().process_id());
+
+  ASSERT_TRUE(client.StopProcess(zygote->first).ok());
+  WaitForEvent(client, adastra::stagezero::control::Event::kStop);
+}
+
 TEST_F(ClientTest, Namespaces) {
   if (getuid() != 0) {
     std::cerr << "Skipping Namespace test because we aren't root\n";

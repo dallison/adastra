@@ -29,6 +29,8 @@ int Main(const char *enc_syms, int syms_len, int argc, char **argv,
     printf("arg[%d]: %s\n", i, argv[i]);
   }
 
+  printf("pid: %d\n", getpid());
+
   if (argc == 2 && strcmp(argv[1], "ignore_signal") == 0) {
     printf("Ignoring signals\n");
     signal(SIGINT, Signal);
@@ -39,6 +41,10 @@ int Main(const char *enc_syms, int syms_len, int argc, char **argv,
   if (!isatty(1)) {
     fflush(stdout);
   }
+  if (argc == 2 && strcmp(argv[1], "exit_before_notify") == 0) {
+    _exit(3);
+  }
+  bool notify_startup = !(argc == 2 && strcmp(argv[1], "no_notify") == 0);
 
   std::stringstream symstream;
   symstream.write(enc_syms, syms_len);
@@ -52,7 +58,7 @@ int Main(const char *enc_syms, int syms_len, int argc, char **argv,
   char *notify_env = getenv("STAGEZERO_NOTIFY_FD");
   adastra::stagezero::Symbol *notify =
       symbols.FindSymbol("STAGEZERO_NOTIFY_FD");
-  if (notify != nullptr) {
+  if (notify != nullptr && notify_startup) {
     std::cerr << "notify symbol ok\n";
     if (notify_env == nullptr) {
       fprintf(stderr, "STAGEZERO_NOTIFY_FD is not in the environent\n");

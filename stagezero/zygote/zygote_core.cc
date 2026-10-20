@@ -15,6 +15,7 @@
 
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
+#include <dirent.h>
 #include <dlfcn.h>
 #include <iostream>
 #include <stdlib.h>
@@ -47,6 +48,29 @@ ABSL_FLAG(std::string, main, "ModuleMain", "Name of main function");
 ABSL_FLAG(std::vector<std::string>, vars, {}, "Variables (name=value) pairs");
 
 namespace adastra::stagezero {
+
+// Closes every open file descriptor not in keep.  Only the open fds are
+// visited: RLIMIT_NOFILE is often over a million, and probing every possible
+// fd delays the start of each virtual process by seconds under load.
+static void CloseFdsExcept(const absl::flat_hash_set<int> &keep) {
+  if (DIR *dir = opendir("/proc/self/fd"); dir != nullptr) {
+    int dir_fd = dirfd(dir);
+    std::vector<int> to_close;
+    while (struct dirent *entry = readdir(dir)) {
+      int fd;
+      if (absl::SimpleAtoi(entry->d_name, &fd) && fd != dir_fd &&
+          !keep.contains(fd)) {
+        to_close.push_back(fd);
+      }
+    }
+    closedir(dir);
+    for (int fd : to_close) {
+      (void)close(fd);
+    }
+    return;
+  }
+  toolbelt::CloseAllFds([&keep](int fd) { return !keep.contains(fd); });
+}
 
 class ZygoteSystemTelemetry : public ::stagezero::SystemTelemetry {
 public:
@@ -467,8 +491,7 @@ absl::Status ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
 
     // Close all open file descriptors that we don't want to explicitly
     // keep open.
-    toolbelt::CloseAllFds(
-        [&fds_to_keep_open](int fd) { return !fds_to_keep_open.contains(fd); });
+    CloseFdsExcept(fds_to_keep_open);
 
     // We are in the child process running in the server coroutine context.
     // We want to invoke the virtual process's main function using the process's
