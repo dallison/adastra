@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package adastra.proto.telemetry;
+
+import "google/protobuf/any.proto";
+
+message Command { google.protobuf.Any command = 1; }
+
+message Status { google.protobuf.Any status = 1; }
+
+// Shut down the process.  No status report is expected.
+message ShutdownCommand {
+  int32 exit_code = 1; // Exit with this status code.
+  int32 timeout_seconds =
+      2; // You have this long to exit before a signal is sent.
+}

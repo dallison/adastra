@@ -31,7 +31,7 @@ public:
     // In reality the camera images would be bigger, but this is just
     // a demo.
     constexpr uint64_t kImageSize = 256 * 256 * 3;
-    constexpr uint64_t kMaxMessageSize = kImageSize + 100;
+    constexpr uint64_t kMaxMessageSize = kImageSize + 1000;
     constexpr int32_t kNumSlots = 16;
 
     std::string channel_name = absl::StrFormat("/camera_%s", name->Value());

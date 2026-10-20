@@ -20,7 +20,7 @@ public:
       : Module(std::move(symbols)) {}
 
   absl::Status Init(int argc, char **argv) override {
-    constexpr uint64_t kMaxMessageSize = 32;
+    constexpr uint64_t kMaxMessageSize = 8192;
     constexpr int32_t kNumSlots = 16;
 
     // Let's go north at 60 miles per hour.  1 degree of latitude is about

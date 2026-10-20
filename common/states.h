@@ -20,6 +20,7 @@ enum class AdminState {
 enum class OperState {
   kOffline,
   kStartingChildren,
+  kConnecting,
   kStartingProcesses,
   kOnline,
   kStoppingProcesses,
@@ -37,6 +38,7 @@ inline const char *AdminStateName(AdminState s) {
   case AdminState::kOffline:
     return "offline";
   }
+  return "unknown";
 }
 
 inline const char *OperStateName(OperState s) {
@@ -45,6 +47,8 @@ inline const char *OperStateName(OperState s) {
     return "online";
   case OperState::kOffline:
     return "offline";
+  case OperState::kConnecting:
+    return "connecting";
   case OperState::kStartingChildren:
     return "starting-children";
   case OperState::kStartingProcesses:
@@ -62,6 +66,7 @@ inline const char *OperStateName(OperState s) {
   case OperState::kDegraded:
     return "degraded";
   }
+  return "unknown";
 }
 
 inline std::ostream &operator<<(std::ostream &os, AdminState s) {

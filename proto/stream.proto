@@ -25,6 +25,8 @@ message StreamControl {
     PARAMETERS_READ = 9; // Read stream for parameters.
     PARAMETERS_WRITE = 10; // Write stream for parameters.
     PARAMETERS_EVENTS = 11; // Stream for parameter events.
+    TELEMETRY_READ = 12; // Read stream for telemetry.
+    TELEMETRY_WRITE = 13; // Write stream for telemetry.
   };
 
   // Direction is as seen from the point of view of the process.

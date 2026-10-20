@@ -89,6 +89,7 @@ absl::Status ParameterServer::SetParameter(const std::string &name,
     if (value.GetType() == Type::kMap) {
       ExpandMap(value.GetMap(), node);
     } else {
+      node->children_.clear();
       node->SetValue(value);
     }
     return absl::OkStatus();
@@ -113,6 +114,7 @@ absl::Status ParameterServer::SetParameter(const std::string &name,
   if (value.GetType() == Type::kMap) {
     ExpandMap(value.GetMap(), last_node);
   } else {
+    last_node->children_.clear();
     last_node->SetValue(value);
   }
   return absl::OkStatus();
@@ -160,7 +162,6 @@ bool ParameterServer::HasParameter(const std::string &name) {
 }
 
 absl::Status ParameterServer::DeleteParameter(const std::string &name) {
-  std::cerr << "Deleting parameter " << name << std::endl;
   std::vector<std::string> parts = ParseParameterName(name);
   if (parts.empty()) {
     return absl::InvalidArgumentError("Invalid parameter name");

@@ -13,6 +13,11 @@
 
 namespace adastra::capcom {
 
+ClientHandler::ClientHandler(Capcom &capcom, toolbelt::TCPSocket socket,
+                             uint32_t id)
+    : TCPClientHandler(capcom.logger_, std::move(socket)), capcom_(capcom),
+      id_(id) {}
+
 ClientHandler::~ClientHandler() {}
 
 co::CoroutineScheduler &ClientHandler::GetScheduler() const {
@@ -20,8 +25,6 @@ co::CoroutineScheduler &ClientHandler::GetScheduler() const {
 }
 
 void ClientHandler::Shutdown() {}
-
-toolbelt::Logger &ClientHandler::GetLogger() const { return capcom_.logger_; }
 
 void ClientHandler::AddCoroutine(std::unique_ptr<co::Coroutine> c) {
   capcom_.AddCoroutine(std::move(c));
@@ -59,6 +62,16 @@ absl::Status ClientHandler::SendParameterDeleteEvent(const std::string &name) {
   auto p = event->mutable_parameter();
   p->set_delete_(name);
   return QueueEvent(std::move(event));
+}
+
+absl::Status
+ClientHandler::SendTelemetryEvent(const adastra::proto::TelemetryEvent &event) {
+  if ((event_mask_ & kTelemetryEvents) == 0) {
+    return absl::OkStatus();
+  }
+  auto e = std::make_shared<adastra::proto::Event>();
+  *e->mutable_telemetry() = event;
+  return QueueEvent(std::move(e));
 }
 
 absl::Status ClientHandler::SendAlarm(const Alarm &alarm) {
@@ -161,14 +174,23 @@ absl::Status ClientHandler::HandleMessage(const proto::Request &req,
     HandleSetParameter(req.set_parameter(), resp.mutable_set_parameter(), c);
     break;
 
-  case proto::Request::kDeleteParameter:
-    HandleDeleteParameter(req.delete_parameter(),
-                          resp.mutable_delete_parameter(), c);
+  case proto::Request::kDeleteParameters:
+    HandleDeleteParameters(req.delete_parameters(),
+                           resp.mutable_delete_parameters(), c);
+    break;
+
+  case proto::Request::kGetParameters:
+    HandleGetParameters(req.get_parameters(), resp.mutable_get_parameters(), c);
     break;
 
   case proto::Request::kUploadParameters:
     HandleUploadParameters(req.upload_parameters(),
                            resp.mutable_upload_parameters(), c);
+    break;
+
+  case proto::Request::kSendTelemetryCommand:
+    HandleSendTelemetryCommand(req.send_telemetry_command(),
+                               resp.mutable_send_telemetry_command(), c);
     break;
 
   case proto::Request::REQUEST_NOT_SET:
@@ -180,7 +202,9 @@ absl::Status ClientHandler::HandleMessage(const proto::Request &req,
 void ClientHandler::HandleInit(const proto::InitRequest &req,
                                proto::InitResponse *response,
                                co::Coroutine *c) {
-  absl::StatusOr<int> s = Init(req.client_name(), req.event_mask(), [] {}, c);
+  absl::StatusOr<int> s =
+      Init(req.client_name(), req.event_mask(),
+           []() -> absl::Status { return absl::OkStatus(); }, c);
   if (!s.ok()) {
     response->set_error(s.status().ToString());
     return;
@@ -204,20 +228,6 @@ void ClientHandler::HandleAddCompute(const proto::AddComputeRequest &req,
   memcpy(&ip_addr, compute.ip_addr().data(), compute.ip_addr().size());
   addr.sin_addr.s_addr = htonl(ip_addr);
 
-  toolbelt::InetAddress stagezero_addr(addr);
-
-  // Probe a connection to the stagezero instance to make sure it's
-  // there and to register cgroups.
-  stagezero::Client sclient;
-  if (absl::Status status = sclient.Init(stagezero_addr, "<capcom probe>",
-                                         kNoEvents, compute.name(), c);
-      !status.ok()) {
-    response->set_error(absl::StrFormat(
-        "Cannot connect to StageZero on compute %s at address %s",
-        compute.name(), stagezero_addr.ToString()));
-    return;
-  }
-
   std::vector<Cgroup> cgroups;
   for (auto &cg : compute.cgroups()) {
     Cgroup cgroup;
@@ -226,18 +236,22 @@ void ClientHandler::HandleAddCompute(const proto::AddComputeRequest &req,
   }
   Compute c2 = {compute.name(), toolbelt::InetAddress(addr),
                 std::move(cgroups)};
-  bool ok = capcom_.AddCompute(compute.name(), c2);
+  auto[compute_ptr, ok] = capcom_.AddCompute(compute.name(), c2);
   if (!ok) {
     response->set_error(
         absl::StrFormat("Failed to add compute %s", compute.name()));
     return;
   }
 
-  if (absl::Status add_status = capcom_.RegisterComputeCgroups(sclient, c2, c);
-      !add_status.ok()) {
-    response->set_error(
-        absl::StrFormat("Failed to add cgroup to compute %s: %s",
-                        compute.name(), add_status.ToString()));
+  // If this is a static compute connection, connect the umbilical now and keep
+  // it open.
+  if (req.connection_policy() == proto::AddComputeRequest::STATIC) {
+    capcom_.AddUmbilical(compute_ptr, true);
+    if (absl::Status status = capcom_.ConnectUmbilical(compute.name(), c);
+        !status.ok()) {
+      response->set_error(absl::StrFormat("Failed to connect to compute %s: %s",
+                                          compute.name(), status.ToString()));
+    }
   }
 }
 
@@ -299,13 +313,18 @@ void ClientHandler::HandleAddSubsystem(const proto::AddSubsystemRequest &req,
 
   // Add the processes to the subsystem.
   for (auto &proc : req.processes()) {
-    const Compute *compute = capcom_.FindCompute(proc.compute());
+    const std::shared_ptr<Compute> compute =
+        capcom_.FindCompute(proc.compute());
     if (compute == nullptr) {
       response->set_error(absl::StrFormat(
           "No such compute %s for process %s (have you added it?)",
           proc.compute(), proc.options().name()));
       return;
     }
+
+    // Record a reference to an umbilical for the compute.  It will not be
+    // connected until needed.
+    subsystem->AddUmbilicalReference(compute);
 
     if (absl::Status status = ValidateStreams(proc.streams()); !status.ok()) {
       response->set_error(status.ToString());
@@ -315,8 +334,8 @@ void ClientHandler::HandleAddSubsystem(const proto::AddSubsystemRequest &req,
     switch (proc.proc_case()) {
     case proto::Process::kStaticProcess:
       if (absl::Status status = subsystem->AddStaticProcess(
-              proc.static_process(), proc.options(), proc.streams(), compute,
-              proc.max_restarts(), c);
+              proc.static_process(), proc.options(), proc.streams(),
+              compute->name, proc.max_restarts(), c);
           !status.ok()) {
         response->set_error(
             absl::StrFormat("Failed to add static process %s: %s",
@@ -326,7 +345,7 @@ void ClientHandler::HandleAddSubsystem(const proto::AddSubsystemRequest &req,
       break;
     case proto::Process::kZygote:
       if (absl::Status status = subsystem->AddZygote(
-              proc.zygote(), proc.options(), proc.streams(), compute,
+              proc.zygote(), proc.options(), proc.streams(), compute->name,
               proc.max_restarts(), c);
           !status.ok()) {
         response->set_error(absl::StrFormat("Failed to add zygote %s: %s",
@@ -337,8 +356,8 @@ void ClientHandler::HandleAddSubsystem(const proto::AddSubsystemRequest &req,
       break;
     case proto::Process::kVirtualProcess:
       if (absl::Status status = subsystem->AddVirtualProcess(
-              proc.virtual_process(), proc.options(), proc.streams(), compute,
-              proc.max_restarts(), c);
+              proc.virtual_process(), proc.options(), proc.streams(),
+              compute->name, proc.max_restarts(), c);
           !status.ok()) {
         response->set_error(
             absl::StrFormat("Failed to add virtual process %s: %s",
@@ -643,11 +662,35 @@ void ClientHandler::HandleSetParameter(const proto::SetParameterRequest &req,
   }
 }
 
-void ClientHandler::HandleDeleteParameter(
-    const proto::DeleteParameterRequest &req,
-    proto::DeleteParameterResponse *response, co::Coroutine *c) {
-  if (absl::Status status = capcom_.DeleteParameter(req.name()); !status.ok()) {
+void ClientHandler::HandleDeleteParameters(
+    const proto::DeleteParametersRequest &req,
+    proto::DeleteParametersResponse *response, co::Coroutine *c) {
+  std::vector<std::string> names;
+  for (auto &name : req.names()) {
+    names.push_back(name);
+  }
+  if (absl::Status status = capcom_.DeleteParameters(names, c); !status.ok()) {
     response->set_error(status.ToString());
+  }
+}
+
+void ClientHandler::HandleGetParameters(const proto::GetParametersRequest &req,
+                                        proto::GetParametersResponse *response,
+                                        co::Coroutine *c) {
+  std::vector<std::string> names;
+  for (auto &name : req.names()) {
+    names.push_back(name);
+  }
+  absl::StatusOr<std::vector<parameters::Parameter>> status =
+      capcom_.GetParameters(names);
+  if (!status.ok()) {
+    response->set_error(status.status().ToString());
+    return;
+  }
+  for (auto &p : status.value()) {
+    auto *param = response->add_parameters();
+    param->set_name(p.name);
+    p.value.ToProto(param->mutable_value());
   }
 }
 
@@ -662,10 +705,18 @@ void ClientHandler::HandleUploadParameters(
     params.push_back({p.name(), std::move(v)});
   }
 
-  if (absl::Status status = capcom_.UploadParameters(params); !status.ok()) {
+  if (absl::Status status = capcom_.SetAllParameters(params); !status.ok()) {
     response->set_error(status.ToString());
     return;
   }
 }
 
+void ClientHandler::HandleSendTelemetryCommand(
+    const proto::SendTelemetryCommandRequest &req,
+    proto::SendTelemetryCommandResponse *response, co::Coroutine *c) {
+  if (absl::Status status = capcom_.SendTelemetryCommand(req, c);
+      !status.ok()) {
+    response->set_error(status.ToString());
+  }
+}
 } // namespace adastra::capcom

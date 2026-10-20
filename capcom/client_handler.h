@@ -25,8 +25,7 @@ class ClientHandler
     : public common::TCPClientHandler<proto::Request, proto::Response,
                                       adastra::proto::Event> {
 public:
-  ClientHandler(Capcom &capcom, toolbelt::TCPSocket socket, uint32_t id)
-      : TCPClientHandler(std::move(socket)), capcom_(capcom), id_(id) {}
+  ClientHandler(Capcom &capcom, toolbelt::TCPSocket socket, uint32_t id);
   ~ClientHandler();
 
   absl::Status SendSubsystemStatusEvent(Subsystem *subsystem);
@@ -35,10 +34,10 @@ public:
                                         const parameters::Value &value);
 
   absl::Status SendParameterDeleteEvent(const std::string &name);
+  absl::Status
+  SendTelemetryEvent(const adastra::proto::TelemetryEvent &event);
 
   co::CoroutineScheduler &GetScheduler() const override;
-
-  toolbelt::Logger &GetLogger() const override;
 
   void AddCoroutine(std::unique_ptr<co::Coroutine> c) override;
 
@@ -121,12 +120,18 @@ private:
   void HandleSetParameter(const proto::SetParameterRequest &req,
                           proto::SetParameterResponse *response,
                           co::Coroutine *c);
-  void HandleDeleteParameter(const proto::DeleteParameterRequest &req,
-                             proto::DeleteParameterResponse *response,
+  void HandleDeleteParameters(const proto::DeleteParametersRequest &req,
+                             proto::DeleteParametersResponse *response,
                              co::Coroutine *c);
   void HandleUploadParameters(const proto::UploadParametersRequest &req,
                               proto::UploadParametersResponse *response,
                               co::Coroutine *c);
+  void HandleSendTelemetryCommand(const proto::SendTelemetryCommandRequest &req,
+                                  proto::SendTelemetryCommandResponse *response,
+                                  co::Coroutine *c);
+  void HandleGetParameters(const proto::GetParametersRequest &req,
+                           proto::GetParametersResponse *response,
+                           co::Coroutine *c);
   Capcom &capcom_;
   uint32_t id_;
 };

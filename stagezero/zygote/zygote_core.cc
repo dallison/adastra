@@ -40,7 +40,33 @@ ABSL_FLAG(std::vector<std::string>, vars, {}, "Variables (name=value) pairs");
 
 namespace adastra::stagezero {
 
-ZygoteCore::ZygoteCore(int argc, char **argv) : logger_("zygote_core") {
+class ZygoteSystemTelemetry : public ::stagezero::SystemTelemetry {
+public:
+  ZygoteSystemTelemetry(::stagezero::Telemetry &telemetry)
+      : SystemTelemetry(telemetry, "ZygoteCore::SystemTelemetry") {}
+
+  absl::Status
+  HandleCommand(std::unique_ptr<::stagezero::TelemetryCommand> command,
+                co::Coroutine *c) override {
+
+    switch (command->Code()) {
+    case ::stagezero::SystemTelemetry::kShutdownCommand: {
+      auto shutdown =
+          static_cast<::stagezero::ShutdownCommand *>(command.get());
+      std::cerr << "Zygote is shutting down due to telemetry command\n";
+      exit(shutdown->exit_code);
+      break;
+    }
+
+    default:
+      break;
+    }
+    return absl::OkStatus();
+  }
+};
+
+ZygoteCore::ZygoteCore(int argc, char **argv)
+    : logger_("zygote_core"), telemetry_(scheduler_) {
   absl::ParseCommandLine(argc, argv);
 
   for (int i = 0; i < argc; i++) {
@@ -89,6 +115,14 @@ absl::Status ZygoteCore::Run() {
 
                                       },
                                       "ZygoteServer");
+
+  if (telemetry_.IsOpen()) {
+    auto zt = std::make_shared<ZygoteSystemTelemetry>(telemetry_);
+    telemetry_.AddModule(std::move(zt));
+
+    // Run the telemetry module as a coroutine in our scheduler.
+    telemetry_.Run();
+  }
 
   monitor_ = std::make_unique<co::Coroutine>(
       scheduler_,
@@ -321,7 +355,8 @@ absl::Status ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
                                absl::StrFormat("%d", notify_fd.Fd()), true);
     }
 
-    int parameters_read_fd = -1, parameters_write_fd = -1;
+    int parameters_read_fd = -1, parameters_write_fd = -1,
+        parameters_events_fd = -1;
     if (req.has_parameters_read_fd_index()) {
       toolbelt::FileDescriptor &parameters_fd =
           fds[req.parameters_read_fd_index()];
@@ -334,13 +369,20 @@ absl::Status ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
       parameters_write_fd = parameters_fd.Fd();
       fds_to_keep_open.insert(parameters_fd.Fd());
     }
-
-    if (parameters_read_fd != -1 && parameters_write_fd != -1) {
+    if (req.has_parameters_events_fd_index()) {
+      toolbelt::FileDescriptor &parameters_fd =
+          fds[req.parameters_events_fd_index()];
+      parameters_events_fd = parameters_fd.Fd();
+      fds_to_keep_open.insert(parameters_fd.Fd());
+    }
+    if (parameters_read_fd != -1 && parameters_write_fd != -1 &&
+        parameters_events_fd != -1) {
       unsetenv("STAGEZERO_PARAMETERS_FDS");
-      local_symbols->AddSymbol(
-          "STAGEZERO_PARAMETERS_FDS",
-          absl::StrFormat("%d:%d", parameters_read_fd, parameters_write_fd),
-          true);
+      local_symbols->AddSymbol("STAGEZERO_PARAMETERS_FDS",
+                               absl::StrFormat("%d:%d:%d", parameters_read_fd,
+                                               parameters_write_fd,
+                                               parameters_events_fd),
+                               true);
     }
 
     for (auto &stream : req.streams()) {
@@ -386,6 +428,11 @@ absl::Status ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
       fds[stream.index()].Reset();
     }
 
+    std::vector<int> allfds = scheduler_.GetAllFds();
+    for (auto fd : allfds) {
+      fds_to_keep_open.insert(fd);
+    }
+
     // Close all open file descriptors that we don't want to explicitly
     // keep open.
     toolbelt::CloseAllFds(
@@ -408,11 +455,16 @@ absl::Status ZygoteCore::HandleSpawn(const control::SpawnRequest &req,
         return status;
       }
     }
+
+    // Shutdown the telemetry in the zygote fork.
+    if (telemetry_.IsOpen()) {
+      telemetry_.Shutdown();
+    }
     // Stop the coroutine scheduler in the child process.  This will cause
     // a return from its Run() function in ZygoteCore::Run, where we will
     // invoke the main function on the program stack.
     scheduler_.Stop();
-    c->Yield();
+    c->YieldToScheduler();
 
     // Won't get here in the child process.
     abort();

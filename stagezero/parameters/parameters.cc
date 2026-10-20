@@ -28,7 +28,8 @@ Parameters::Parameters(bool events, co::Coroutine *c) {
 }
 
 absl::Status Parameters::SetParameter(const std::string &name,
-                                      adastra::parameters::Value value, co::Coroutine *c) {
+                                      adastra::parameters::Value value,
+                                      co::Coroutine *c) {
   if (!IsOpen()) {
     return absl::InternalError("No parameters stream");
   }
@@ -49,7 +50,8 @@ absl::Status Parameters::SetParameter(const std::string &name,
   return absl::OkStatus();
 }
 
-absl::Status Parameters::DeleteParameter(const std::string &name, co::Coroutine *c) {
+absl::Status Parameters::DeleteParameter(const std::string &name,
+                                         co::Coroutine *c) {
   if (!IsOpen()) {
     return absl::InternalError("No parameters stream");
   }
@@ -68,7 +70,8 @@ absl::Status Parameters::DeleteParameter(const std::string &name, co::Coroutine 
   return absl::OkStatus();
 }
 
-absl::StatusOr<std::vector<std::string>> Parameters::ListParameters(co::Coroutine *c) {
+absl::StatusOr<std::vector<std::string>>
+Parameters::ListParameters(co::Coroutine *c) {
   if (!IsOpen()) {
     return absl::InternalError("No parameters stream");
   }
@@ -139,7 +142,8 @@ Parameters::GetParameter(const std::string &name, co::Coroutine *c) {
   return value;
 }
 
-absl::StatusOr<bool> Parameters::HasParameter(const std::string &name, co::Coroutine *c) {
+absl::StatusOr<bool> Parameters::HasParameter(const std::string &name,
+                                              co::Coroutine *c) {
   if (!IsOpen()) {
     return absl::InternalError("No parameters stream");
   }
@@ -173,7 +177,6 @@ Parameters::GetEvent(co::Coroutine *c) const {
   if (n <= 0) {
     return event;
   }
-  std::cerr << "Got event of length " << len << std::endl;
   std::vector<char> buffer(len);
   char *buf = buffer.data();
   size_t remaining = len;

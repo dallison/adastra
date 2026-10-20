@@ -31,6 +31,8 @@ cc_library(
         "//proto:event_cc_proto",
         "//proto:parameters_cc_proto",
         "//proto:subsystem_status_cc_proto",
+        "//proto:telemetry_cc_proto",
+        "//stagezero/telemetry",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/status",
@@ -44,7 +46,7 @@ cc_library(
 cc_test(
     name = "parameters_test",
     size = "small",
-    srcs = ["parameters_test.cc"],  
+    srcs = ["parameters_test.cc"],
     deps = [
         ":common",
         "@com_google_absl//absl/status",

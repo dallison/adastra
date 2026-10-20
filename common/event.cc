@@ -48,6 +48,9 @@ void Event::ToProto(proto::Event *dest) const {
     pe->set_delete_(name);
     break;
   }
+  case EventType::kTelemetry:
+    *dest->mutable_telemetry() = std::get<6>(event);
+    break;
   }
 }
 
@@ -107,12 +110,17 @@ absl::Status Event::FromProto(const proto::Event &src) {
           "Unknown parameter event type %d", src.parameter().event_case()));
     }
     break;
+  }
+
+  case adastra::proto::Event::kTelemetry:
+    this->event = src.telemetry();
+    this->type = EventType::kTelemetry;
+    break;
 
   default:
     // Unknown event type.
     return absl::InternalError(
         absl::StrFormat("Unknown event type %d", src.event_case()));
-  }
   }
   return absl::OkStatus();
 }

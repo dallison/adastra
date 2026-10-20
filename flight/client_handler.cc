@@ -11,13 +11,14 @@
 
 namespace adastra::flight {
 
+ClientHandler::ClientHandler(FlightDirector &flight, toolbelt::TCPSocket socket)
+    : TCPClientHandler(flight.logger_, std::move(socket)), flight_(flight) {}
+
 ClientHandler::~ClientHandler() {}
 
 co::CoroutineScheduler &ClientHandler::GetScheduler() const {
   return flight_.co_scheduler_;
 }
-
-toolbelt::Logger &ClientHandler::GetLogger() const { return flight_.logger_; }
 
 void ClientHandler::AddCoroutine(std::unique_ptr<co::Coroutine> c) {
   flight_.AddCoroutine(std::move(c));
@@ -72,7 +73,11 @@ void ClientHandler::HandleInit(const flight::proto::InitRequest &req,
                                flight::proto::InitResponse *response,
                                co::Coroutine *c) {
   absl::StatusOr<int> s = Init(req.client_name(), req.event_mask(),
-                               [this] { flight_.DumpEventCache(this); }, c);
+                               [this]() -> absl::Status {
+                                 flight_.DumpEventCache(this);
+                                 return absl::OkStatus();
+                               },
+                               c);
   if (!s.ok()) {
     response->set_error(s.status().ToString());
     return;
@@ -94,9 +99,8 @@ void ClientHandler::HandleStartSubsystem(
   }
   if (absl::Status status = flight_.capcom_client_.StartSubsystem(
           req.subsystem(),
-          req.interactive()
-              ? adastra::capcom::client::RunMode::kInteractive
-              : adastra::capcom::client::RunMode::kNoninteractive,
+          req.interactive() ? adastra::capcom::client::RunMode::kInteractive
+                            : adastra::capcom::client::RunMode::kNoninteractive,
           terminal.IsPresent() ? &terminal : nullptr, c);
       !status.ok()) {
     response->set_error(status.ToString());
@@ -151,7 +155,8 @@ void ClientHandler::HandleGetAlarms(const flight::proto::GetAlarmsRequest &req,
 void ClientHandler::HandleAbort(const flight::proto::AbortRequest &req,
                                 flight::proto::AbortResponse *response,
                                 co::Coroutine *c) {
-  if (absl::Status status = flight_.capcom_client_.Abort(req.reason(), req.emergency(), c);
+  if (absl::Status status =
+          flight_.capcom_client_.Abort(req.reason(), req.emergency(), c);
       !status.ok()) {
     response->set_error(status.ToString());
   }
@@ -214,8 +219,7 @@ void ClientHandler::HandleCloseFd(const proto::CloseFdRequest &req,
   }
 }
 
-absl::Status
-ClientHandler::SendEvent(std::shared_ptr<adastra::Event> event) {
+absl::Status ClientHandler::SendEvent(std::shared_ptr<adastra::Event> event) {
   if (!event->IsMaskedIn(event_mask_)) {
     return absl::OkStatus();
   }

@@ -11,6 +11,7 @@ namespace adastra::stagezero {
 absl::Status Client::Init(toolbelt::InetAddress addr, const std::string &name,
                           int event_mask, const std::string &compute,
                           co::Coroutine *co) {
+  compute_ = compute;
   auto fill_init = [name, compute, event_mask](control::Request &req) {
     auto init = req.mutable_init();
     init->set_client_name(name);
@@ -115,10 +116,13 @@ void Client::BuildProcessOptions(
     *options->add_args() = arg;
   }
   options->set_startup_timeout_secs(opts.startup_timeout_secs);
+  options->set_telemetry_shutdown_timeout_secs(
+      opts.telemetry_shutdown_timeout_secs);
   options->set_sigint_shutdown_timeout_secs(opts.sigint_shutdown_timeout_secs);
   options->set_sigterm_shutdown_timeout_secs(
       opts.sigterm_shutdown_timeout_secs);
   options->set_notify(opts.notify);
+  options->set_telemetry(opts.telemetry);
   options->set_interactive(opts.interactive);
   if (opts.interactive_terminal.IsPresent()) {
     opts.interactive_terminal.ToProto(options->mutable_interactive_terminal());
@@ -346,7 +350,8 @@ absl::Status Client::KillCgroup(const std::string &cgroup, co::Coroutine *co) {
   }
   return absl::OkStatus();
 }
-absl::Status Client::SetParameter(const std::string &name, parameters::Value &v,
+
+absl::Status Client::SetParameter(const std::string &name, const parameters::Value &v,
                                   co::Coroutine *co) {
   if (co == nullptr) {
     co = co_;
@@ -369,21 +374,23 @@ absl::Status Client::SetParameter(const std::string &name, parameters::Value &v,
   return absl::OkStatus();
 }
 
-absl::Status Client::DeleteParameter(const std::string &name,
+absl::Status Client::DeleteParameters(const std::vector<std::string> &name,
                                      co::Coroutine *co) {
   if (co == nullptr) {
     co = co_;
   }
   adastra::stagezero::control::Request req;
-  auto x = req.mutable_delete_parameter();
-  x->set_name(name);
+  auto x = req.mutable_delete_parameters();
+  for (auto& name : name) {
+    x->add_names(name);
+  }
 
   adastra::stagezero::control::Response resp;
   if (absl::Status status = SendRequestReceiveResponse(req, resp, co);
       !status.ok()) {
     return status;
   }
-  auto &kill_resp = resp.delete_parameter();
+  auto &kill_resp = resp.delete_parameters();
   if (!kill_resp.error().empty()) {
     return absl::InternalError(
         absl::StrFormat("Failed to delete parameter: %s", kill_resp.error()));
@@ -417,4 +424,37 @@ Client::UploadParameters(const std::vector<parameters::Parameter> &params,
   return absl::OkStatus();
 }
 
+absl::Status
+Client::SendTelemetryCommand(const std::string &process_id,
+                             const ::stagezero::TelemetryCommand &cmd,
+                             co::Coroutine *co) {
+  adastra::proto::telemetry::Command tc;
+  cmd.ToProto(tc);
+  return SendTelemetryCommand(process_id, tc, co);
+}
+
+absl::Status
+Client::SendTelemetryCommand(const std::string &process_id,
+                             const adastra::proto::telemetry::Command &cmd,
+                             co::Coroutine *co) {
+  if (co == nullptr) {
+    co = co_;
+  }
+  adastra::stagezero::control::Request req;
+  auto x = req.mutable_send_telemetry_command();
+  x->set_process_id(process_id);
+  *x->mutable_command() = cmd;
+
+  adastra::stagezero::control::Response resp;
+  if (absl::Status status = SendRequestReceiveResponse(req, resp, co);
+      !status.ok()) {
+    return status;
+  }
+  auto &tele_resp = resp.send_telemetry_command();
+  if (!tele_resp.error().empty()) {
+    return absl::InternalError(absl::StrFormat(
+        "Failed to send telemetry command %s", tele_resp.error()));
+  }
+  return absl::OkStatus();
+}
 } // namespace adastra::stagezero

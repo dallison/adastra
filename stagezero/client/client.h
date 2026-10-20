@@ -16,6 +16,7 @@
 #include "coroutine.h"
 #include "proto/config.pb.h"
 #include "proto/control.pb.h"
+#include "stagezero/telemetry/telemetry.h"
 #include "toolbelt/sockets.h"
 
 #include <variant>
@@ -23,6 +24,7 @@
 namespace adastra::stagezero {
 
 constexpr int32_t kDefaultStartupTimeout = 2;
+constexpr int32_t kDefaultTelemetryShutdownTimeout = 2;
 constexpr int32_t kDefaultSigIntShutdownTimeout = 2;
 constexpr int32_t kDefaultSigTermShutdownTimeout = 4;
 
@@ -33,9 +35,11 @@ struct ProcessOptions {
   std::vector<adastra::Stream> streams;
   std::vector<parameters::Parameter> parameters;
   int32_t startup_timeout_secs = kDefaultStartupTimeout;
+  int32_t telemetry_shutdown_timeout_secs = kDefaultTelemetryShutdownTimeout;
   int32_t sigint_shutdown_timeout_secs = kDefaultSigIntShutdownTimeout;
   int32_t sigterm_shutdown_timeout_secs = kDefaultSigTermShutdownTimeout;
   bool notify = false;
+  bool telemetry = false;
   bool interactive = false;
   adastra::Terminal interactive_terminal;
   std::string user;
@@ -68,6 +72,13 @@ public:
   ReadEvent(co::Coroutine *c = nullptr) {
     absl::StatusOr<std::shared_ptr<control::Event>> event = ReadProtoEvent(c);
     if (!event.ok()) {
+      if (event.status().code() == absl::StatusCode::kCancelled) {
+        // On error or EOF, return a disconnect event.
+        auto event = std::make_shared<control::Event>();
+        event->mutable_disconnect()->set_compute(compute_);
+        Close();
+        return event;
+      }
       return event.status();
     }
     return *event;
@@ -87,6 +98,9 @@ public:
                ProcessOptions opts = {}, co::Coroutine *co = nullptr) {
     // Zygotes always notify.
     opts.notify = true;
+
+    // Zygotes use telemetry.
+    opts.telemetry = true;
     return LaunchStaticProcessInternal(name, executable, std::move(opts), true,
                                        co);
   }
@@ -130,16 +144,21 @@ public:
                           co::Coroutine *co = nullptr);
   absl::Status KillCgroup(const std::string &cgroup,
                           co::Coroutine *co = nullptr);
-  absl::Status SetParameter(const std::string &name, parameters::Value &v,
+  absl::Status SetParameter(const std::string &name, const parameters::Value &v,
                             co::Coroutine *c = nullptr);
 
-  absl::Status DeleteParameter(const std::string &name,
+  absl::Status DeleteParameters(const std::vector<std::string> &name,
                                co::Coroutine *c = nullptr);
-
   absl::Status
   UploadParameters(const std::vector<parameters::Parameter> &params,
                    co::Coroutine *c = nullptr);
 
+  absl::Status SendTelemetryCommand(const std::string &process_id,
+                                     const ::stagezero::TelemetryCommand &cmd,
+                                     co::Coroutine *c = nullptr);
+ absl::Status SendTelemetryCommand(const std::string &process_id,
+                                     const adastra::proto::telemetry::Command &cmd,
+                                     co::Coroutine *c = nullptr);
 private:
   absl::StatusOr<std::pair<std::string, int>> LaunchStaticProcessInternal(
       const std::string &name, const std::string &executable,
@@ -148,5 +167,6 @@ private:
   void BuildProcessOptions(const std::string &name,
                            adastra::stagezero::config::ProcessOptions *options,
                            ProcessOptions opts) const;
+  std::string compute_;
 };
 } // namespace adastra::stagezero

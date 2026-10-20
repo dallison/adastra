@@ -13,12 +13,11 @@
 
 namespace adastra::stagezero {
 
+  ClientHandler::ClientHandler(StageZero &stagezero, toolbelt::TCPSocket socket)
+      : TCPClientHandler(stagezero.logger_, std::move(socket)), stagezero_(stagezero) {}
+
 SymbolTable *ClientHandler::GetGlobalSymbols() const {
   return &stagezero_.global_symbols_;
-}
-
-toolbelt::Logger &ClientHandler::GetLogger() const {
-  return stagezero_.logger_;
 }
 
 co::CoroutineScheduler &ClientHandler::GetScheduler() const {
@@ -114,14 +113,19 @@ absl::Status ClientHandler::HandleMessage(const control::Request &req,
     HandleSetParameter(req.set_parameter(), resp.mutable_set_parameter(), c);
     break;
 
-  case control::Request::kDeleteParameter:
-    HandleDeleteParameter(req.delete_parameter(),
-                          resp.mutable_delete_parameter(), c);
+  case control::Request::kDeleteParameters:
+    HandleDeleteParameters(req.delete_parameters(),
+                          resp.mutable_delete_parameters(), c);
     break;
 
   case control::Request::kUploadParameters:
     HandleUploadParameters(req.upload_parameters(),
                            resp.mutable_upload_parameters(), c);
+    break;
+
+  case control::Request::kSendTelemetryCommand:
+    HandleSendTelemetryCommand(req.send_telemetry_command(),
+                               resp.mutable_send_telemetry_command(), c);
     break;
 
   case control::Request::REQUEST_NOT_SET:
@@ -133,7 +137,9 @@ absl::Status ClientHandler::HandleMessage(const control::Request &req,
 void ClientHandler::HandleInit(const control::InitRequest &req,
                                control::InitResponse *response,
                                co::Coroutine *c) {
-  absl::StatusOr<int> s = Init(req.client_name(), req.event_mask(), [] {}, c);
+  absl::StatusOr<int> s =
+      Init(req.client_name(), req.event_mask(),
+           [this]() -> absl::Status { return SendConnectEvent(); }, c);
   if (!s.ok()) {
     response->set_error(s.status().ToString());
     return;
@@ -149,6 +155,18 @@ void ClientHandler::HandleLaunchStaticProcess(
     control::LaunchResponse *response, co::Coroutine *c) {
   auto proc = std::make_shared<StaticProcess>(
       GetScheduler(), stagezero_, this->shared_from_this(), std::move(req));
+  auto existing = stagezero_.FindProcessByName(proc->Name());
+  if (existing != nullptr) {
+    // Process already exists so it is already running.  Report an start event
+    // for it.
+    if (absl::Status status = SendProcessStartEvent(existing->GetId());
+        !status.ok()) {
+      response->set_error(
+          absl::StrFormat("Failed to send start event for process %s: %s",
+                          existing->GetId(), status.ToString()));
+    }
+    return;
+  }
   absl::Status status = proc->Start(c);
   if (!status.ok()) {
     response->set_error(status.ToString());
@@ -171,6 +189,18 @@ void ClientHandler::HandleLaunchZygote(
     control::LaunchResponse *response, co::Coroutine *c) {
   auto zygote = std::make_shared<Zygote>(GetScheduler(), stagezero_,
                                          shared_from_this(), std::move(req));
+  auto existing = stagezero_.FindProcessByName(zygote->Name());
+  if (existing != nullptr) {
+    // Process already exists so it is already running.  Report an start event
+    // for it.
+    if (absl::Status status = SendProcessStartEvent(existing->GetId());
+        !status.ok()) {
+      response->set_error(
+          absl::StrFormat("Failed to send start event for process %s: %s",
+                          existing->GetId(), status.ToString()));
+    }
+    return;
+  }
   absl::Status status = zygote->Start(c);
   if (!status.ok()) {
     response->set_error(status.ToString());
@@ -192,6 +222,20 @@ void ClientHandler::HandleLaunchVirtualProcess(
     control::LaunchResponse *response, co::Coroutine *c) {
   auto proc = std::make_shared<VirtualProcess>(
       GetScheduler(), stagezero_, shared_from_this(), std::move(req));
+  auto existing = stagezero_.FindProcessByName(proc->Name());
+  if (existing != nullptr) {
+    // Process already exists so it is already running.  Report an start event
+    // for it.
+    if (absl::Status status = SendProcessStartEvent(existing->GetId());
+        !status.ok()) {
+      response->set_error(
+          absl::StrFormat("Failed to send start event for process %s: %s",
+                          existing->GetId(), status.ToString()));
+      std::cerr << "Failed to send start event for process "
+                << existing->GetId() << ": " << status << std::endl;
+    }
+    return;
+  }
   absl::Status status = proc->Start(c);
   if (!status.ok()) {
     response->set_error(status.ToString());
@@ -263,6 +307,12 @@ ClientHandler::SendProcessStartEvent(const std::string &process_id) {
   return QueueEvent(std::move(event));
 }
 
+absl::Status ClientHandler::SendConnectEvent() {
+  auto event = std::make_shared<control::Event>();
+  (void)event->mutable_connect();
+  return QueueEvent(std::move(event));
+}
+
 absl::Status ClientHandler::SendProcessStopEvent(const std::string &process_id,
                                                  bool exited, int exit_status,
                                                  int term_signal) {
@@ -315,6 +365,21 @@ absl::Status ClientHandler::SendParameterDeleteEvent(const std::string &name) {
   auto event = std::make_shared<control::Event>();
   auto p = event->mutable_parameter();
   p->set_delete_(name);
+  return QueueEvent(std::move(event));
+}
+
+absl::Status ClientHandler::SendTelemetryStatusEvent(
+  const std::string& process_id, const std::string& compute,
+    const adastra::proto::telemetry::Status &status) {
+  if ((event_mask_ & kTelemetryEvents) == 0) {
+    return absl::OkStatus();
+  }
+  auto event = std::make_shared<control::Event>();
+  auto t = event->mutable_telemetry();
+  t->set_process_id(process_id);
+  t->set_compute(compute);
+  t->set_timestamp(toolbelt::Now());
+  *t->mutable_telemetry() = status;
   return QueueEvent(std::move(event));
 }
 
@@ -462,10 +527,14 @@ void ClientHandler::HandleSetParameter(const control::SetParameterRequest &req,
   }
 }
 
-void ClientHandler::HandleDeleteParameter(
-    const control::DeleteParameterRequest &req,
-    control::DeleteParameterResponse *response, co::Coroutine *c) {
-  if (absl::Status status = stagezero_.DeleteParameter(req.name(), c);
+void ClientHandler::HandleDeleteParameters(
+    const control::DeleteParametersRequest &req,
+    control::DeleteParametersResponse *response, co::Coroutine *c) {
+  std::vector<std::string> names;
+  for (auto &n : req.names()) {
+    names.push_back(n);
+  }
+  if (absl::Status status = stagezero_.DeleteParameters(names, c);
       !status.ok()) {
     response->set_error(status.ToString());
   }
@@ -486,6 +555,16 @@ void ClientHandler::HandleUploadParameters(
       !status.ok()) {
     response->set_error(status.ToString());
     return;
+  }
+}
+
+void ClientHandler::HandleSendTelemetryCommand(
+    const control::SendTelemetryCommandRequest &req,
+    control::SendTelemetryCommandResponse *response, co::Coroutine *c) {
+  if (absl::Status status =
+          stagezero_.SendTelemetryCommand(req.process_id(), req.command(), c);
+      !status.ok()) {
+    response->set_error(status.ToString());
   }
 }
 } // namespace adastra::stagezero

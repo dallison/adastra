@@ -15,6 +15,7 @@
 #include "common/vars.h"
 #include "proto/log.pb.h"
 #include "stagezero/client/client.h"
+#include "stagezero/symbols.h"
 #include "toolbelt/logging.h"
 #include "toolbelt/pipe.h"
 #include "toolbelt/sockets.h"
@@ -68,11 +69,15 @@ private:
   void ListenerCoroutine(toolbelt::TCPSocket &listen_socket, co::Coroutine *c);
   void LoggerCoroutine(co::Coroutine *c);
   void LoggerFlushCoroutine(co::Coroutine *c);
+  void FlushLogs();
+  void ConnectStaticUmbilical(std::shared_ptr<Compute> compute,
+                              co::Coroutine *c);
 
-  bool AddCompute(std::string name, const Compute &compute) {
-    auto[it, inserted] =
-        computes_.emplace(std::make_pair(std::move(name), compute));
-    return inserted;
+  std::pair<std::shared_ptr<Compute>, bool> AddCompute(std::string name,
+                                                       const Compute &compute) {
+    auto[it, inserted] = computes_.emplace(
+        std::make_pair(std::move(name), std::make_shared<Compute>(compute)));
+    return {it->second, inserted};
   }
 
   absl::Status RemoveCompute(const std::string &name) {
@@ -84,12 +89,59 @@ private:
     return absl::OkStatus();
   }
 
-  const Compute *FindCompute(const std::string &name) const {
+  std::shared_ptr<Compute> FindCompute(const std::string &name) const {
     if (name.empty()) {
-      return &local_compute_;
+      return local_compute_;
     }
     auto it = computes_.find(name);
     if (it == computes_.end()) {
+      return nullptr;
+    }
+    return it->second;
+  }
+
+  void AddUmbilical(std::shared_ptr<Compute> compute, bool is_static) {
+    auto it = stagezero_umbilicals_.find(compute->name);
+    if (it != stagezero_umbilicals_.end()) {
+      it->second.dynamicRefs++;
+      return;
+    }
+    stagezero_umbilicals_.emplace(
+        compute->name,
+        Umbilical{compute, std::make_shared<stagezero::Client>(), is_static});
+  }
+
+  void RemoveUmbilical(const std::string &compute, bool dynamic_only) {
+    auto it = stagezero_umbilicals_.find(compute);
+    if (it == stagezero_umbilicals_.end()) {
+      return;
+    }
+    it->second.dynamicRefs--;
+    if (dynamic_only && it->second.is_static) {
+      return;
+    }
+    if (it->second.dynamicRefs == 0) {
+      stagezero_umbilicals_.erase(it);
+    }
+  }
+
+  absl::Status ConnectUmbilical(const std::string &compute, co::Coroutine *c);
+
+  void DisconnectUmbilical(const std::string &compute, bool dynamic_only) {
+    auto it = stagezero_umbilicals_.find(compute);
+    if (it == stagezero_umbilicals_.end()) {
+      return;
+    }
+    if (dynamic_only && it->second.is_static) {
+      return;
+    }
+    it->second.client->Close();
+    it->second.state = UmbilicalState::kUmbilicalClosed;
+  }
+
+  Umbilical *FindUmbilical(const std::string &compute) {
+    auto it = stagezero_umbilicals_.find(compute);
+    if (it == stagezero_umbilicals_.end()) {
       return nullptr;
     }
     return &it->second;
@@ -144,7 +196,9 @@ private:
   void SendSubsystemStatusEvent(Subsystem *subsystem);
   void SendParameterUpdateEvent(const std::string &name,
                                 const parameters::Value &value);
-  void SendParameterDeleteEvent(const std::string &name);
+  void SendParameterDeleteEvent(const std::vector<std::string> &names);
+  void
+  SendTelemetryEvent(const std::string& subsystem, const adastra::stagezero::control::TelemetryEvent &event);
 
   void SendAlarm(const Alarm &alarm);
 
@@ -155,13 +209,14 @@ private:
                      co::Coroutine *c);
   absl::Status AddGlobalVariable(const Variable &var, co::Coroutine *c);
 
-  absl::Status RegisterComputeCgroups(stagezero::Client &client,
-                                      const Compute &compute, co::Coroutine *c);
+  absl::Status RegisterComputeCgroups(std::shared_ptr<stagezero::Client> client,
+                                      std::shared_ptr<Compute> compute,
+                                      co::Coroutine *c);
 
   absl::Status PropagateParameterUpdate(const std::string &name,
-                                        parameters::Value &value,
+                                        const parameters::Value &value,
                                         co::Coroutine *c);
-  absl::Status PropagateParameterDelete(const std::string &name,
+  absl::Status PropagateParameterDelete(const std::vector<std::string> &names,
                                         co::Coroutine *c);
 
   void Log(const std::string &source, toolbelt::LogLevel level, const char *fmt,
@@ -179,12 +234,17 @@ private:
 
   absl::Status SetParameter(const std::string &name,
                             const parameters::Value &value);
-  absl::Status DeleteParameter(const std::string &name);
+  absl::Status DeleteParameters(const std::vector<std::string> &names, co::Coroutine* c);
   absl::Status
-  UploadParameters(const std::vector<parameters::Parameter> &params);
+  SetAllParameters(const std::vector<parameters::Parameter> &params);
+  absl::StatusOr<std::vector<parameters::Parameter>> GetParameters(
+      const std::vector<std::string> &names);
 
   absl::Status
   HandleParameterEvent(const adastra::proto::parameters::ParameterEvent &event,
+                       co::Coroutine *c);
+  absl::Status
+  SendTelemetryCommand(const proto::SendTelemetryCommandRequest &req,
                        co::Coroutine *c);
 
 private:
@@ -194,8 +254,8 @@ private:
   bool test_mode_;
   toolbelt::FileDescriptor notify_fd_;
 
-  Compute local_compute_;
-  absl::flat_hash_map<std::string, Compute> computes_;
+  std::shared_ptr<Compute> local_compute_;
+  absl::flat_hash_map<std::string, std::shared_ptr<Compute>> computes_;
 
   // All coroutines are owned by this set.
   absl::flat_hash_set<std::unique_ptr<co::Coroutine>> coroutines_;
@@ -219,5 +279,10 @@ private:
 
   // Parameters for all running programs.
   parameters::ParameterServer parameters_;
+  stagezero::SymbolTable global_symbols_;
+
+  // Connections to the StageZero on each compute.  This is used as the
+  // umbilical for common StageZero data like parameters, cgroups, etc.
+  absl::flat_hash_map<std::string, Umbilical> stagezero_umbilicals_;
 };
 } // namespace adastra::capcom

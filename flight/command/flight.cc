@@ -167,6 +167,7 @@ absl::Status StatusCommand::Execute(flight::client::Client *client, int argc,
       oper_color = toolbelt::color::BoldGreen();
       break;
     case OperState::kRestarting:
+    case OperState::kConnecting:
     case OperState::kStartingChildren:
     case OperState::kStartingProcesses:
     case OperState::kRestartingProcesses:

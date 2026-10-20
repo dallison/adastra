@@ -10,35 +10,38 @@
 #include "proto/config.pb.h"
 #include "proto/control.pb.h"
 #include "stagezero/symbols.h"
+#include "stagezero/telemetry/telemetry.h"
 #include "toolbelt/logging.h"
-#include "toolbelt/sockets.h"
 #include "toolbelt/pipe.h"
+#include "toolbelt/sockets.h"
 
 #include <memory>
 
 namespace adastra::stagezero {
 
 class ZygoteCore {
- public:
-  ZygoteCore(int argc, char** argv);
+public:
+  ZygoteCore(int argc, char **argv);
   ~ZygoteCore() = default;
 
   absl::Status Run();
 
- private:
+private:
   static constexpr size_t kBufferSize = 4096;
-  void WaitForSpawn(co::Coroutine* c);
+  void WaitForSpawn(co::Coroutine *c);
 
-  absl::Status HandleSpawn(const control::SpawnRequest& req,
-                           control::SpawnResponse* resp,
-                           std::vector<toolbelt::FileDescriptor>& fds,
-                           co::Coroutine* c);
+  absl::Status HandleSpawn(const control::SpawnRequest &req,
+                           control::SpawnResponse *resp,
+                           std::vector<toolbelt::FileDescriptor> &fds,
+                           co::Coroutine *c);
 
-  [[noreturn]] static void InvokeMainAfterSpawn(std::string exe, const control::SpawnRequest&& req,
-                                         std::unique_ptr<SymbolTable> local_symbols);
+  [[noreturn]] static void
+  InvokeMainAfterSpawn(std::string exe, const control::SpawnRequest &&req,
+                       std::unique_ptr<SymbolTable> local_symbols);
 
-  void Run(const std::string& dso, const std::string& main, const std::vector<std::string>& vars);
-  
+  void Run(const std::string &dso, const std::string &main,
+           const std::vector<std::string> &vars);
+
   co::CoroutineScheduler scheduler_;
   std::vector<std::string> args_;
   std::unique_ptr<toolbelt::UnixSocket> control_socket_;
@@ -48,6 +51,7 @@ class ZygoteCore {
   char buffer_[kBufferSize];
   toolbelt::Logger logger_;
   SymbolTable global_symbols_;
+  ::stagezero::Telemetry telemetry_;
 
   bool forked_ = false;
 
@@ -59,4 +63,4 @@ class ZygoteCore {
   } after_fork_;
 };
 
-}  // namespace adastra::stagezero
+} // namespace adastra::stagezero

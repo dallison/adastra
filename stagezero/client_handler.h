@@ -10,6 +10,7 @@
 #include "proto/log.pb.h"
 #include "stagezero/process.h"
 #include "stagezero/symbols.h"
+#include "stagezero/telemetry/telemetry.h"
 #include "toolbelt/logging.h"
 #include "toolbelt/sockets.h"
 #include "toolbelt/triggerfd.h"
@@ -27,19 +28,22 @@ class ClientHandler
     : public common::TCPClientHandler<control::Request, control::Response,
                                       control::Event> {
 public:
-  ClientHandler(StageZero &stagezero, toolbelt::TCPSocket socket)
-      : TCPClientHandler(std::move(socket)), stagezero_(stagezero) {}
+  ClientHandler(StageZero &stagezero, toolbelt::TCPSocket socket);
   ~ClientHandler() = default;
 
   absl::Status SendProcessStartEvent(const std::string &process_id);
   absl::Status SendProcessStopEvent(const std::string &process_id, bool exited,
                                     int exit_status, int term_signal);
+  absl::Status SendConnectEvent();
+
   absl::Status SendOutputEvent(const std::string &process_id, int fd,
                                const char *data, size_t len);
-  absl::Status SendParameterUpdateEvent(const std::string &name, const parameters::Value &value);
+  absl::Status SendParameterUpdateEvent(const std::string &name,
+                                        const parameters::Value &value);
   absl::Status SendParameterDeleteEvent(const std::string &name);
-  
-  toolbelt::Logger &GetLogger() const override;
+  absl::Status
+  SendTelemetryStatusEvent(const std::string& process_id, const std::string& compute,
+  const adastra::proto::telemetry::Status &status);
 
   co::CoroutineScheduler &GetScheduler() const override;
 
@@ -130,12 +134,18 @@ private:
   void HandleSetParameter(const control::SetParameterRequest &req,
                           control::SetParameterResponse *response,
                           co::Coroutine *c);
-  void HandleDeleteParameter(const control::DeleteParameterRequest &req,
-                             control::DeleteParameterResponse *response,
+  void HandleDeleteParameters(const control::DeleteParametersRequest &req,
+                             control::DeleteParametersResponse *response,
                              co::Coroutine *c);
   void HandleUploadParameters(const control::UploadParametersRequest &req,
                               control::UploadParametersResponse *response,
                               co::Coroutine *c);
+
+  void
+  HandleSendTelemetryCommand(const control::SendTelemetryCommandRequest &req,
+                             control::SendTelemetryCommandResponse *response,
+                             co::Coroutine *c);
+
   void AddProcess(const std::string &id, std::shared_ptr<Process> proc) {
     processes_.emplace(std::make_pair(id, std::move(proc)));
   }

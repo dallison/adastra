@@ -22,7 +22,7 @@ public:
 
   // A stereo image consists of 2 camera images and a disparity
   // image, each of which is 256X256 pixels (RGB).
-  static constexpr uint64_t kMaxMessageSize = 3 * 256 * 256 * 3 + 32;
+  static constexpr uint64_t kMaxMessageSize = 3 * 256 * 256 * 3 + 1000;
   static constexpr int32_t kNumSlots = 16;
 
   absl::Status Init(int argc, char **argv) override {

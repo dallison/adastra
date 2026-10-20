@@ -79,14 +79,22 @@ A feature of the StageZero client is the ability to receive `events`.  These are
 2. StopEvent
 3. OutputEvent
 4. LogMessage
+5. Parameter change or deletion
+6. Connection successful
+7. Connection disconnected
+8. Telemetry status
 
-The user can specify whether the OutputEvent and LogMessage events will be sent through the client or not when the client is initialized.
+The user can specify whether the OutputEvent, LogMessage, Parameter, and Telemetry events will be sent through the client or not when the client is initialized.
 
 `StartEvent` and `StopEvent` events inform the client's user of the startup or shutdown of a process.  A successful process start will result in a StartEvent.  A StopEvent is sent when a process terminates, for whatever reason (exit or signal), whether intention or not.
 
 Output events are redirected output streams from a process.
 
 LogMessage events contain formatted log message emitted from StageZero or processes and are described below.
+
+The `Connect` and `disconnect` events are used to inform the client that the connection to StageZero is up or down.
+
+The `Telemetry` events are discussed later in the Telemetry section.
 
 ### Log Messages
 A log message is a formatted user-readable message.  It contains the following attributes:
@@ -97,6 +105,319 @@ A log message is a formatted user-readable message.  It contains the following a
 4. Text: text the log message
 
 They are sent through the API (if masked in).
+
+### Telemetry
+The telemetry facility is a way for a StageZero client to send commands and receive status messages from running
+processes.  It works by creating two pipes to the process (if it's enabled).  The `command pipe` is written to by StageZero and read by the process, and the 'status pipe` is read by StageZero and written by the process.
+
+A simple example of a system-provided telemetry command is the `ShutdownCommand` which can be sent by StageZero
+to stop a process running by causing it to exit with a given code.  If the process is not able to accept
+this telemetry command, StageZero will use signals to tell the process to exit.  The telemetry command is a
+better way to ask a process to terminate.
+
+A process must explicitly enable the telemetry facility in order for StageZero to set it up for that process.
+
+#### Telemetry protobuf messages
+The telemetry system uses protobuf messages as its transport.  In particular, it uses the `google.proto.Any` special
+message to transport arbitrary command and status messages.
+
+The basic command and status messages are defined in `proto/telemetry.proto` as follows:
+
+```
+package adastra.proto.telemetry;
+
+message Command { google.protobuf.Any command = 1; }
+
+message Status { google.protobuf.Any status = 1; }
+```
+
+That is, the contents of a `Command` and `Status` message is any other message.  The `google.protobuf.Any` type
+is a special type that contains two fields:
+
+```
+string type_url
+bytes value
+```
+The `type_url` is a string that contains (in URL form for some reason) the fully qualified protobuf type
+name of the message contained in the `value` field.
+
+The protobuf compiler (and my Phaser protobuf backend) adds special code to handle the `google.protobuf.Any`
+type.  Take a look at Google's documentation for how to use it.
+
+The telemetry facility provides two C++ base classes to wrap the protobuf `Command` and `Status` messages.  They
+provide a way for a process to convert to and from the protobuf classes.  They are:
+
+```c++
+// Base class for telemetry commands.  These are sent from the StageZero client
+// to a running process.
+struct TelemetryCommand {
+  virtual ~TelemetryCommand() = default;
+
+  // The code can be used to distinguish between different commands.  There is
+  // no global code namspace, so each module should define its own codes if it
+  // needs to.
+  virtual int Code() const { return 0; }
+
+  // To and from proto methods are used to serialize and deserialize the
+  // command.
+  virtual void ToProto(adastra::proto::telemetry::Command &proto) const {};
+  virtual bool FromProto(const adastra::proto::telemetry::Command &proto) {
+    return false;
+  }
+
+  // Convenience method to convert to a proto and return it without needing a
+  // temporary object.
+  adastra::proto::telemetry::Command AsProto() const {
+    adastra::proto::telemetry::Command proto;
+    ToProto(proto);
+    return proto;
+  }
+};
+
+// Base class for telemetry status.  These are sent from a process and will be
+// delivered as events from StageZero.
+struct TelemetryStatus {
+  virtual ~TelemetryStatus() = default;
+  virtual void ToProto(adastra::proto::telemetry::Status &proto) const {};
+  virtual bool FromProto(const adastra::proto::telemetry::Status &proto) {
+    return false;
+  }
+
+  // Convenience method to convert to a proto and return it without needing a
+  // temporary object.
+  adastra::proto::telemetry::Status AsProto() const {
+    adastra::proto::telemetry::Status proto;
+    ToProto(proto);
+    return proto;
+  }
+};
+```
+
+As an example, here is how the `ShutdownCommand` is implemented:
+```c++
+// System telemetry command for process shutdown.
+struct ShutdownCommand : public TelemetryCommand {
+  ShutdownCommand(int exit_code, int timeout_secs)
+      : exit_code(exit_code), timeout_secs(timeout_secs) {}
+  int Code() const override { return SystemTelemetry::kShutdownCommand; }
+
+  void ToProto(adastra::proto::telemetry::Command &proto) const override {
+    adastra::proto::telemetry::ShutdownCommand shutdown;
+    shutdown.set_exit_code(exit_code);
+    shutdown.set_timeout_seconds(timeout_secs);
+    proto.mutable_command()->PackFrom(shutdown);
+  }
+
+  bool FromProto(const adastra::proto::telemetry::Command &proto) override {
+    if (!proto.command().Is<adastra::proto::telemetry::ShutdownCommand>()) {
+      return false;
+    }
+    adastra::proto::telemetry::ShutdownCommand shutdown;
+    if (!proto.command().UnpackTo(&shutdown)) {
+      return false;
+    }
+    exit_code = shutdown.exit_code();
+    timeout_secs = shutdown.timeout_seconds();
+    return true;
+  }
+
+  int exit_code;    // Exit with this status.
+  int timeout_secs; // You have this long to exit before you get a signal.
+};
+```
+The `Code` function returns an integer that is meaningful to the telemetry module, `SystemTelemetry` in 
+this case.  It is a convenient way to distinguish between various commands in the module.
+
+
+
+#### Telemetry Modules
+The library `//stagezero/telemetry` provides a process-side telemetry module facility.  This comprises of a `Telemetry`
+class to which a process can add its own `TelemetryModule` instances.
+
+For most use-cases, the process would create an instance of a `stagezero::Telemetry` class with no arguments,
+add its telemetry modules and then call the `Run()` function, probably in a thread.  The `Run` function will not
+return until the telemetry system is shut down.  The telemetry system will poll the input pipe for commands and allows
+the process to send status events back to StageZero.  If the process is coroutine aware and has its own coroutine
+scheduler, it can tell the telemetry system to use that instead, in which case the `Run` function will not
+block and instead will add a coroutine to the given scheduler.  This is pretty specialized use though.
+
+A telemetry module is a class derived from `::stagezero::TelemetryModule`:
+
+```c++
+// This is the base for a telemetry module.  Users should subclass this to
+// provide application specific telemetry handling.
+class TelemetryModule {
+public:
+  TelemetryModule(Telemetry &telemetry, std::string name)
+      : telemetry_(telemetry), name_(std::move(name)) {}
+  virtual ~TelemetryModule() = default;
+
+  const std::string Name() const { return name_; }
+
+  // Parse the protobuf command message and return a command object.  If the
+  // type is not recognized return nullptr.
+  // To check if the command is of a specific type, use the Is<> method as
+  // follows:
+  //   if (command.command().Is<PROTOBUF-TYPE>()) {
+  //
+  // For example:
+  // absl::StatusOr<std::unique_ptr<TelemetryCommand>>
+  // SystemTelemetry::ParseCommand(
+  //  const adastra::proto::telemetry::Command &command) {
+  //  if (command.command().Is<adastra::proto::telemetry::ShutdownCommand>()) {
+  //    adastra::proto::telemetry::ShutdownCommand shutdown;
+  //    if (!command.command().UnpackTo(&shutdown)) {
+  //      return absl::InternalError("Failed to unpack shutdown command");
+  //    }
+  //    return std::make_unique<ShutdownCommand>(shutdown.exit_code(),
+  //    shutdown.timeout_seconds());
+  //  }
+
+  virtual absl::StatusOr<std::unique_ptr<TelemetryCommand>>
+  ParseCommand(const adastra::proto::telemetry::Command &command) = 0;
+
+  // This is called when a command is received.  Subclasses should override this
+  // to provide implementation for the command.  For an example of how to
+  // use this, see the SystemTelemetry implementation in telemetry.cc.
+  virtual absl::Status HandleCommand(std::unique_ptr<TelemetryCommand> command,
+                                     co::Coroutine *c) {
+    return absl::OkStatus();
+  }
+
+protected:
+  Telemetry &telemetry_;
+  std::string name_;
+};
+```
+The idea is that when an incoming command is received, it is passed around all the registered
+telemetry modules in the process asking for one that knows about it.  This is done by calling
+the `Parse` command virtual function.  If the module knows about the command type it should
+parse the contents of the `google.protobuf.Any` field in the command and return it as a
+`std::unique_ptr`.  If it doesn't know about the command, it should return `nullptr`.
+
+If the command is known, the telemetry system will then call `HandleCommand` in the module
+that knows about it.  This is where the actual command handling is done.
+
+For example, to take our `ShutdownCommamnd` a stage further, here is how the `SystemTelemetry`
+module handles it:
+
+```c++
+absl::Status
+SystemTelemetry::HandleCommand(std::unique_ptr<TelemetryCommand> command,
+                               co::Coroutine *c) {
+  switch (command->Code()) {
+  case SystemTelemetry::kShutdownCommand: {
+    auto shutdown = dynamic_cast<ShutdownCommand *>(command.get());
+    exit(shutdown->exit_code);
+    break;
+  }
+
+  default:
+    return absl::InternalError(absl::StrFormat(
+        "Unknown system telemetry command code: %d", command->Code()));
+  }
+  return absl::OkStatus();
+}
+
+```
+If a process wants to do things other than just call `exit` on a `ShutdownCommand`, it can derive
+a new class from `SystemTelemetry` and provide its own version of `HandleCommand`.
+
+For completeness, here is the class declaration for `SystemTelemetry`:
+```c++
+// This is the system telemetry module.  It provides a command to shutdown a
+// process without needing to send a signal.
+class SystemTelemetry : public TelemetryModule {
+public:
+  static constexpr int kShutdownCommand = 1;
+
+  SystemTelemetry(Telemetry &telemetry,
+                  const std::string &name = "adastra::system")
+      : TelemetryModule(telemetry, name) {}
+
+  absl::StatusOr<std::unique_ptr<TelemetryCommand>>
+  ParseCommand(const adastra::proto::telemetry::Command &command) override;
+
+  absl::Status HandleCommand(std::unique_ptr<TelemetryCommand> command,
+                             co::Coroutine *c) override;
+};
+
+```
+The `ParseCommand` is defined as:
+```c++
+// System telemetry module.
+absl::StatusOr<std::unique_ptr<TelemetryCommand>> SystemTelemetry::ParseCommand(
+    const adastra::proto::telemetry::Command &command) {
+  if (command.command().Is<adastra::proto::telemetry::ShutdownCommand>()) {
+    adastra::proto::telemetry::ShutdownCommand shutdown;
+    if (!command.command().UnpackTo(&shutdown)) {
+      return absl::InternalError("Failed to unpack shutdown command");
+    }
+    return std::make_unique<ShutdownCommand>(
+        ShutdownCommand(shutdown.exit_code(), shutdown.timeout_seconds()));
+  }
+  return nullptr;
+}
+```
+Pretty simple.
+
+#### Sending telemetry status messages
+The `SendStatus` function in the `Telemetry` class allows a process to send its status messages as events to
+StageZero client.
+
+It can do this in reponse to an incoming `Command` or it can use one of the three `Call...` functions:
+```c++
+ // Call the callback every 'period' nanoseconds.
+  void CallEvery(std::chrono::nanoseconds period,
+                 std::function<void(co::Coroutine *)> callback);
+
+  // Call the callback once after 'timeout' nanoseconds.
+  void CallAfter(std::chrono::nanoseconds timeout,
+                 std::function<void(co::Coroutine *)> callback);
+
+  // Call the callback now (for some definiton of "now").
+  void CallNow(std::function<void(co::Coroutine *)> callback);
+```
+These functions will call the `callback` function (typically a lambda) under various conditions which
+should be self evident.  The callbacks are called from within a coroutine context and are passed a
+pointer to the coroutine in which they are running.  You can most likely ignore that if you are
+not coroutine based, but there are certain things you might need to know about:
+
+1. You can't block the process inside these functions (don't call a blocking `read` for example)
+2. You only have a 64K stack to play with.
+
+As an example of how to use these, take a gander at the file `testdata/telemetry.cc`.
+
+The status messages you send from processes appear as events at the StageZero client as the following
+protobuf message:
+```
+message TelemetryEvent {
+  string process_id = 1; // Source process ID
+  uint64 timestamp = 2;
+  string compute = 3; // Compute instance
+  adastra.proto.telemetry.Status telemetry = 4;
+}
+```
+The `process_id` is the ID of the process that sent the event.  The actual telemetry status is in the
+`telemetry` field.
+You can use the regular `google.protobuf.Any` access methods to get the contents of the individual telemetry status
+messages.
+
+For example, if you have received an event from the client (in `ts`), you can decode it like this:
+```c++
+   if (ts->telemetry().status().Is<::testdata::telemetry::TimeTelemetryStatus>()) {
+      ::testdata::telemetry::TimeTelemetryStatus status;
+      auto ok = ts->telemetry().status().UnpackTo(&status);
+      std::cout << "Time: " << status.time() << std::endl;
+```
+In this case the telemetry status is a message of the form:
+
+```
+package testdata.telemetry;
+
+message TimeTelemetryStatus { uint64 time = 1; }
+```
+
 
 ## Capcom
 Capcom talks to StageZero processes via their client API.  There is only one Capcom process that talks to all StageZero processes.  It does not launch the StageZero servers on the computers.  Capcom deals with `subsystems` comprising of a set of processes.  Subsystems can have dependencies on other subsystems, building up a DAG.  Capcom is a server process (launched on one computer via systemd or something), and a client library that is used to communicate with it.  The server process opens a TCP/IP port
@@ -123,6 +444,11 @@ The Capcom client provides the following API functions:
 11. Abort
 12. CloseFd
 13. GetAlarms
+14. SetParameter
+15. DeleteParameter
+16. UploadParameters
+17. SendTelemetryCommandToProcess
+18. SendTelemetryCommandToSubsystem
 
 Capcom needs to be told what `computes` are available.  A compute is another name for a computer that is in a robot.  Subsystems contain processes that are assigned to a compute.  Each compute must be running a StageZero server process.
 
@@ -146,6 +472,9 @@ A feature of the Capcom client is the ability to receive `events`.  These are ob
 2. Alarm
 3. Output
 4. LogMessage
+5. ParameterUpdate
+6. ParameterDelete
+7. Telemetry
 
 When the client is initialized, the user can pass an `event mask` specifying what type of events they want to see. 
 
@@ -156,6 +485,23 @@ Alarms are descibed below.
 Output events are redirected output streams from one of the subsystem's processes.
 
 LogMessage events contain formatted log message emitted from StageZero, processes or Capcom and are described above.
+
+Any parameter updates or deletions (from a process) are sent as `ParameterUpdate` or `ParameterDelete` events.
+
+`Telemetry` events are `::adastra::proto::TelemetryEvent` messages that come from processes that have enabled telemetry.  See the [Telemetry](#telemetry) section for details.  The message is defined as:
+
+```
+message TelemetryEvent {
+  string subsystem = 1;
+  string process_id = 2;
+  telemetry.Status telemetry = 3;
+  uint64 timestamp = 4;
+}
+
+```
+This is basically the same event that was sent from StageZero for telemetry status, but also includes the `subsystem` that
+the process is part of.
+
 
 ### Alarms
 Alarms are reports of problems, like a process crashing.  An alarm is an object with the following attributes:
@@ -173,6 +519,322 @@ They are sent through client's TCP/IP connection as events (if masked in).  Each
 Capcom writes all log messages to a file on disk.  The file is in `/tmp` by default but can be changed with a command line argument to the `capcom` program.  The file is a simple length encoded binary file where each log entry is a 64-bit little endian length followed by the protobuf encoded contents of the log entry.
 
 You can switch this off if you don't want the log messages saved to disk by passing the command line flag `--log_file=/dev/null`.
+
+### Umbilicals
+Although stretching the analogy somewhat, Capcom connects to StageZero through `umbilicals`, which are reference counted
+TCP connections from Capcom to the StageZero listening ports on the `compute` instances.
+
+There is one main `umbilical` for Capcom itself which is used to convey global variables, parameters and cgroups.  There is also one umbilical per subsystem that is connected to the StageZero instances that the subsystem needs to run its processes.  Generally, the subsystem umbilicals will be connected on demand when it needs to start a process.  When all 
+the processes have been stopped for that subsystem on a compute, the umbilical will be disconnected.
+
+The main Capcom umbilical can be either connected dynamically when the first subsystem umbilical is connected or
+it can be connected statically when the `Compute` is added.  This is specified when the `Compute` is added to 
+Capcom as a parameter with the following type:
+
+```c++
+enum class ComputeConnectionPolicy {
+  kDynamic,
+  kStatic,
+};
+
+```
+If the value is `kDynamic`, the Capcom will only try to connect to the compute when it needs to.  This allows the
+computers in your robot to start up at different times.  If `kStatic` is specified, Capcom will try to connect
+to the StageZero on the compute when you add it, which means it must already be running.
+
+The default (and expected to be the most common) is dynamic connections where Capcom will connect and disconnect
+to StageZero when it needs to and the computer can come and go.
+
+### Parameters
+Parameters are a way to pass runtime information to processes run by `AdAstra`.  ROS has a global parameter server inside its `roscore` process that is used by most ROS programs to pass runtime parameters to nodes.  AdAstra provides a similar facility in the form of a global parameter server running in `Capcom` which is distrubuted to all `StageZero` instances.  The processes can access parameters via a pipe to StageZero.  Alongside global parameters which are seen by all processes, a process can have a set of local parameters that are known only to that process.  ROS has a notional concept of local parameters, but they are just global parameters that are prefixed by a node's name.
+
+Parameters look like the names of files in a filesystem.  Global parameters are `rooted` with a slash and contain a set of names separated by `/` (just like a file).  Each parameter has a value which is one of:
+
+1. Signed 32-bit integer
+2. Signed 64-bit integer
+3. String
+4. Double precision IEEE 754 number
+5. Boolean
+6. Array of arbitrary bytes
+7. A `struct timespec` specifying a nanosecond timestamp
+8. A vector of other values (need not all be the same type)
+9. A map of name vs value
+
+A process can perform the following operations on parameters, all controlled by the `//stagezero/parameters` library:
+
+* Obtain a list of all parameters without their values
+* Obtain a list of all parameters with their values
+* Get the value of a specific parameter
+* Get the value of a set of parameters, parented by a named parameter (as a map)
+* Set the value of a specific parameter or tree of parameters
+* Delete a parameter or tree of parameters
+* Listen of parameter value updates or deletions
+
+The API for the parameter library from a process is:
+
+```c++
+namespace stagezero {
+class Parameters {
+public:
+  Parameters(bool events = false, co::Coroutine *c = nullptr);
+
+  // Set the given parameter to the value.  If it doesn't exist, it will be
+  // created.
+  absl::Status SetParameter(const std::string &name,
+                            adastra::parameters::Value value,
+                            co::Coroutine *c = nullptr);
+
+  // Delete the parameter with the given name.  Error if it doesn't exist.
+  absl::Status DeleteParameter(const std::string &name,
+                               co::Coroutine *c = nullptr);
+
+  // Get a list of all parameters, not in any particular order.
+  absl::StatusOr<std::vector<std::string>>
+  ListParameters(co::Coroutine *c = nullptr);
+
+  // Get the names and values of all parameters, not in any particular order.
+  absl::StatusOr<
+      std::vector<std::shared_ptr<adastra::parameters::ParameterNode>>>
+  GetAllParameters(co::Coroutine *c = nullptr);
+
+  // Get the value of a parameter.  Error if it doesn't exist
+  absl::StatusOr<adastra::parameters::Value>
+  GetParameter(const std::string &name, co::Coroutine *c = nullptr);
+
+  // Does the parameter exist?
+  absl::StatusOr<bool> HasParameter(const std::string &name,
+                                    co::Coroutine *c = nullptr);
+
+  // Use this to poll for events.
+  const toolbelt::FileDescriptor &GetEventFD() const { return event_fd_; }
+
+  // Read an event.  This will block until an event is available.
+  std::unique_ptr<adastra::parameters::ParameterEvent>
+  GetEvent(co::Coroutine *c = nullptr) const;
+};
+}
+```
+
+The value of a parameter is held in the struct `adastra::parameters::Value` which holds a `std::variant` of all the different parameter types.  Take a look at the file `common/parameters.h` for the struct definition.  It is straightforward.  The `Value` struct contains non-explicit constructors for each of the parameter types for convenience (yes, this generally violates company style-guides for explicit constructors but it's worth it).
+
+#### How this works
+`StageZero` is the process's parent and holds a cached copy of all the global parameters and all process local parameters.  When a process is spawned, it creates three pipes and passes one end of each of them to the process.  The pipes are:
+
+1. Write pipe: processes write parameter commands to the write end
+2. Read pipe: processes read command responses from the read end
+3. Event pipe: processes read events from parameter updates and deletes
+
+Say a process wants to read a parameter's value.  It will send a command to StageZero through the write pipe and wait for a result to come back through the read pipe.
+
+If it wants to receive events, it tells StageZero to send events (via an initialization command sent through the write pipe), and then reads the events from the event pipe.
+
+The performance is very good, empirically measured at about 30 microseconds per command/response on a modern computer.
+
+#### Creating a Parameters object
+Before a process can access its parameters, it must create a `stagezero::Parameters` instance and use it to talk to StageZero.  The `Parameters` constructor takes a couple of arguments with default values:
+
+1. `events`: a boolean specifying whether you want to use the event pipe to receive events
+2. `c`: a coroutine if you are in a coroutine environment.
+
+The `events` argument must be set to `true` if the process wants to see events.  If a process sets it to true and then doesn't actually read any events, the pipe might fill up with data, consuming memory in the kernel.  It won't actually block StageZero but you should avoid it anyway since it uses memory for no reason.
+
+#### Listening for parameter changes
+A process can listen for changes to its local and all global parameters.  The API provides a way to get a file descriptor for the  `event pipe` that is connected to StageZero.  This file descriptor can be used in a call to  `poll` or `epoll` (or `select` too I guess) to wait for data to come in.  This can be done in a separate thread or coroutine in the process, or could be in the process's main loop depending on its design.
+
+When you detect a parameter change, you can call `GetEvent` to get the details of what happened.  The `ParameterEvent` is defined as:
+
+```c++
+struct ParameterEvent {
+  enum class Type {
+    kUpdate,
+    kDelete,
+  };
+  ParameterEvent(Type type) : type(type) {}
+  Type type;
+};
+
+struct ParameterUpdateEvent : public ParameterEvent {
+  ParameterUpdateEvent() : ParameterEvent{Type::kUpdate} {}
+
+  std::string name;
+  Value value;
+};
+
+struct ParameterDeleteEvent : public ParameterEvent {
+  ParameterDeleteEvent() : ParameterEvent{Type::kDelete} {}
+
+  std::string name;
+};
+
+```
+There are two derived classes, one for an update to a parameter and one for the deletion.  The `type` tells you which one is appropriate for the event.
+
+As an example, here's code to print the events seen by a process:
+
+```c++
+      stagezero::Parameters params(true);
+
+      const toolbelt::FileDescriptor &fd = params.GetEventFD();
+      struct pollfd pfd = {
+          .fd = fd.Fd(), .events = POLLIN,
+      };
+      for (;;) {
+        int ret = poll(&pfd, 1, 0);
+        if (ret < 0) {
+          perror("poll");
+          break;
+        }
+        if (pfd.revents & POLLIN) {
+          std::unique_ptr<adastra::parameters::ParameterEvent> event =
+              params.GetEvent();
+          std::cerr << "Event: " << std::endl;
+          switch (event->type) {
+          case adastra::parameters::ParameterEvent::Type::kUpdate: {
+            adastra::parameters::ParameterUpdateEvent *update =
+                static_cast<adastra::parameters::ParameterUpdateEvent *>(
+                    event.get());
+
+            std::cerr << "Update: " << update->name << " = " << update->value
+                      << std::endl;
+            break;
+          }
+          case adastra::parameters::ParameterEvent::Type::kDelete: {
+            adastra::parameters::ParameterDeleteEvent *del =
+                static_cast<adastra::parameters::ParameterDeleteEvent *>(
+                    event.get());
+            std::cerr << "Delete: " << del->name << std::endl;
+            break;
+          }
+          }
+          continue;
+        }
+        break;
+      }
+    }
+
+```
+
+
+#### Parameter layout
+Parameters form a tree.  If they are global, the tree is rooted at `/`.  If they are local, there is no `/` and the root is the empty name.  Each parameter has a value and that value is either one of the primitive types or is a map of `name` vs `value` nodes.  Put another way, if you access a leaf parameter you will get is value as one of the primitive types, but if you access a non-leaf, you will get a map of all its children (recursively) with their values.
+
+
+For example, say you have the following parameter tree:
+
+```
+/
+  a
+    b
+      c (value 1)
+    d
+      e (value 2)
+  f (value 3)
+```
+Non-leaf parameters do not have any value themselves. You can access the parameters leaf nodes:
+
+```
+/a/b/c = 1
+/a/d/e = 2
+/f = 3
+```
+Or, if you access a non-leaf node, you will see a map containing a recursive set of parameters values.  Say you access `/a/b`:
+
+```
+/a/b = {c: 1}
+```
+
+And if you access `/a`:
+
+```
+/a = {b: {c: 1}, {d: {e: 2}}}
+```
+That is, a map of maps.
+
+When you read non-leaf parameters, you will get a map and when you write to them you pass them a map containing the names and values of the children.
+
+#### Global parameters
+Global parameters are held by `Capcom` and distributed to all `StageZero` instances.  Any changes made to global parameters are propagated to all `StageZero` instances immediately.  Processes who are interested in detecting changes to global parameters are can watch for events through the `//stagezero/parameters` library API.
+
+Global parameters all start with a slash `/` and are added to `Capcom` using its regular API.  There are three
+functions you can use to create or modify parameters in the Capcom client API:
+
+```c++
+  absl::Status SetParameter(const std::string &name, const parameters::Value &v,
+                            co::Coroutine *c = nullptr);
+
+  absl::Status DeleteParameters(const std::vector<std::string> &names = {},
+                               co::Coroutine *c = nullptr);
+
+  absl::StatusOr<std::vector<parameters::Parameter>>
+  GetParameters(const std::vector<std::string> &names = {},
+                co::Coroutine *c = nullptr);
+
+  absl::StatusOr<parameters::Value> GetParameter(const std::string &name,
+                                                 co::Coroutine *c = nullptr);
+
+  absl::Status
+  UploadParameters(const std::vector<parameters::Parameter> &params,
+                   co::Coroutine *c = nullptr);
+```
+The `SetParameter` function will create the parameter if it doesn't exist.  If the value is a map, a tree will be created.  If it does exist, the parameter value will be set.
+
+The `DeleteParameters` will delete a set of parameters or a tree of them.  If the `names` is empty all parameters will
+be deleted.
+
+The `GetParameters` and `GetParameter` functions allow the client to read the values of parameters;  If `names` is empty, it will read all the parameters.
+
+The `UploadParameters` allows a whole set of parameters to be sent to Capcom at once.
+
+When the system is running, if you use these functions to change the global parameters, the changes will be propagated to StageZeros and onward to any processes that care to listen for changes.
+
+#### Local parameters
+Local parameters are, by definition, local to a process and are specified in the process's configuration when it is added to Capcom.  Processes will see these parameters and can change them, but they are purely local to the process and no other process can access them.  This is unlike the `notionally local` ROS parameter system where a local parameter is just a global parameter with a node name prefix.
+
+To add local parameters to a process, put them in the config.  For example, from one of the unit tests:
+
+```c++
+  absl::Status status = client.AddSubsystem(
+      "param",
+      {
+          .static_processes = {{
+              .name = "params",
+              .executable = "${runfiles_dir}/_main/testdata/params",
+              .notify = true,
+              .parameters =
+                  {
+                      {"foo/bar", "local-value1"}, {"foo/baz", "local-value2"},
+                  },
+          }},
+      });
+```
+This adds two local parameters with really impressive and imaginative names to the `params` process.
+
+## FlightDirector
+The FlightDirector is Capcom's manager (think Gene Kranz in Apollo 13).  He/she is in charge of the mission.  In this software, the FlightDirector (or just `flight`) talks to Capcom through a client connection and tells it to load, unload, start and stop subsystems.  It also can receive events from Capcom.
+
+Like all the other AdAstra components, it consists of a server process and a client API.  The server runs on one computer only and opens a TCP/IP port (6524 by default).
+
+Capcom is responsible for getting the subsystems loaded up.  It takes a subsystem configuration from files on disk and loads them into Capcom on startup.  Then, when commanded through its client API or configured to do so on startup, it asks Capcom to start or start subsystems.
+
+One implementation of `flight` is provided in this software but it is by no means the only way to do it.  This implementation uses protobuf text format files to specify the subsystems and their dependencies.  Other configuration formats could easlily be used (YAML is popular for example).
+
+This implementation takes a directory tree of .pb.txt files representing subsystems and loads them all up on startup.  It forms them into a graph, checks the graph and loads it into Capcom.
+
+### Command line
+A command line tool that talks to `flight` is provided.  This lets you send commands to flight to start or stop subsystems, show logs, run an interactive process, etc.
+
+The program is simple and has the following commands:
+
+```
+  flight start <subsystem> - start a subsystem running
+  flight run <subsystem> - run a subsystem interactively
+  flight stop <subsystem> - stop a subsystem
+  flight status - show status of all subsystems
+  flight abort <subsystem> - abort all subsystems
+  flight alarms - show all alarms
+  flight log - show live text log
+  flight log <filename>- show recorded text log from file
+```
 
 ## Modules
 A module is a component that runs as a virtual process and communicates with other modules using `Subspace` IPC.  Each module runs in a separate process spawned from a `zygote`.
@@ -204,34 +866,6 @@ sharing of the CPU.  A `coroutine` pointer is available in all functions for use
 To define a module, derive a class from `adastra::module::Module` and in its `Init` function register the publishers and subscribers you need, specifying their types.  Assuming you are fine with protobuf, you can derive your module's class from `adastra::module::ProtobufModule` and it will automatically use protobuf for serialiation.
  
 It is important to register your module by calling `DEFINE_MODULE` in the module's code.  This will define a module that is loaded dynamically after the zygote forks.  You can also, if you want, link the module with a zygote and use `DEFINE_EMBEDDED_MODULE` to define it.
-
-
-## FlightDirector
-The FlightDirector is Capcom's manager (think Gene Kranz in Apollo 13).  He/she is in charge of the mission.  In this software, the FlightDirector (or just `flight`) talks to Capcom through a client connection and tells it to load, unload, start and stop subsystems.  It also can receive events from Capcom.
-
-Like all the other AdAstra components, it consists of a server process and a client API.  The server runs on one computer only and opens a TCP/IP port (6524 by default).
-
-Capcom is responsible for getting the subsystems loaded up.  It takes a subsystem configuration from files on disk and loads them into Capcom on startup.  Then, when commanded through its client API or configured to do so on startup, it asks Capcom to start or start subsystems.
-
-One implementation of `flight` is provided in this software but it is by no means the only way to do it.  This implementation uses protobuf text format files to specify the subsystems and their dependencies.  Other configuration formats could easlily be used (YAML is popular for example).
-
-This implementation takes a directory tree of .pb.txt files representing subsystems and loads them all up on startup.  It forms them into a graph, checks the graph and loads it into Capcom.
-
-### Command line
-A command line tool that talks to `flight` is provided.  This lets you send commands to flight to start or stop subsystems, show logs, run an interactive process, etc.
-
-The program is simple and has the following commands:
-
-```
-  flight start <subsystem> - start a subsystem running
-  flight run <subsystem> - run a subsystem interactively
-  flight stop <subsystem> - stop a subsystem
-  flight status - show status of all subsystems
-  flight abort <subsystem> - abort all subsystems
-  flight alarms - show all alarms
-  flight log - show live text log
-  flight log <filename>- show recorded text log from file
-```
 
 ## FDO (fido)
 The Flight Dynamics Operator (FDO, pronounced "fido") monitors the mission from a console in mission control.  In this software it is a program that displays a retro-style terminal console that shows a live display of:
