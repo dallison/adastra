@@ -427,6 +427,30 @@ absl::Status WriteToProcess(int fd, const char *buf, size_t len,
   return absl::OkStatus();
 }
 
+// Channel streams are not redirected to a fixed fd.  The process is told
+// the fd through an environment variable instead.
+static bool IsChannelStream(proto::StreamControl::Disposition disposition) {
+  switch (disposition) {
+  case proto::StreamControl::NOTIFY:
+  case proto::StreamControl::PARAMETERS_READ:
+  case proto::StreamControl::PARAMETERS_WRITE:
+  case proto::StreamControl::PARAMETERS_EVENTS:
+  case proto::StreamControl::TELEMETRY_READ:
+  case proto::StreamControl::TELEMETRY_WRITE:
+    return true;
+  default:
+    return false;
+  }
+}
+
+// StageZero keeps the other end of the pipe for these streams, so the
+// process must close its copy.
+static bool StageZeroHoldsPipeEnd(
+    proto::StreamControl::Disposition disposition) {
+  return disposition == proto::StreamControl::CLIENT ||
+         IsChannelStream(disposition);
+}
+
 static void DefaultStreamDirections(std::shared_ptr<StreamInfo> stream) {
   if (stream->disposition == proto::StreamControl::CLOSE ||
       stream->disposition == proto::StreamControl::STAGEZERO) {
@@ -1036,12 +1060,7 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
         // the process what it is via an environment variable.
         // For other streams, we redirect to the given file descriptor
         // number and close the duplicated file descriptor.
-        if (stream->disposition != proto::StreamControl::NOTIFY &&
-            stream->disposition != proto::StreamControl::PARAMETERS_READ &&
-            stream->disposition != proto::StreamControl::PARAMETERS_WRITE &&
-            stream->disposition != proto::StreamControl::PARAMETERS_EVENTS &&
-            stream->disposition != proto::StreamControl::TELEMETRY_READ &&
-            stream->disposition != proto::StreamControl::TELEMETRY_WRITE) {
+        if (!IsChannelStream(stream->disposition)) {
           if (stream->disposition == proto::StreamControl::FILENAME) {
             // For files, we have deferred the open until we know the pid
             // of the process.  This is because it's likely that the
@@ -1088,13 +1107,7 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
           fd.Reset();
         }
 
-        if (stream->disposition == proto::StreamControl::CLIENT ||
-            stream->disposition == proto::StreamControl::NOTIFY ||
-            stream->disposition == proto::StreamControl::PARAMETERS_READ ||
-            stream->disposition == proto::StreamControl::PARAMETERS_WRITE ||
-            stream->disposition == proto::StreamControl::PARAMETERS_EVENTS ||
-            stream->disposition == proto::StreamControl::TELEMETRY_READ ||
-            stream->disposition == proto::StreamControl::TELEMETRY_WRITE) {
+        if (StageZeroHoldsPipeEnd(stream->disposition)) {
           // Close the duplicated other end of the pipes.
           toolbelt::FileDescriptor &fd =
               stream->direction == proto::StreamControl::OUTPUT
