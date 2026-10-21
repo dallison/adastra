@@ -14,7 +14,7 @@
 #include <memory>
 #include <stdarg.h>
 
-#include "coroutine.h"
+#include "co/coroutine.h"
 
 namespace adastra::common {
 

@@ -1,3 +1,7 @@
+load("@com_google_protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+
 package(default_visibility = ["//visibility:public"])
 
 cc_binary(
@@ -8,6 +12,13 @@ cc_binary(
     deps = [
         "@com_google_absl//absl/debugging:failure_signal_handler",
         "@com_google_absl//absl/debugging:symbolize",
+    ],
+)
+
+cc_binary(
+    name = "probe",
+    srcs = [
+        "probe.cc",
     ],
 )
 
@@ -79,6 +90,15 @@ cc_binary(
         "@com_google_absl//absl/debugging:failure_signal_handler",
         "@com_google_absl//absl/debugging:symbolize",
     ],
+)
+
+cc_binary(
+    name = "process_state_module.so",
+    srcs = [
+        "process_state_module.cc",
+    ],
+    linkshared = 1,
+    linkstatic = 0,
 )
 
 filegroup(

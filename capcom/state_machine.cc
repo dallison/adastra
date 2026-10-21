@@ -1027,7 +1027,7 @@ void Subsystem::StoppingProcesses(uint32_t client_id, co::Coroutine *c) {
   int num_running_processes = 0;
   auto subsystem = shared_from_this();
   for (auto &proc : processes_) {
-    if (proc->IsRunning()) {
+    if (proc->IsAlive()) {
       num_running_processes++;
     }
   }
@@ -2049,7 +2049,14 @@ void Subsystem::Broken(uint32_t client_id, co::Coroutine *c) {
                  std::shared_ptr<adastra::stagezero::control::Event> event = *e;
                  switch (event->event_case()) {
                  case adastra::stagezero::control::Event::kConnect:
+                   break;
                  case adastra::stagezero::control::Event::kDisconnect:
+                   // Process::Connect is a no-op while our processes still
+                   // hold the connection they opened before we broke, so a
+                   // recovery would wait in kConnecting forever unless they
+                   // are released from the dead umbilical now.
+                   subsystem->DisconnectProcessesForCompute(
+                       event->disconnect().compute());
                    break;
                  case adastra::stagezero::control::Event::kStart:
                    break;

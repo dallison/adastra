@@ -2,98 +2,62 @@ module(
     name = "adastra",
 )
 
-http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+bazel_dep(name = "bazel_skylib", version = "1.9.0")
+bazel_dep(name = "platforms", version = "1.1.0")
+bazel_dep(name = "abseil-cpp", version = "20250814.1", repo_name = "com_google_absl")
+bazel_dep(name = "googletest", version = "1.17.0.bcr.2", repo_name = "com_google_googletest")
+bazel_dep(name = "protobuf", version = "34.1", repo_name = "com_google_protobuf")
+bazel_dep(name = "rules_cc", version = "0.2.17")
+bazel_dep(name = "rules_shell", version = "0.8.0")
 
-local_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:local.bzl", "local_repository")
-
-bazel_dep(name = "bazel_skylib", version = "1.7.1")
-bazel_dep(name = "platforms", version = "0.0.10")
-bazel_dep(name = "abseil-cpp", version = "20240722.0.bcr.1", repo_name = "com_google_absl")
-bazel_dep(name = "googletest", version = "1.15.2", repo_name = "com_google_googletest")
-
-# Note, see https://github.com/bazelbuild/bazel/issues/19973
-# Protobuf must be aliased as "com_google_protobuf" to match implicit dependency within bazel_tools.
-bazel_dep(name = "protobuf", version = "29.0", repo_name = "com_google_protobuf")
-
-bazel_dep(name = "rules_cc", version = "0.0.16")
-bazel_dep(name = "rules_pkg", version = "1.0.1")
-bazel_dep(name = "zlib", version = "1.3.1.bcr.3")
-
-http_archive(
-    name = "toolbelt",
-    integrity = "sha256-RwYojmkQeMEBe/jDW1BR9BTdGa0CVcxne46X9Qdxvh0=",
-    strip_prefix = "cpp_toolbelt-1.2.9",
-    urls = ["https://github.com/dallison/cpp_toolbelt/archive/refs/tags/1.2.9.tar.gz"],
+# protobuf pulls in rules_android 0.6.4 and rules_go 0.51, neither of which
+# loads under Bazel 9.
+single_version_override(
+    module_name = "rules_go",
+    version = "0.61.0",
 )
 
-# For local debugging of toolbelt coroutine library.
-# local_repository(
-#     name = "toolbelt",
-#     path = "../cpp_toolbelt",
-# )
-
-# Coroutines
-http_archive(
-    name = "coroutines",
-    integrity = "sha256-P4nLeTzHht8uk/Jzee5OGRVgRD4Dr8Ww61RBpl0mp1E=",
-    strip_prefix = "co-2.0.2",
-    urls = ["https://github.com/dallison/co/archive/refs/tags/2.0.2.tar.gz"],
+single_version_override(
+    module_name = "rules_android",
+    version = "0.7.2",
 )
 
-# For local debugging of co coroutine library.
-# local_repository(
-#     name = "coroutines",
-#     path = "../co",
-# )
+bazel_dep(name = "coroutines", version = "3.3.5")
+bazel_dep(name = "cpp_toolbelt", version = "2.1.5", repo_name = "toolbelt")
+bazel_dep(name = "subspace", version = "3.2.2")
 
-http_archive(
-   name = "subspace",
-   urls = ["https://github.com/dallison/subspace/archive/refs/tags/2.0.6.tar.gz"],
-   strip_prefix = "subspace-2.0.6",
-  integrity = "sha256-KnWaFHJsq7l7HJWvq16lILzWhlEfD9SWTisbSnUS15Q=",
+# The following are not in the BCR; fetch releases from GitHub.
+bazel_dep(name = "phaser", version = "2.1.2")
+archive_override(
+    module_name = "phaser",
+    integrity = "sha256-v1otsz4wb6xIs6hAwAwimltSoJYFiNK7GFbTInpH0Rw=",
+    strip_prefix = "phaser-2.1.2",
+    urls = ["https://github.com/dallison/phaser/archive/refs/tags/2.1.2.tar.gz"],
 )
 
-# For local debugging of subspace library.
-# local_repository(
-#     name = "subspace",
+bazel_dep(name = "retro", version = "1.1.0")
+archive_override(
+    module_name = "retro",
+    integrity = "sha256-gypqOKhu0CTFumNECp0O0JiRUmCNIR+megK7iHt3vUk=",
+    strip_prefix = "retro-1.1.0",
+    urls = ["https://github.com/dallison/retro/archive/refs/tags/1.1.0.tar.gz"],
+)
+
+# neutron predates Bazel 9 and the BCR versions of toolbelt; the patch
+# replaces its MODULE.bazel and adds the rule loads that Bazel 9 requires.
+# Pinned to the untagged commit after 1.0.3 that makes it build with GCC.
+bazel_dep(name = "neutron", version = "1.0.3")
+archive_override(
+    module_name = "neutron",
+    integrity = "sha256-JsRcQoNJ72KyBWe4Auph41iiwLY60r38HvJ9MMEGLp4=",
+    patch_strip = 1,
+    patches = ["//patches:neutron_bazel9.patch"],
+    strip_prefix = "neutron-0a47950f0325c65c2fc5aea7f087d5e608209166",
+    urls = ["https://github.com/dallison/neutron/archive/0a47950f0325c65c2fc5aea7f087d5e608209166.tar.gz"],
+)
+
+# For local debugging of any of the above, replace the override with e.g.:
+# local_path_override(
+#     module_name = "subspace",
 #     path = "../subspace",
-# )
-
-# For local debugging of retro library.
-# local_repository(
-#     name = "retro",
-#     path = "../retro",
-# )
-
-http_archive(
-  name = "retro",
-  urls = ["https://github.com/dallison/retro/archive/refs/tags/1.0.2.tar.gz"],
-  strip_prefix = "retro-1.0.2",
-  # sha256 = "9cc2dfc3f1a5a52ab3c3891167b7f31a041255c9d2ce0c949cea44e0b72ebff1"
-)
-
-http_archive(
-  name = "neutron",
-  urls = ["https://github.com/dallison/neutron/archive/refs/tags/1.0.3.tar.gz"],
-  strip_prefix = "neutron-1.0.3",
-  integrity = "sha256-XNpB6mZSbpctyRSLXNMgw7KroXLplZdQzTZRs+LwzG8="
-)
-
-# For local debugging of neutron library.
-# local_repository(
-#     name = "neutron",
-#     path = "../neutron",
-# )
-
-http_archive(
- name = "phaser",
- urls = ["https://github.com/dallison/phaser/archive/refs/tags/1.0.4.tar.gz"],
- strip_prefix = "phaser-1.0.4",
- integrity = "sha256-we8dVwqIuEzlJfcVzht1smKHJ0ohaq7gjTO2yw/vhOQ=",
-)
-
-# For local debugging of phaser library.
-# local_repository(
-#     name = "phaser",
-#     path = "../phaser",
 # )

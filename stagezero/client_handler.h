@@ -18,7 +18,7 @@
 #include "absl/container/flat_hash_map.h"
 #include <list>
 
-#include "coroutine.h"
+#include "co/coroutine.h"
 
 namespace adastra::stagezero {
 

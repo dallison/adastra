@@ -16,7 +16,7 @@
 #include "common/subsystem_status.h"
 #include "common/tcp_client.h"
 #include "common/vars.h"
-#include "coroutine.h"
+#include "co/coroutine.h"
 #include "proto/capcom.pb.h"
 #include "proto/config.pb.h"
 #include "stagezero/telemetry/telemetry.h"
@@ -88,6 +88,10 @@ struct Zygote {
   KernelSchedulerPolicy kernel_scheduler_policy;
   std::vector<int> cpus;
   CapabilitySet capabilities;
+  // User and group for virtual processes spawned by this zygote that don't
+  // set their own.  Empty means they run as the zygote's user and group.
+  std::string virtual_process_user;
+  std::string virtual_process_group;
 };
 
 struct VirtualProcess {

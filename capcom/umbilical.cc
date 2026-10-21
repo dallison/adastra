@@ -3,10 +3,15 @@
 namespace adastra::capcom {
 
 bool Umbilical::Precondition() {
-  bool was_closed = state_ == UmbilicalState::kClosed;
-  state_ = UmbilicalState::kConnecting;
   dynamicRefs_++;
-  return was_closed;
+  if (IsConnected() || state_ == UmbilicalState::kConnecting) {
+    // Already connected, or another coroutine is connecting it.
+    return false;
+  }
+  // Closed, or marked connected but the client has lost its connection
+  // (e.g. StageZero restarted).  The caller must connect it.
+  state_ = UmbilicalState::kConnecting;
+  return true;
 }
 
 absl::Status Umbilical::Connect(int event_mask, co::Coroutine *c) {

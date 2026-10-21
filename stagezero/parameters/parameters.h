@@ -2,7 +2,7 @@
 
 #include "absl/status/statusor.h"
 #include "common/parameters.h"
-#include "coroutine.h"
+#include "co/coroutine.h"
 #include "toolbelt/sockets.h"
 
 namespace stagezero {

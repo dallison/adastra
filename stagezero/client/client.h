@@ -15,7 +15,7 @@
 #include "common/stream.h"
 #include "common/tcp_client.h"
 #include "common/vars.h"
-#include "coroutine.h"
+#include "co/coroutine.h"
 #include "proto/config.pb.h"
 #include "proto/control.pb.h"
 #include "stagezero/telemetry/telemetry.h"
@@ -46,13 +46,16 @@ struct ProcessOptions {
   adastra::Terminal interactive_terminal;
   std::string user;
   std::string group;
-  bool critical;
+  bool critical = false;
   std::string cgroup;
-  bool detached;
+  bool detached = false;
   std::optional<Namespace> ns;
   KernelSchedulerPolicy kernel_scheduler_policy;
   std::vector<int> cpus;
   CapabilitySet capabilities;
+  // Zygotes only.  See virtual_process_user in config.proto.
+  std::string virtual_process_user;
+  std::string virtual_process_group;
 };
 
 class Client : public adastra::TCPClient<control::Request, control::Response,

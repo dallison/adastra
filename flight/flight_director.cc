@@ -533,6 +533,8 @@ absl::Status FlightDirector::LoadSubsystemGraph(
 
       auto &options = z.options();
       ParseProcessOptions(zygote.get(), options);
+      zygote->virtual_process_user = options.virtual_process_user();
+      zygote->virtual_process_group = options.virtual_process_group();
       ParseStream(zygote->name, z.stdin(), STDIN_FILENO, &zygote->streams);
       ParseStream(zygote->name, z.stdout(), STDOUT_FILENO, &zygote->streams);
       ParseStream(zygote->name, z.stderr(), STDERR_FILENO, &zygote->streams);
@@ -742,6 +744,8 @@ absl::Status FlightDirector::RegisterSubsystem(Subsystem *subsystem,
           .user = src->user,
           .group = src->group,
           .cgroup = src->cgroup,
+          .virtual_process_user = src->virtual_process_user,
+          .virtual_process_group = src->virtual_process_group,
       });
       break;
     }

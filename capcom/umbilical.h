@@ -68,6 +68,9 @@ public:
 
   ~Umbilical() { client_->Close(); }
 
+  // The umbilical must be preconditioned before it can be connected.  This is
+  // done to prevent races where coroutines are doing the connections.  Returns
+  // true if the caller is responsible for connecting the umbilical.
   bool Precondition();
 
   void Fail() { state_ = UmbilicalState::kClosed; }

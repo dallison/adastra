@@ -6,7 +6,7 @@
 
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
-#include "coroutine.h"
+#include "co/coroutine.h"
 #include "proto/config.pb.h"
 #include "proto/control.pb.h"
 #include "stagezero/symbols.h"
@@ -34,6 +34,10 @@ private:
                            control::SpawnResponse *resp,
                            std::vector<toolbelt::FileDescriptor> &fds,
                            co::Coroutine *c);
+
+  // In the forked child, applies the settings that need root: cgroup,
+  // scheduler policy, CPU affinity, user, group and capabilities.
+  absl::Status SetUpChildAsRoot(const control::SpawnRequest &req);
 
   [[noreturn]] static void
   InvokeMainAfterSpawn(std::string exe, const control::SpawnRequest &&req,

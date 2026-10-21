@@ -6,6 +6,8 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
+#include "absl/status/status.h"
+#include "absl/strings/str_format.h"
 #include "common/cgroup.h"
 #include "common/parameters.h"
 #include "stagezero/process.h"
@@ -54,10 +56,15 @@ private:
   void CloseHandler(std::shared_ptr<ClientHandler> handler);
   void ListenerCoroutine(toolbelt::TCPSocket &listen_socket, co::Coroutine *c);
 
-  bool AddProcess(std::string id, std::shared_ptr<Process> process) {
+  absl::Status AddProcess(std::string id, std::shared_ptr<Process> process) {
     auto [it, inserted] =
         processes_.emplace(std::make_pair(std::move(id), std::move(process)));
-    return inserted;
+    if (!inserted) {
+      return absl::AlreadyExistsError(absl::StrFormat(
+          "Process id '%s' is already registered to '%s' (pid %d)", it->first,
+          it->second->Name(), it->second->GetPid()));
+    }
+    return absl::OkStatus();
   }
 
   bool AddProcessByName(std::string name, std::shared_ptr<Process> process) {
@@ -66,15 +73,21 @@ private:
     return inserted;
   }
 
-  bool AddZygote(std::string name, std::string id,
-                 std::shared_ptr<Zygote> zygote) {
-    bool p_inserted = AddProcess(id, zygote);
-    if (!p_inserted) {
-      return false;
+  absl::Status AddZygote(std::string name, std::string id,
+                         std::shared_ptr<Zygote> zygote) {
+    const int forked_pid = zygote->GetPid();
+    if (absl::Status status = AddProcess(id, zygote); !status.ok()) {
+      return status;
     }
 
     auto [it, z_inserted] = zygotes_.emplace(name, zygote);
-    return z_inserted;
+    if (!z_inserted) {
+      return absl::AlreadyExistsError(absl::StrFormat(
+          "Zygote '%s' is already registered to process '%s' (pid %d); this "
+          "launch forked pid %d",
+          it->first, it->second->GetId(), it->second->GetPid(), forked_pid));
+    }
+    return absl::OkStatus();
   }
 
   bool AddVirtualProcess(int pid, std::shared_ptr<Process> proc) {

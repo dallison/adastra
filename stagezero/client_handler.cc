@@ -37,7 +37,12 @@ const std::string &ClientHandler::GetCompute() const {
   return stagezero_.compute_;
 }
 
-void ClientHandler::StopAllCoroutines() { stagezero_.coroutines_.clear(); }
+void ClientHandler::StopAllCoroutines() {
+  // Called in a forked child that is about to exec.  The child is running on
+  // the stack of one of these coroutines, so they must not be destroyed;
+  // abandon them instead.
+  (void)new auto(std::move(stagezero_.coroutines_));
+}
 
 absl::Status ClientHandler::HandleMessage(const control::Request &req,
                                           control::Response &resp,
@@ -180,9 +185,9 @@ void ClientHandler::HandleLaunchStaticProcess(
   response->set_process_id(process_id);
   response->set_pid(proc->GetPid());
 
-  if (!stagezero_.AddProcess(process_id, proc)) {
-    response->set_error(
-        absl::StrFormat("Unable to add process %s", process_id));
+  if (absl::Status status = stagezero_.AddProcess(process_id, proc);
+      !status.ok()) {
+    response->set_error(status.ToString());
     return;
   }
   AddProcess(process_id, proc);
@@ -213,9 +218,10 @@ void ClientHandler::HandleLaunchZygote(
   std::string process_id = zygote->GetId();
   response->set_process_id(process_id);
   response->set_pid(zygote->GetPid());
-  if (!stagezero_.AddZygote(zygote->Name(), process_id, zygote)) {
-    response->set_error(absl::StrFormat("Unable to add zygote %s(%s)",
-                                        zygote->Name(), process_id));
+  if (absl::Status status =
+          stagezero_.AddZygote(zygote->Name(), process_id, zygote);
+      !status.ok()) {
+    response->set_error(status.ToString());
     return;
   }
   AddProcess(process_id, zygote);
@@ -246,9 +252,9 @@ void ClientHandler::HandleLaunchVirtualProcess(
   std::string process_id = proc->GetId();
   response->set_process_id(process_id);
   response->set_pid(proc->GetPid());
-  if (!stagezero_.AddProcess(process_id, proc)) {
-    response->set_error(
-        absl::StrFormat("Unable to add process %s", process_id));
+  if (absl::Status status = stagezero_.AddProcess(process_id, proc);
+      !status.ok()) {
+    response->set_error(status.ToString());
     return;
   }
   AddProcess(process_id, proc);

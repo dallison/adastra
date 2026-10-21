@@ -1,3 +1,6 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
+
 package(default_visibility = ["//visibility:public"])
 
 cc_library(
@@ -27,12 +30,16 @@ cc_test(
     name = "client_test",
     size = "small",
     srcs = ["client_test.cc"],
+    # Runs a StageZero server on the fixed port 6522, as does capcom_test.
+    tags = ["exclusive"],
     data = [
         "//stagezero/zygote:standard_zygote",
         "//testdata:echo",
         "//testdata:files",
         "//testdata:loop",
         "//testdata:module.so",
+        "//testdata:probe",
+        "//testdata:process_state_module.so",
         "//testdata:telemetry",
         "//testdata:vars",
     ],

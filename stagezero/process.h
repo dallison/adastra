@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
@@ -12,7 +13,7 @@
 #include "common/parameters.h"
 #include "common/scheduler.h"
 #include "common/stream.h"
-#include "coroutine.h"
+#include "co/coroutine.h"
 #include "proto/config.pb.h"
 #include "proto/control.pb.h"
 #include "proto/parameters.pb.h"
@@ -21,7 +22,9 @@
 #include "toolbelt/fd.h"
 #include "toolbelt/pipe.h"
 #include "toolbelt/sockets.h"
+#include "toolbelt/triggerfd.h"
 #include <chrono>
+#include <deque>
 #include <memory>
 #include <optional>
 #include <signal.h>
@@ -258,20 +261,34 @@ public:
 
   absl::Status Start(co::Coroutine *c) override;
 
-  // Note that this is a completely blocking function that doesn't use
-  // a coroutine.  It is called from other coroutines but since it talks
-  // to a process through a socket, we can't interleave the messages
-  // if multiple spawns happen at the same time.
-  // Returns a pair of pid and pidfd (on linux only, all others will be 0);
-  absl::StatusOr<std::pair<int, toolbelt::FileDescriptor>>
-  Spawn(const stagezero::control::LaunchVirtualProcessRequest &req,
-        const std::vector<std::shared_ptr<StreamInfo>> &streams);
+  // Pid and pidfd of a spawned virtual process.  The pidfd is only valid on
+  // linux.
+  using SpawnResult = absl::StatusOr<std::pair<int, toolbelt::FileDescriptor>>;
+
+  // Asks the zygote to fork the process and suspends the coroutine until the
+  // zygote replies, so concurrent spawns are pipelined to the zygote rather
+  // than blocking the scheduler.  The process is registered under its pid
+  // before the coroutine resumes so that an exit notification for it is never
+  // dropped.
+  SpawnResult Spawn(std::shared_ptr<VirtualProcess> process,
+                    const stagezero::control::LaunchVirtualProcessRequest &req,
+                    const std::vector<std::shared_ptr<StreamInfo>> &streams,
+                    co::Coroutine *c);
 
   bool IsZygote() const override { return true; }
 
-  void SetControlSocket(toolbelt::UnixSocket s) {
-    control_socket_ = std::move(s);
-  }
+  // Takes the socket the zygote connected on and starts the coroutines that
+  // send spawn requests and receive their responses over it.
+  absl::Status OpenControlChannel(toolbelt::UnixSocket s);
+
+  // Delivers an exit the zygote reported for a pid.  An exit for a pid that
+  // isn't registered yet is held until the spawn response carrying that pid
+  // is processed.
+  void HandleExitNotification(int pid, int64_t status);
+
+  // Called when the zygote's notification pipe reaches EOF, meaning the zygote
+  // has exited.
+  void HandleNotificationsClosed();
 
   void AddVirtualProcess(std::shared_ptr<VirtualProcess> p) {
     virtual_processes_.insert(p);
@@ -289,9 +306,42 @@ public:
   }
 
 private:
+  struct SpawnReply;
+
+  struct OutgoingSpawn {
+    // Starts with 4 bytes reserved for the length written by SendMessage.
+    std::vector<char> buffer;
+    std::vector<toolbelt::FileDescriptor> fds;
+  };
+
   std::pair<std::string, int> BuildZygoteSocketName();
 
+  void SendSpawnRequests(co::Coroutine *c);
+  void ReceiveSpawnResponses(co::Coroutine *c);
+  SpawnResult CompleteSpawn(const control::SpawnResponse &response,
+                            std::vector<toolbelt::FileDescriptor> fds,
+                            const std::shared_ptr<VirtualProcess> &process);
+
+  // Fails every outstanding spawn and makes both channel coroutines exit.
+  void CloseControlChannel(const std::string &reason);
+
+  // Responses are read from control_socket_ and requests are written to a dup
+  // of it.  The scheduler adds an fd to epoll once, using the events of its
+  // first waiter, so a reader and a writer can't wait on the same fd.
   toolbelt::UnixSocket control_socket_;
+  toolbelt::UnixSocket control_write_socket_;
+  bool control_channel_open_ = false;
+
+  // The zygote answers requests in the order it receives them, so replies are
+  // matched in order.
+  std::deque<OutgoingSpawn> outgoing_spawns_;
+  toolbelt::TriggerFd outgoing_spawns_trigger_;
+  std::deque<std::shared_ptr<SpawnReply>> pending_spawn_replies_;
+
+  // Exits reported while a spawn response was still being read, keyed by pid.
+  absl::flat_hash_map<int, int64_t> early_exits_;
+  bool notifications_closed_ = false;
+
   absl::flat_hash_set<std::shared_ptr<VirtualProcess>> virtual_processes_;
 };
 
@@ -318,6 +368,8 @@ public:
 
 private:
   int Wait() override;
+  // Returns true if the process notified us that it is ready.
+  bool WaitForReadiness(co::Coroutine *c);
   int WaitForZygoteNotification(co::Coroutine *c);
 
   stagezero::control::LaunchVirtualProcessRequest req_;

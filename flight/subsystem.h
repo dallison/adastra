@@ -45,6 +45,8 @@ struct StaticProcess : public Process {
 };
 
 struct Zygote : public StaticProcess {
+  std::string virtual_process_user;
+  std::string virtual_process_group;
   ProcessType Type() const override { return ProcessType::kZygote; }
 };
 

@@ -209,6 +209,8 @@ absl::Status Client::AddSubsystem(const std::string &name,
     opts->set_group(z.group);
     opts->set_critical(options.critical);
     opts->set_cgroup(z.cgroup);
+    opts->set_virtual_process_user(z.virtual_process_user);
+    opts->set_virtual_process_group(z.virtual_process_group);
 
     auto *s = proc->mutable_zygote();
     s->set_executable(z.executable);

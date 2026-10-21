@@ -6,7 +6,7 @@
 
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
-#include "coroutine.h"
+#include "co/coroutine.h"
 #include "toolbelt/sockets.h"
 #include <memory>
 
@@ -160,7 +160,7 @@ absl::Status TCPClient<Request, Response, Event>::SendRequestReceiveResponse(
 
   if (!respbuffer.ok()) {
     command_socket_.Close();
-    return n.status();
+    return respbuffer.status();
   }
   if (!response.ParseFromArray(respbuffer->data(), respbuffer->size())) {
     command_socket_.Close();

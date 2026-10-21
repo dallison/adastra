@@ -1955,7 +1955,7 @@ TEST_F(CapcomTest, TalkAndListen) {
       "subspace",
       {.static_processes = {{
            .name = "subspace_server",
-           .executable = "${runfiles_dir}/+_repo_rules+subspace/server/subspace_server",
+           .executable = "${runfiles_dir}/subspace+/server/subspace_server",
            .args = {"--notify_fd=${notify_fd}"},
            .notify = true,
        }},

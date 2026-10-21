@@ -17,7 +17,7 @@
 #include "stagezero/symbols.h"
 
 #include "client/client.h"
-#include "coroutine.h"
+#include "co/coroutine.h"
 #include "toolbelt/triggerfd.h"
 #include <assert.h>
 #include <chrono>
