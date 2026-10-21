@@ -35,6 +35,10 @@ private:
                            std::vector<toolbelt::FileDescriptor> &fds,
                            co::Coroutine *c);
 
+  // In the forked child, applies the settings that need root: cgroup,
+  // scheduler policy, CPU affinity, user, group and capabilities.
+  absl::Status SetUpChildAsRoot(const control::SpawnRequest &req);
+
   [[noreturn]] static void
   InvokeMainAfterSpawn(std::string exe, const control::SpawnRequest &&req,
                        std::unique_ptr<SymbolTable> local_symbols);

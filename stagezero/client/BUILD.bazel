@@ -39,6 +39,7 @@ cc_test(
         "//testdata:loop",
         "//testdata:module.so",
         "//testdata:probe",
+        "//testdata:process_state_module.so",
         "//testdata:telemetry",
         "//testdata:vars",
     ],

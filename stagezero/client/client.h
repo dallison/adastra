@@ -53,6 +53,9 @@ struct ProcessOptions {
   KernelSchedulerPolicy kernel_scheduler_policy;
   std::vector<int> cpus;
   CapabilitySet capabilities;
+  // Zygotes only.  See virtual_process_user in config.proto.
+  std::string virtual_process_user;
+  std::string virtual_process_group;
 };
 
 class Client : public adastra::TCPClient<control::Request, control::Response,

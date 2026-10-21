@@ -136,6 +136,13 @@ message ProcessOptions {
   KernelSchedulerPolicy kernel_scheduler_policy = 22;  // Scheduler to use.
 
   CapabilitySet capabilities = 23;                     // Capabilities ()
+
+  // Zygotes only.  User and group for the virtual processes this zygote
+  // spawns that don't set their own user.  Empty means they run as the
+  // zygote's user and group.  Setting virtual_process_group without
+  // virtual_process_user is rejected.
+  string virtual_process_user = 24;
+  string virtual_process_group = 25;
 }
 
 message StaticProcess { string executable = 1; }

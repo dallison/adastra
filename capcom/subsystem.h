@@ -240,9 +240,15 @@ public:
       std::string executable, const stagezero::config::ProcessOptions &options,
       const google::protobuf::RepeatedPtrField<stagezero::proto::StreamControl>
           &streams)
-      : StaticProcess(capcom, name, compute, executable, options, streams) {}
+      : StaticProcess(capcom, name, compute, executable, options, streams),
+        virtual_process_user_(options.virtual_process_user()),
+        virtual_process_group_(options.virtual_process_group()) {}
   absl::Status Launch(Subsystem *subsystem, co::Coroutine *c) override;
   bool IsZygote() const override { return true; }
+
+private:
+  std::string virtual_process_user_;
+  std::string virtual_process_group_;
 };
 
 class VirtualProcess : public Process {

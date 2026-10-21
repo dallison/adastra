@@ -1671,6 +1671,14 @@ absl::Status Process::CloseFileDescriptor(int fd) {
 }
 
 absl::Status Zygote::Start(co::Coroutine *c) {
+  // Spawn only applies virtual_process_group alongside virtual_process_user.
+  if (req_.opts().virtual_process_user().empty() &&
+      !req_.opts().virtual_process_group().empty()) {
+    return absl::InvalidArgumentError(absl::StrFormat(
+        "Zygote %s sets virtual_process_group without virtual_process_user",
+        Name()));
+  }
+
   // Open a listening Unix Domain Socket for the zygote to connect to.
   toolbelt::UnixSocket listen_socket;
 
@@ -2086,8 +2094,18 @@ Zygote::Spawn(std::shared_ptr<VirtualProcess> process,
     *n = req.opts().ns();
   }
 
-  spawn.set_user(req.opts().user());
-  spawn.set_group(req.opts().group());
+  // A virtual process that names no user takes the zygote's virtual process
+  // user and group.  One that names a user but no group keeps that user's
+  // primary group.
+  if (req.opts().user().empty()) {
+    spawn.set_user(req_.opts().virtual_process_user());
+    spawn.set_group(req.opts().group().empty()
+                        ? req_.opts().virtual_process_group()
+                        : req.opts().group());
+  } else {
+    spawn.set_user(req.opts().user());
+    spawn.set_group(req.opts().group());
+  }
   spawn.set_cgroup(req.opts().cgroup());
 
   for (auto cpu : req.opts().cpus()) {

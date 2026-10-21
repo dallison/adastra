@@ -12,7 +12,10 @@
 
 #include "testdata/proto/telemetry.pb.h"
 #include <fstream>
+#include <grp.h>
 #include <inttypes.h>
+#include <linux/capability.h>
+#include <pwd.h>
 #include <memory>
 #include <signal.h>
 #include <sstream>
@@ -1316,6 +1319,105 @@ TEST_F(ClientTest, VirtualProcessThatNeverNotifiesIsStoppedAtStartupTimeout) {
   ASSERT_NE(nullptr, event);
   ASSERT_EQ(adastra::stagezero::control::Event::kStop, event->event_case());
   EXPECT_EQ(virt->first, event->stop().process_id());
+
+  ASSERT_TRUE(client.StopProcess(zygote->first).ok());
+  WaitForEvent(client, adastra::stagezero::control::Event::kStop);
+}
+
+TEST_F(ClientTest, ZygoteWithVirtualProcessGroupButNoUserIsRejected) {
+  adastra::stagezero::Client client;
+  InitClient(client, "zygote_group_without_user");
+
+  absl::StatusOr<std::pair<std::string, int>> zygote = client.LaunchZygote(
+      "zygote", "${runfiles_dir}/_main/stagezero/zygote/standard_zygote",
+      {.virtual_process_group = "nogroup"});
+  ASSERT_FALSE(zygote.ok());
+  EXPECT_NE(zygote.status().ToString().find(
+                "virtual_process_group without virtual_process_user"),
+            std::string::npos)
+      << zygote.status();
+}
+
+TEST_F(ClientTest, VirtualProcessesDefaultToZygoteVirtualProcessUser) {
+  if (geteuid() != 0) {
+    GTEST_SKIP() << "Changing process credentials requires root";
+  }
+  struct passwd *nobody = getpwnam("nobody");
+  struct group *adm = getgrnam("adm");
+  if (nobody == nullptr || adm == nullptr) {
+    GTEST_SKIP() << "Needs user nobody and group adm";
+  }
+
+  adastra::stagezero::Client client;
+  InitClient(client, "zygote_virtual_process_user", adastra::kOutputEvents);
+
+  // The zygote itself runs as root, so it can switch each virtual process to
+  // its own user.
+  absl::StatusOr<std::pair<std::string, int>> zygote = client.LaunchZygote(
+      "zygote", "${runfiles_dir}/_main/stagezero/zygote/standard_zygote",
+      {.virtual_process_user = "nobody"});
+  ASSERT_TRUE(zygote.ok()) << zygote.status();
+  WaitForEvent(client, adastra::stagezero::control::Event::kStart);
+
+  adastra::Stream output = {
+      .stream_fd = 1,
+      .disposition = adastra::Stream::Disposition::kClient,
+      .direction = adastra::Stream::Direction::kOutput,
+  };
+  auto run_probe = [&](const std::string &user, const std::string &group,
+                       std::vector<std::string> capabilities = {}) {
+    absl::StatusOr<std::pair<std::string, int>> virt =
+        client.LaunchVirtualProcess(
+            "probe", "zygote",
+            "${runfiles_dir}/_main/testdata/process_state_module.so", "Main",
+            {.streams = {output},
+             .user = user,
+             .group = group,
+             .capabilities = {.capabilities = std::move(capabilities)}});
+    EXPECT_TRUE(virt.ok()) << virt.status();
+    bool got_stop = false;
+    std::string data = WaitForOutput(client, "done\n", &got_stop, 100);
+    if (!got_stop) {
+      std::shared_ptr<adastra::stagezero::control::Event> event =
+          NextNonOutputEvent(client);
+      while (event != nullptr &&
+             event->event_case() != adastra::stagezero::control::Event::kStop) {
+        event = NextNonOutputEvent(client);
+      }
+    }
+    return data;
+  };
+
+  // No user or group: the zygote's virtual process user and that user's
+  // primary group.  Credentials changed without an exec must not leave the
+  // process undumpable.
+  std::string data = run_probe("", "");
+  EXPECT_NE(data.find(absl::StrFormat("uid: %d gid: %d dumpable: 1",
+                                      nobody->pw_uid, nobody->pw_gid)),
+            std::string::npos)
+      << data;
+  EXPECT_NE(data.find("cap_eff: 0\n"), std::string::npos) << data;
+
+  // Its own group but no user: still the zygote's virtual process user.
+  data = run_probe("", "adm");
+  EXPECT_NE(data.find(absl::StrFormat("uid: %d gid: %d dumpable: 1",
+                                      nobody->pw_uid, adm->gr_gid)),
+            std::string::npos)
+      << data;
+
+  // Its own user and group.  The group is set before dropping root.
+  data = run_probe("nobody", "adm");
+  EXPECT_NE(data.find(absl::StrFormat("uid: %d gid: %d dumpable: 1",
+                                      nobody->pw_uid, adm->gr_gid)),
+            std::string::npos)
+      << data;
+
+  // Requested capabilities survive the change of user, and only those.
+  data = run_probe("nobody", "", {"CAP_NET_BIND_SERVICE"});
+  EXPECT_NE(data.find(absl::StrFormat("cap_eff: %llx\n",
+                                      1ULL << CAP_NET_BIND_SERVICE)),
+            std::string::npos)
+      << data;
 
   ASSERT_TRUE(client.StopProcess(zygote->first).ok());
   WaitForEvent(client, adastra::stagezero::control::Event::kStop);

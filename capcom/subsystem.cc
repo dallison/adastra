@@ -815,6 +815,8 @@ absl::Status Zygote::Launch(Subsystem *subsystem, co::Coroutine *c) {
       .kernel_scheduler_policy = kernel_scheduler_policy_,
       .cpus = cpus_,
       .capabilities = capabilities_,
+      .virtual_process_user = virtual_process_user_,
+      .virtual_process_group = virtual_process_group_,
   };
   // Subsystem vars.
   for (auto &var : subsystem->Vars()) {

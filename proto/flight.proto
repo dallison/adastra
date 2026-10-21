@@ -68,6 +68,12 @@ message ProcessOptions {
   string user = 8;
   string group = 9;
   string cgroup = 10;
+
+  // Zygotes only.  User and group for the virtual processes the zygote spawns
+  // that don't set their own user.  Empty means they run as the zygote's user
+  // and group.
+  string virtual_process_user = 11;
+  string virtual_process_group = 12;
 }
 
 message Module {

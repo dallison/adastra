@@ -146,6 +146,8 @@ void Client::BuildProcessOptions(
     options->add_cpus(cpu);
   }
   opts.capabilities.ToProto(options->mutable_capabilities());
+  options->set_virtual_process_user(opts.virtual_process_user);
+  options->set_virtual_process_group(opts.virtual_process_group);
 }
 
 absl::Status Client::StopProcess(const std::string &process_id,
