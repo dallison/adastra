@@ -1385,7 +1385,7 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
       _exit(1);
     }
     startup_pipe->WriteFd().Close();
-    execve(exe.c_str(),
+     (exe.c_str(),
            reinterpret_cast<char *const *>(const_cast<char **>(argv.data())),
            reinterpret_cast<char *const *>(const_cast<char **>(env.data())));
     std::cerr << "Failed to exec " << argv[0] << ": " << strerror(errno)
@@ -1441,8 +1441,12 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
 
 int StaticProcess::Wait() {
   int status = 0;
+  int wait_arg = WNOHANG;
+#if defined(__linux__)
   // __WALL: see WaitLoop.
-  pid_t pid = waitpid(pid_, &status, WNOHANG | __WALL);
+  wait_arg |= __WALL;
+#endif
+  pid_t pid = waitpid(pid_, &status, wait_arg);
   if (pid == -1) {
     if (errno == EINTR) {
       return 0;
