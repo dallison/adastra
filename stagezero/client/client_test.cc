@@ -105,6 +105,13 @@ public:
         // Ignore output events.
         continue;
       }
+      if (type != adastra::stagezero::control::Event::kTelemetry &&
+          event->event_case() ==
+              adastra::stagezero::control::Event::kTelemetry) {
+        // Telemetry processes send periodic status events.
+        retry--;
+        continue;
+      }
       if (allow_disconnect &&
           type == adastra::stagezero::control::Event::kStop &&
           event->event_case() ==

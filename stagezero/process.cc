@@ -1385,7 +1385,7 @@ StaticProcess::ForkAndExec(const std::vector<std::string> extra_env_vars) {
       _exit(1);
     }
     startup_pipe->WriteFd().Close();
-     (exe.c_str(),
+    execve(exe.c_str(),
            reinterpret_cast<char *const *>(const_cast<char **>(argv.data())),
            reinterpret_cast<char *const *>(const_cast<char **>(env.data())));
     std::cerr << "Failed to exec " << argv[0] << ": " << strerror(errno)
